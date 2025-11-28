@@ -28,25 +28,25 @@
     <mesh name="rl_dg_1_2_c" content_type="model/stl" file="rl_dg_1_2_c.STL"/>
     <mesh name="rl_dg_1_3_c" content_type="model/stl" file="rl_dg_1_3_c.STL"/>
     <mesh name="rl_dg_1_4_c" content_type="model/stl" file="rl_dg_1_4_c.STL"/>
-    <mesh name="rl_dg_1_tip_c" content_type="model/stl" file="rl_dg_1_tip_c.STL"/>
+    <mesh name="rl_dg_1_tip_c" content_type="model/stl" file="rl_dg_1_tip_c_simple.STL"/>
     
     <mesh name="rl_dg_2_1_c" content_type="model/stl" file="rl_dg_2_1_c.STL"/>
     <mesh name="rl_dg_2_2_c" content_type="model/stl" file="rl_dg_2_2_c.STL"/>
     <mesh name="rl_dg_2_3_c" content_type="model/stl" file="rl_dg_2_3_c.STL"/>
     <mesh name="rl_dg_2_4_c" content_type="model/stl" file="rl_dg_2_4_c.STL"/>
-    <mesh name="rl_dg_2_tip_c" content_type="model/stl" file="rl_dg_2_tip_c.STL"/>
+    <mesh name="rl_dg_2_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
     
     <mesh name="rl_dg_3_1_c" content_type="model/stl" file="rl_dg_3_1_c.STL"/>
     <mesh name="rl_dg_3_2_c" content_type="model/stl" file="rl_dg_3_2_c.STL"/>
     <mesh name="rl_dg_3_3_c" content_type="model/stl" file="rl_dg_3_3_c.STL"/>
     <mesh name="rl_dg_3_4_c" content_type="model/stl" file="rl_dg_3_4_c.STL"/>
-    <mesh name="rl_dg_3_tip_c" content_type="model/stl" file="rl_dg_3_tip_c.STL"/>
+    <mesh name="rl_dg_3_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
     
     <mesh name="rl_dg_4_1_c" content_type="model/stl" file="rl_dg_4_1_c.STL"/>
     <mesh name="rl_dg_4_2_c" content_type="model/stl" file="rl_dg_4_2_c.STL"/>
     <mesh name="rl_dg_4_3_c" content_type="model/stl" file="rl_dg_4_3_c.STL"/>
     <mesh name="rl_dg_4_4_c" content_type="model/stl" file="rl_dg_4_4_c.STL"/>
-    <mesh name="rl_dg_4_tip_c" content_type="model/stl" file="rl_dg_4_tip_c.STL"/>
+    <mesh name="rl_dg_4_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
     
     <mesh name="rl_dg_5_1_c" content_type="model/stl" file="rl_dg_5_1_c.STL"/>
     <mesh name="rl_dg_5_2_c" content_type="model/stl" file="rl_dg_5_2_c.STL"/>
