@@ -1,5 +1,5 @@
 <mujoco model="dg5f_right">
-  <compiler angle="radian" meshdir="meshes/tesollo"/>
+  <compiler angle="radian" meshdir="/home/duplo/git/robohand/src/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"/>
   <option cone="elliptic" impratio="10"/>
 
   <default>
