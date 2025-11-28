@@ -1,5 +1,5 @@
 <mujoco model="dg5f_right">
-  <compiler angle="radian" meshdir="/home/duplo/git/robohand/src/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"/>
+  <compiler angle="radian" meshdir="/home/valentin/git/postdoc/robohand/src/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"/>
   <option cone="elliptic" impratio="10"/>
 
   <default>
@@ -20,8 +20,8 @@
     
     <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
 
-    <mesh name="rl_dg_mount_c" content_type="model/stl" file="rl_dg_mount_c.STL"/>
-    <mesh name="rl_dg_base_c" content_type="model/stl" file="rl_dg_base_c.STL"/>
+    <mesh name="rl_dg_mount_c" content_type="model/stl" file="rl_dg_mount_c_simple.STL"/>
+    <mesh name="rl_dg_base_c" content_type="model/stl" file="rl_dg_base_c_simple.STL"/>
     <mesh name="rl_dg_palm_c" content_type="model/stl" file="rl_dg_palm_c.STL"/>
     
     <mesh name="rl_dg_1_1_c" content_type="model/stl" file="rl_dg_1_1_c.STL"/>
@@ -52,7 +52,7 @@
     <mesh name="rl_dg_5_2_c" content_type="model/stl" file="rl_dg_5_2_c.STL"/>
     <mesh name="rl_dg_5_3_c" content_type="model/stl" file="rl_dg_5_3_c.STL"/>
     <mesh name="rl_dg_5_4_c" content_type="model/stl" file="rl_dg_5_4_c.STL"/>
-    <mesh name="rl_dg_5_tip_c" content_type="model/stl" file="rl_dg_5_tip_c.STL"/>
+    <mesh name="rl_dg_5_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
   </asset>
 
   <worldbody>
@@ -66,10 +66,12 @@
     <body name="mount">
       <site name="grasp_site" pos="0.11 0.0 0.03" group="4"/>
 
-      <geom type="mesh" mesh="rl_dg_mount_c"/>
-      <geom pos="0 0 0.004" type="mesh" mesh="rl_dg_base_c"/>
+      <geom class="visual" type="mesh" mesh="rl_dg_mount_c"/>
+      <geom class="visual" pos="0 0 0.004" type="mesh" mesh="rl_dg_base_c"/>
       <geom class="visual" pos="0 0 0.0738" quat="1 0 0 0" type="mesh" mesh="rl_dg_palm_c"/>
       <geom class="collision" size="0.007 0.035 0.015" pos="0.013 0.00 0.135"/>
+     
+      <geom class="collision" name="base_coll" type="cylinder" size="0.0335 0.035" pos="0.0 0.00 0.037"/>
 
       <body name="palm_lower" pos="0.00 0 0">
         <geom class="collision" size="0.007 0.035 0.02" pos="0.013 0.00 0.1"/>
