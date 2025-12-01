@@ -172,15 +172,15 @@ def brax_ppo_config(
         value_obs_key="privileged_state",
     )
   elif env_name == "TesolloCubeRotateZAxis":
-    rl_config.num_timesteps = 100_000_000
-    rl_config.num_evals = 10
+    rl_config.num_timesteps = 1_000_000_000
+    rl_config.num_evals = 10000
     rl_config.num_minibatches = 32
     rl_config.unroll_length = 40
     rl_config.num_updates_per_batch = 4
     rl_config.discounting = 0.97
     rl_config.learning_rate = 3e-4
     rl_config.entropy_cost = 1e-2
-    rl_config.num_envs = 8192
+    rl_config.num_envs = 4096
     rl_config.batch_size = 256
     rl_config.num_resets_per_eval = 1
     rl_config.network_factory = config_dict.create(
