@@ -9,7 +9,6 @@ readme = "README.md"
 authors = [
     {name = "Google DeepMind", email = "mujoco@deepmind.com"},
 ]
-requires-python = ">=3.10"
 dynamic = ["description"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -26,7 +25,7 @@ dependencies = [
     "brax>=0.12.5",
     "etils",
     "flax",
-    "jax",
+    "jax[cuda]==0.7.2",
     "lxml",
     "mediapy",
     "ml_collections",
