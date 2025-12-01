@@ -7,7 +7,7 @@
   </option>
 
   <custom>
-    <numeric data="30" name="max_contact_points"/>
+    <numeric data="200" name="max_contact_points"/>
     <!-- <numeric data="12" name="max_geom_pairs"/> -->
   </custom>
 
@@ -22,6 +22,10 @@
 
     <default class="collision">
       <geom group="3" friction="0.2" solref="0.02 1.5" solimp="0.9 0.99 0.001" type="box" mass="0" material="black"/>
+      <default class="tip">
+        <!-- <geom type="capsule" size="0.012 0.008" pos="0 -0.03 0.015" quat="1 1 0 0" friction="0.7 0.05 0.0002"/> -->
+        <geom friction="0.7 0.05 0.0002" rgba=".5 .5 .5 .3"/>
+      </default>
     </default>
   </default>
 
@@ -72,7 +76,7 @@
     <!-- <light pos="0.3 0 1.5" dir="0 0 -1" directional="true"/> -->
     <!-- <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/> -->
 
-    <body name="rh" quat="0 1 0 1" pos="-0.05 0 0.03">
+    <body name="rh" quat="0 1 0 0.8" pos="-0.05 0 0.03">
 
     <body name="mount">
       <site name="grasp_site" pos="0.11 0.0 0.03" group="4"/>
@@ -82,6 +86,12 @@
       <geom class="visual" pos="0 0 0.0738" quat="1 0 0 0" type="mesh" mesh="rl_dg_palm_c"/>
       <geom class="collision" size="0.007 0.035 0.015" pos="0.013 0.00 0.135"/>
      
+      <geom class="collision" size="0.01 0.014 0.01" pos="0.0135 0.015 0.12" quat="1 0.34 -0.135 0.05"/>
+
+      <geom class="collision" size="0.01 0.018 0.014" pos="0.01195 -0.00923 0.10547" quat="0.99349 0.35827 -0.07395 -0.12441"/>
+      <geom class="collision" size="0.0097 0.035 0.014" pos="0.01125 0. 0.13" quat="1 0 -0.13 0"/>
+      <geom class="collision" size="0.01 0.0175 0.02" pos="0.01425 -0.0175 0.099" quat="1 0 0 0"/>
+
       <!-- <geom class="collision" name="base_coll" type="cylinder" size="0.0335 0.035" pos="0.0 0.00 0.037"/> -->
 
       <body name="palm_lower" pos="0.00 0 0">
@@ -104,18 +114,20 @@
 
         <body name="rl_dg_1_3" pos="0 0.031 0">
           <inertial pos="2.3008e-05 0.014842 4.7446e-06" quat="0.523748 0.473568 -0.525398 0.474739" mass="0.045" diaginertia="6.4181e-06 6.01585e-06 2.42154e-06"/>
-          <joint name="rj_dg_1_3" pos="0 0 0" axis="1 0 0" range="-1.5708 1.5708" />
+          <joint name="rj_dg_1_3" pos="0 0 0" axis="1 0 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_1_3_c"/>
           <geom class="collision" size="0.011 0.022 0.0095" pos="2.3008e-05 0.014842 4.7446e-06"/>
 
           <body name="rl_dg_1_4" pos="0 0.0388 0">
             <inertial pos="-0.000182282 0.0140657 0.000732812" quat="0.521074 0.440882 -0.475371 0.555092" mass="0.05" diaginertia="2.0651e-05 2.02971e-05 3.29812e-06"/>
-            <joint name="rj_dg_1_4" pos="0 0 0" axis="1 0 0" range="-1.5708 1.5708" />
+            <joint name="rj_dg_1_4" pos="0 0 0" axis="1 0 0" range="0 1.5708" />
             <geom type="mesh" class="visual" mesh="rl_dg_1_4_c"/>
             <geom class="collision" size="0.011 0.022 0.0095" pos="2.3008e-05 0.014842 4.7446e-06"/>
 
             <geom class="visual" pos="0 0.0363 0" quat="1 0 0 0" type="mesh" mesh="rl_dg_1_tip_c" material="white"/>
             <site name="rl_dg_1_tip_c" pos="0 -0.0 0.0" group="4"/>
+
+            <geom class="tip" size="0.01 0.015 0.009" pos="0 0.0363 0"/>
 
           </body>
         </body>
@@ -138,18 +150,20 @@
 
         <body name="rl_dg_2_3" pos="0 0 0.0388">
           <inertial pos="-4.7446e-06 2.3008e-05 0.023958" quat="0.998727 0.0504191 0.000239574 0.00141058" mass="0.045" diaginertia="6.4181e-06 6.01585e-06 2.42154e-06"/>
-          <joint name="rj_dg_2_3" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+          <joint name="rj_dg_2_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_2_3_c"/>
           <geom class="collision" size="0.0095 0.011 0.022" pos="2.3008e-05 0.0 0.0175"/>
 
           <body name="rl_dg_2_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
-            <joint name="rj_dg_2_4" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+            <joint name="rj_dg_2_4" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
             <geom type="mesh" class="visual" mesh="rl_dg_2_4_c"/>
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_2_tip_c" material="white"/>
             <site name="rl_dg_2_tip_c" pos="0 -0.0 0.0" group="4"/>
+
+            <geom class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
 
           </body>
         </body>
@@ -172,19 +186,20 @@
 
         <body name="rl_dg_3_3" pos="0 0 0.0388">
           <inertial pos="-4.7446e-06 2.3008e-05 0.023958" quat="0.998727 0.0504191 0.000239574 0.00141058" mass="0.045" diaginertia="6.4181e-06 6.01585e-06 2.42154e-06"/>
-          <joint name="rj_dg_3_3" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+          <joint name="rj_dg_3_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_3_3_c"/>
           <geom class="collision" size="0.0095 0.011 0.022" pos="2.3008e-05 0.0 0.0175"/>
 
           <body name="rl_dg_3_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
-            <joint name="rj_dg_3_4" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+            <joint name="rj_dg_3_4" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
             <geom type="mesh" class="visual" mesh="rl_dg_3_4_c"/>
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_3_tip_c" material="white"/>
             <site name="rl_dg_3_tip_c" pos="0 -0.0 0.0" group="4"/>
 
+            <geom class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
           </body>
         </body>
       </body>
@@ -206,18 +221,20 @@
 
         <body name="rl_dg_4_3" pos="0 0 0.0388">
           <inertial pos="-4.7446e-06 2.3008e-05 0.023958" quat="0.998727 0.0504191 0.000239574 0.00141058" mass="0.045" diaginertia="6.4181e-06 6.01585e-06 2.42154e-06"/>
-          <joint name="rj_dg_4_3" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+          <joint name="rj_dg_4_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_4_3_c"/>
           <geom class="collision" size="0.0095 0.011 0.022" pos="2.3008e-05 0.0 0.0175"/>
 
           <body name="rl_dg_4_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
-            <joint name="rj_dg_4_4" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+            <joint name="rj_dg_4_4" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
             <geom type="mesh" class="visual" mesh="rl_dg_4_4_c"/>
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_4_tip_c" material="white"/>
             <site name="rl_dg_4_tip_c" pos="0 -0.0 0.0" group="4"/>
+
+            <geom class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
 
           </body>
         </body>
@@ -241,19 +258,20 @@
 
         <body name="rl_dg_5_3" pos="0 0 0.031">
           <inertial pos="4.74465e-06 2.30084e-05 0.0148419" quat="0.998727 -0.05042 0.000239567 -0.00141066" mass="0.045" diaginertia="6.41806e-06 6.01584e-06 2.42155e-06"/>
-          <joint name="rj_dg_5_3" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+          <joint name="rj_dg_5_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_5_3_c"/>
           <geom class="collision" size="0.0095 0.011 0.022" pos="4.74465e-06 2.30084e-05 0.0148419"/>
 
           <body name="rl_dg_5_4" pos="0 0 0.0388">
             <inertial pos="5.2052e-05 -0.00381428 0.0176289" quat="0.94731 -0.315963 -0.040746 0.0333238" mass="0.05" diaginertia="1.67134e-05 1.18894e-05 7.53281e-06"/>
-            <joint name="rj_dg_5_4" pos="0 0 0" axis="0 1 0" range="-1.5708 1.5708" />
+            <joint name="rj_dg_5_4" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
             <geom type="mesh" class="visual" mesh="rl_dg_5_4_c"/>
             <geom class="collision" size="0.0095 0.011 0.022" pos="5.2052e-05 0.0 0.0176289"/>
 
             <geom class="visual" pos="0 0 0.0363" quat="1 0 0 0" type="mesh" mesh="rl_dg_5_tip_c" material="white"/>
             <site name="rl_dg_5_tip_c" pos="0 -0.0 0.0" group="4"/>
 
+            <geom class="tip" size="0.009 0.009 0.015" pos="0 0 0.0363"/>
           </body>
         </body>
       </body>
@@ -263,6 +281,7 @@
   </worldbody>
   
   <contact>
+    <!-- collisions with mount -->
     <exclude body1="mount" body2="rl_dg_1_1"/>
     <exclude body1="mount" body2="rl_dg_2_1"/>
     <exclude body1="mount" body2="rl_dg_3_1"/>
@@ -275,36 +294,86 @@
     <exclude body1="mount" body2="rl_dg_4_2"/>
     <exclude body1="mount" body2="rl_dg_5_2"/>
 
+    <exclude body1="mount" body2="rl_dg_1_3"/>
+    <exclude body1="mount" body2="rl_dg_2_3"/>
+    <exclude body1="mount" body2="rl_dg_3_3"/>
+    <exclude body1="mount" body2="rl_dg_4_3"/>
+    <exclude body1="mount" body2="rl_dg_5_3"/>
+
     <exclude body1="palm_lower" body2="rl_dg_1_1"/>
     <exclude body1="palm_lower" body2="rl_dg_1_2"/>
     <exclude body1="palm_lower" body2="rl_dg_1_3"/>
+
+    <!-- collisions with other fingers -->
+    <exclude body1="rl_dg_1_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_1_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_5_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_2_1"/>
+  
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_3"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_4"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_1_4"/>
+
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_3"/>
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_4"/>
+    <exclude body1="rl_dg_2_2" body2="rl_dg_2_4"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_3"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_4"/>
+    <exclude body1="rl_dg_3_2" body2="rl_dg_3_4"/>
+
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_3"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_4"/>
+    <exclude body1="rl_dg_4_2" body2="rl_dg_4_4"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_3"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_4"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_5_4"/>
+
   </contact>
 
   <actuator>
-    <position kp="2" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
-    <position kp="2" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
-    <position kp="2" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="-1.5708 1.5708"/>
-    <position kp="2" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="-1.5708 1.5708"/>
+    <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
 
-    <position kp="2" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
-    <position kp="2" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
-    <position kp="2" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="-1.5708 1.5708"/>
-    <position kp="2" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="-1.5708 1.5708"/>
+    <position kp="3" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
  
-    <position kp="2" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
-    <position kp="2" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
-    <position kp="2" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="-1.5708 1.5708"/>
-    <position kp="2" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="-1.5708 1.5708"/>
+    <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
 
-    <position kp="2" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
-    <position kp="2" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
-    <position kp="2" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="-1.5708 1.5708"/>
-    <position kp="2" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="-1.5708 1.5708"/>
+    <position kp="3" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
  
-    <position kp="2" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
-    <position kp="2" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
-    <position kp="2" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="-1.5708 1.5708"/>
-    <position kp="2" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="-1.5708 1.5708"/>
+    <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
   </actuator>
   
 </mujoco>

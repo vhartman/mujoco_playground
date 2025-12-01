@@ -174,7 +174,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandEnv):
         "last_act": jp.zeros(self.mjx_model.nu),
         "last_last_act": jp.zeros(self.mjx_model.nu),
         "motor_targets": data.ctrl,
-        "qpos_error_history": jp.zeros(self._config.history_len * 16),
+        "qpos_error_history": jp.zeros(self._config.history_len * 20),
         "cube_pos_error_history": jp.zeros(self._config.history_len * 3),
         "cube_ori_error_history": jp.zeros(self._config.history_len * 6),
         "goal_quat_dquat": jp.zeros(3),
@@ -285,8 +285,8 @@ class CubeReorient(tesollo_hand_base.TesolloHandEnv):
 
     # Joint position error history.
     qpos_error_history = (
-        jp.roll(info["qpos_error_history"], 16)
-        .at[:16]
+        jp.roll(info["qpos_error_history"], 20)
+        .at[:20]
         .set(noisy_joint_angles - info["motor_targets"])
     )
     info["qpos_error_history"] = qpos_error_history
@@ -349,11 +349,11 @@ class CubeReorient(tesollo_hand_base.TesolloHandEnv):
     xmat_diff_uncorrupted = math.quat_to_mat(quat_diff_uncorrupted).ravel()[3:]
 
     state = jp.concatenate([
-        noisy_joint_angles,  # 16
-        qpos_error_history,  # 16 * history_len
+        noisy_joint_angles,  # 20
+        qpos_error_history,  # 20 * history_len
         cube_pos_error_history,  # 3 * history_len
         cube_ori_error_history,  # 6 * history_len
-        info["last_act"],  # 16
+        info["last_act"],  # 20
     ])
 
     privileged_state = jp.concatenate([
@@ -534,20 +534,20 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     qpos0 = model.qpos0
     qpos0 = qpos0.at[hand_qids].set(
         qpos0[hand_qids]
-        + jax.random.uniform(key, shape=(16,), minval=-0.05, maxval=0.05)
+        + jax.random.uniform(key, shape=(20,), minval=-0.05, maxval=0.05)
     )
 
     # Scale static friction: *U(0.9, 1.1).
     rng, key = jax.random.split(rng)
     frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-        key, shape=(16,), minval=0.5, maxval=2.0
+        key, shape=(20,), minval=0.5, maxval=2.0
     )
     dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
 
     # Scale armature: *U(1.0, 1.05).
     rng, key = jax.random.split(rng)
     armature = model.dof_armature[hand_qids] * jax.random.uniform(
-        key, shape=(16,), minval=1.0, maxval=1.05
+        key, shape=(20,), minval=1.0, maxval=1.05
     )
     dof_armature = model.dof_armature.at[hand_qids].set(armature)
 
@@ -571,7 +571,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     # Joint damping: *U(0.8, 1.2).
     rng, key = jax.random.split(rng)
     kd = model.dof_damping[hand_qids] * jax.random.uniform(
-        key, (16,), minval=0.8, maxval=1.2
+        key, (20,), minval=0.8, maxval=1.2
     )
     dof_damping = model.dof_damping.at[hand_qids].set(kd)
 

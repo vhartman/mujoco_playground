@@ -1,5 +1,5 @@
-<mujoco model="leap_scene">
-  <include file="tesollo.xml"/>
+<mujoco model="tesollo_scene">
+  <include file="tesollo_limits.xml"/>
   <include file="reorientation_cube.xml"/>
 
   <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
@@ -52,10 +52,10 @@
     <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
   </sensor>
 
-  <keyframe>
+  <!-- <keyframe>
     <key name="home"
       qpos="
-      0.8 0 0.8 0.8
+      0.3 0 0.8 0.8
       0.8 0 0.8 0.8
       0.8 0 0.8 0.8
       0.8 0.8 0.8 0
@@ -68,5 +68,40 @@
       0.8 0 0.8 0.8
       0.8 0.8 0.8 0" mpos="0.25 0.16 0"
       mquat="1 0 0 0"/>
+  </keyframe> -->
+
+  <keyframe>
+    <key name="home"
+      qpos="
+      0.06 -0.6 0.6 0.6
+      -0.1 0.67 0.5 0.5
+      0. 0.68 0.62 0.56
+      0.1 0.6 0.46 0.6
+      0.1 0.47 1.1 0.5
+      0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
+      ctrl="
+      0.06 -0.6 0.6 0.6
+      -0.1 0.67 0.5 0.5
+      0. 0.68 0.62 0.56
+      0.1 0.6 0.46 0.6
+      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0"
+      mquat="1 0 0 0"/>
   </keyframe>
+  <!-- <keyframe>
+    <key name="home"
+      qpos="
+      0.5 -1.5 0.2 0.2
+      0. 0.4 0.2 0.4
+      0. 0.4 0.2 0.4
+      0. 0.4 0.2 0.4
+      0.4 0.3 0.4 0.9
+      0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
+      ctrl="
+      0.5 -1.5 0.2 0.2
+      0. 0.4 0.2 0.4
+      0. 0.4 0.2 0.4
+      0. 0.4 0.2 0.4
+      0.4 0.3 0.4 0.9" mpos="0.25 0.16 0"
+      mquat="1 0 0 0"/>
+  </keyframe> -->
 </mujoco>

@@ -54,8 +54,8 @@ def default_config() -> config_dict.ConfigDict:
           ),
       ),
       impl='jax',
-      nconmax=30 * 8192,
-      njmax=128,
+      nconmax=200 * 8192,
+      njmax=1024,
   )
 
 
@@ -130,7 +130,7 @@ class CubeRotateZAxis(tesollo_hand_base.TesolloHandEnv):
     for k in self._config.reward_config.scales.keys():
       metrics[f"reward/{k}"] = jp.zeros(())
 
-    obs_history = jp.zeros(self._config.history_len * 32)
+    obs_history = jp.zeros(self._config.history_len * 40)
     obs = self._get_obs(data, info, obs_history)
     reward, done = jp.zeros(2)  # pylint: disable=redefined-outer-name
     return mjx_env.State(data, obs, reward, done, metrics, info)
@@ -179,8 +179,8 @@ class CubeRotateZAxis(tesollo_hand_base.TesolloHandEnv):
     )
 
     state = jp.concatenate([
-        noisy_joint_angles,  # 16
-        info["last_act"],  # 16
+        noisy_joint_angles,  # 20
+        info["last_act"],  # 20
     ])  # 48
     obs_history = jp.roll(obs_history, state.size)
     obs_history = obs_history.at[: state.size].set(state)
@@ -321,20 +321,20 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     qpos0 = model.qpos0
     qpos0 = qpos0.at[hand_qids].set(
         qpos0[hand_qids]
-        + jax.random.uniform(key, shape=(16,), minval=-0.05, maxval=0.05)
+        + jax.random.uniform(key, shape=(20,), minval=-0.05, maxval=0.05)
     )
 
     # Scale static friction: *U(0.9, 1.1).
     rng, key = jax.random.split(rng)
     frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-        key, shape=(16,), minval=0.5, maxval=2.0
+        key, shape=(20,), minval=0.5, maxval=2.0
     )
     dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
 
     # Scale armature: *U(1.0, 1.05).
     rng, key = jax.random.split(rng)
     armature = model.dof_armature[hand_qids] * jax.random.uniform(
-        key, shape=(16,), minval=1.0, maxval=1.05
+        key, shape=(20,), minval=1.0, maxval=1.05
     )
     dof_armature = model.dof_armature.at[hand_qids].set(armature)
 
@@ -358,7 +358,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     # Joint damping: *U(0.8, 1.2).
     rng, key = jax.random.split(rng)
     kd = model.dof_damping[hand_qids] * jax.random.uniform(
-        key, (16,), minval=0.8, maxval=1.2
+        key, (20,), minval=0.8, maxval=1.2
     )
     dof_damping = model.dof_damping.at[hand_qids].set(kd)
 

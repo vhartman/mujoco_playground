@@ -24,6 +24,11 @@ NV = 20
 NU = 20
 
 JOINT_NAMES = [
+    # thumb
+    "rj_dg_1_1",
+    "rj_dg_1_2",
+    "rj_dg_1_3",
+    "rj_dg_1_4",
     # index
     "rj_dg_2_1",
     "rj_dg_2_2",
@@ -44,14 +49,14 @@ JOINT_NAMES = [
     "rj_dg_5_2",
     "rj_dg_5_3",
     "rj_dg_5_4",
-    # thumb
-    "rj_dg_1_1",
-    "rj_dg_1_2",
-    "rj_dg_1_3",
-    "rj_dg_1_4",
 ]
 
 ACTUATOR_NAMES = [
+    # thumb
+    "rj_dg_1_1_a",
+    "rj_dg_1_2_a",
+    "rj_dg_1_3_a",
+    "rj_dg_1_4_a",
     # index
     "rj_dg_2_1_a",
     "rj_dg_2_2_a",
@@ -72,11 +77,6 @@ ACTUATOR_NAMES = [
     "rj_dg_5_2_a",
     "rj_dg_5_3_a",
     "rj_dg_5_4_a",
-    # thumb
-    "rj_dg_1_1_a",
-    "rj_dg_1_2_a",
-    "rj_dg_1_3_a",
-    "rj_dg_1_4_a",
 ]
 
 FINGERTIP_NAMES = [
