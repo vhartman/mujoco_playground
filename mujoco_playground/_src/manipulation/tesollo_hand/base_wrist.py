@@ -24,7 +24,7 @@ import mujoco
 from mujoco import mjx
 
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_constants as consts
+from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_wrist_constants as consts
 
 
 def get_assets() -> Dict[str, bytes]:
@@ -39,7 +39,7 @@ def get_assets() -> Dict[str, bytes]:
   return assets
 
 
-class TesolloHandEnv(mjx_env.MjxEnv):
+class TesolloHandWristEnv(mjx_env.MjxEnv):
   """Base class for TESOLLO hand environments."""
 
   def __init__(
@@ -65,6 +65,9 @@ class TesolloHandEnv(mjx_env.MjxEnv):
 
   def get_palm_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "palm_position")
+
+  def get_palm_orientation(self, data: mjx.Data) -> jax.Array:
+    return mjx_env.get_sensor_data(self.mj_model, data, "palm_orientation")
 
   def get_cube_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "cube_position")

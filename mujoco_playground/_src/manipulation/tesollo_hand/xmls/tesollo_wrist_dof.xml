@@ -81,8 +81,13 @@
     <!-- <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/> -->
 
     <body name="rh" quat="0 1 0 0.8" pos="-0.05 0 0.03">
-
+    <!-- <inertial pos="0.021473 3.1163e-06 0.0028146" quat="0.414969 0.572521 0.572945 0.414433" mass="0.045" diaginertia="1.3718e-05 1.31155e-05 3.31624e-06"/> -->
+    <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_1_2" pos="0 0 0" axis="0 1 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    
     <body name="mount">
+      <inertial pos="0 0 0" quat="0.414969 0.572521 0.572945 0.414433" mass="0.045" diaginertia="1.3718e-05 1.31155e-05 3.31624e-06"/>
       <site name="grasp_site" pos="0.01 0.017 0.02" group="4"/>
 
       <geom class="visual" type="mesh" mesh="rl_dg_mount_c"/>
@@ -352,6 +357,10 @@
   </contact>
 
   <actuator>
+    <position kp="1" kv="0.5" name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-0.3 0.3"/>
+    <position kp="5" kv="2" name="rj_wrist_1_2_a" joint="rj_wrist_1_2" ctrlrange="-0.3 0.3"/>
+    <position kp="1" kv="0.5" name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-0.3 0.3"/>
+
     <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
     <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
     <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
