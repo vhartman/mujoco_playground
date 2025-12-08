@@ -25,9 +25,9 @@ import numpy as np
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
-from mujoco_playground._src.manipulation.tesollo_hand import base_wrist as tesollo_hand_base
+from mujoco_playground._src.manipulation.tesollo_hand import base_reach as tesollo_hand_reach
 from mujoco_playground._src.manipulation.tesollo_hand import (
-    tesollo_hand_wrist_constants as consts,
+    tesollo_hand_reach_constants as consts,
 )
 
 
@@ -48,20 +48,11 @@ def default_config() -> config_dict.ConfigDict:
             level=1.0,
             scales=config_dict.create(
                 joint_pos=0.025,
-                cube_pos=0.005,
-                cube_ori=0.05,
-                # joint_pos=0.0,
-                # cube_pos=0.0,
-                # cube_ori=0.0,
             ),
             random_ori_injection_prob=0.0,
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                cube_ang_vel=-0.1,
-                cube_lin_vel=-0.1,
-                orientation=5.0,
-                position=0.5,
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
@@ -85,8 +76,8 @@ def default_config() -> config_dict.ConfigDict:
     )
 
 
-class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
-    """Reorient a cube to match a goal orientation."""
+class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
+    """Reach a series of points with the fingertips."""
 
     def __init__(
         self,
@@ -94,7 +85,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
         super().__init__(
-            xml_path=consts.CUBE_XML.as_posix(),
+            xml_path=consts.SCENE_XML.as_posix(),
             config=config,
             config_overrides=config_overrides,
         )
@@ -111,18 +102,12 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         self._wrist_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
         self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
         self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
-        self._cube_qids = mjx_env.get_qpos_ids(self.mj_model, ["cube_freejoint"])
         self._floor_geom_id = self._mj_model.geom("floor").id
-        self._cube_geom_id = self._mj_model.geom("cube").id
-        self._cube_body_id = self._mj_model.body("cube").id
-        self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        # Randomize the goal orientation.
-        rng, goal_rng = jax.random.split(rng)
-        goal_quat = tesollo_hand_base.uniform_quat(goal_rng)
+        # randomize the next goals
 
         # Randomize the hand pose.
         rng, pos_rng, vel_rng = jax.random.split(rng, 3)
@@ -133,25 +118,11 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         )
         v_hand = 0.0 * jax.random.normal(vel_rng, (consts.NV,))
 
-        # Randomize the cube pose.
-        rng, p_rng, quat_rng = jax.random.split(rng, 3)
-        start_pos = jp.array([0.1, 0.0, 0.05]) + jax.random.uniform(
-            p_rng, (3,), minval=-0.01, maxval=0.01
-        )
-        start_quat = tesollo_hand_base.uniform_quat(quat_rng)
-        q_cube = jp.array([*start_pos, *start_quat])
-        v_cube = jp.zeros(6)
-
-        qpos = jp.concatenate([q_hand, q_cube])
-        qvel = jp.concatenate([v_hand, v_cube])
-        
         data = mjx_env.make_data(
             self._mj_model,
-            qpos=qpos,
+            qpos=q_hand,
             ctrl=q_hand,
-            qvel=qvel,
-            mocap_pos=self._init_mpos,
-            mocap_quat=goal_quat,
+            qvel=v_hand,
             impl=self._mjx_model.impl.value,
             nconmax=self._config.nconmax,
             njmax=self._config.njmax,
@@ -190,9 +161,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
             "last_act": jp.zeros(self.mjx_model.nu),
             "last_last_act": jp.zeros(self.mjx_model.nu),
             "motor_targets": data.ctrl,
-            "qpos_error_history": jp.zeros(self._config.history_len * 23),
-            "cube_pos_error_history": jp.zeros(self._config.history_len * 3),
-            "cube_ori_error_history": jp.zeros(self._config.history_len * 6),
+            "qpos_error_history": jp.zeros(self._config.history_len * 24),
             "goal_quat_dquat": jp.zeros(3),
             # Perturbation.
             "pert_wait_steps": pert_wait_steps,
@@ -229,19 +198,10 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
-        ori_error = self._cube_orientation_error(data)
-        cube_lin_vel = self._cube_lin_velocity(data)
-        cube_ang_vel = self._cube_ang_velocity(data)
-        
         # hand_qvel = data.qvel[self._hand_dqids]
         # hand_qvel_norm = jp.sum(hand_qvel ** 2)
 
-        success = (
-            (ori_error < self._config.success_threshold)
-            & (cube_lin_vel < self._config.vel_threshold)
-            & (cube_ang_vel < self._config.ang_vel_threshold)
-            # & (hand_qvel_norm < self._config.joint_vel_threshold)
-        )
+        success = False
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
         )
@@ -291,9 +251,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
 
     def _get_termination(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         del info  # Unused.
-        fall_termination = self.get_cube_position(data)[2] < -0.05
-        nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
-        return fall_termination | nans
+        return False
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
         # Hand joint angles.
@@ -308,76 +266,17 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
 
         # Joint position error history.
         qpos_error_history = (
-            jp.roll(info["qpos_error_history"], 23)
-            .at[:23]
+            jp.roll(info["qpos_error_history"], 24)
+            .at[:24]
             .set(noisy_joint_angles - info["motor_targets"])
         )
         info["qpos_error_history"] = qpos_error_history
 
-        def _get_cube_pose(data: mjx.Data) -> jax.Array:
-            """Returns (potentially) noisy cube pose (xyz,wxyz)."""
-            cube_pos = self.get_cube_position(data)
-            cube_quat = self.get_cube_orientation(data)
-            info["rng"], pos_rng, ori_rng = jax.random.split(info["rng"], 3)
-            noisy_cube_quat = mjx._src.math.normalize(
-                cube_quat
-                + jax.random.normal(ori_rng, shape=(4,))
-                * self._config.obs_noise.level
-                * self._config.obs_noise.scales.cube_ori
-            )
-            noisy_cube_pos = (
-                cube_pos
-                + (2 * jax.random.uniform(pos_rng, shape=cube_pos.shape) - 1)
-                * self._config.obs_noise.level
-                * self._config.obs_noise.scales.cube_pos
-            )
-            return jp.concatenate([noisy_cube_pos, noisy_cube_quat])
-
-        # Noisy cube pose.
-        noisy_pose = _get_cube_pose(data)
-        info["rng"], key1, key2, key3 = jax.random.split(info["rng"], 4)
-        rand_quat = tesollo_hand_base.uniform_quat(key1)
-        rand_pos = jax.random.uniform(key2, (3,), minval=-0.5, maxval=0.5)
-        rand_pose = jp.concatenate([rand_pos, rand_quat])
-        m = self._config.obs_noise.level * jax.random.bernoulli(
-            key3, self._config.obs_noise.random_ori_injection_prob
-        )
-        noisy_pose = noisy_pose * (1 - m) + rand_pose * m
-
-        # Cube position error history.
-        palm_pos = self.get_palm_position(data)
-        cube_pos_error = palm_pos - noisy_pose[:3]
-        cube_pos_error_history = (
-            jp.roll(info["cube_pos_error_history"], 3).at[:3].set(cube_pos_error)
-        )
-        info["cube_pos_error_history"] = cube_pos_error_history
-
-        # Cube orientation error history.
-        goal_quat = self.get_cube_goal_orientation(data)
-        quat_diff = mjx._src.math.quat_mul(
-            noisy_pose[3:], mjx._src.math.quat_inv(goal_quat)
-        )
-        xmat_diff = mjx._src.math.quat_to_mat(quat_diff).ravel()[3:]
-        cube_ori_error_history = (
-            jp.roll(info["cube_ori_error_history"], 6).at[:6].set(xmat_diff)
-        )
-        info["cube_ori_error_history"] = cube_ori_error_history
-
-        # Uncorrupted cube pose for critic.
-        cube_pos_error_uncorrupted = palm_pos - self.get_cube_position(data)
-        cube_quat_uncorrupted = self.get_cube_orientation(data)
-        quat_diff_uncorrupted = math.quat_mul(
-            cube_quat_uncorrupted, math.quat_inv(goal_quat)
-        )
-        xmat_diff_uncorrupted = math.quat_to_mat(quat_diff_uncorrupted).ravel()[3:]
-
         state = jp.concatenate(
             [
-                noisy_joint_angles,  # 23
-                qpos_error_history,  # 23 * history_len
-                cube_pos_error_history,  # 3 * history_len
-                cube_ori_error_history,  # 6 * history_len
-                info["last_act"],  # 23
+                noisy_joint_angles,  # 24
+                qpos_error_history,  # 24 * history_len
+                info["last_act"],  # 24
             ]
         )
 
@@ -387,10 +286,6 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
                 data.qpos[self._hand_qids],
                 data.qvel[self._hand_dqids],
                 self.get_fingertip_positions(data),
-                cube_pos_error_uncorrupted,
-                xmat_diff_uncorrupted,
-                self.get_cube_linvel(data),
-                self.get_cube_angvel(data),
                 info["pert_dir"],
                 data.xfrc_applied[self._cube_body_id],
             ]
@@ -413,13 +308,6 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
     ) -> dict[str, jax.Array]:
         del done, metrics  # Unused.
 
-        cube_pos = self.get_cube_position(data)
-        palm_pos = self.get_palm_position(data)
-        cube_pose_mse = jp.linalg.norm(palm_pos - cube_pos)
-        cube_pos_reward = reward.tolerance(
-            cube_pose_mse, (0, 0.02), margin=0.05, sigmoid="linear"
-        )
-
         terminated = self._get_termination(data, info)
 
         hand_pose_reward = jp.sum(
@@ -434,14 +322,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
             jp.square(data.qvel[self._wrist_qids])
         )
 
-        cube_lin_vel = self._cube_lin_velocity(data)
-        cube_ang_vel = self._cube_ang_velocity(data)
-
         return {
-            "cube_lin_vel": cube_lin_vel,
-            "cube_ang_vel": cube_ang_vel,
-            "orientation": self._reward_cube_orientation(data),
-            "position": cube_pos_reward,
             "termination": terminated,
             "hand_pose": hand_pose_reward,
             "wrist_pose": wrist_pose_reward,
@@ -457,23 +338,6 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
 
     def _cost_energy(self, qvel: jax.Array, qfrc_actuator: jax.Array) -> jax.Array:
         return jp.sum(jp.abs(qvel) * jp.abs(qfrc_actuator))
-
-    def _cube_lin_velocity(self, data: mjx.Data):
-        return math.norm(self.get_cube_linvel(data))
-
-    def _cube_ang_velocity(self, data: mjx.Data):
-        return math.norm(self.get_cube_angvel(data))
-
-    def _cube_orientation_error(self, data: mjx.Data):
-        cube_ori = self.get_cube_orientation(data)
-        cube_goal_ori = self.get_cube_goal_orientation(data)
-        quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
-        quat_diff = math.normalize(quat_diff)
-        return 2.0 * jp.asin(jp.clip(math.norm(quat_diff[1:]), a_max=1.0))
-
-    def _reward_cube_orientation(self, data: mjx.Data) -> jax.Array:
-        ori_error = self._cube_orientation_error(data)
-        return reward.tolerance(ori_error, (0, 0.2), margin=jp.pi, sigmoid="linear")
 
     def _cost_action_rate(
         self, act: jax.Array, last_act: jax.Array, last_last_act: jax.Array
@@ -528,9 +392,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):
-    mj_model = CubeReorient().mj_model
-    cube_geom_id = mj_model.geom("cube").id
-    cube_body_id = mj_model.body("cube").id
+    mj_model = KeyboardReach().mj_model
     hand_qids = mjx_env.get_qpos_ids(mj_model, consts.JOINT_NAMES)
     hand_body_names = [
         #   "palm",
@@ -567,8 +429,6 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
     @jax.vmap
     def rand(rng):
-        # TODO: add cube size randomization
-
         rng, key = jax.random.split(rng)
         # Fingertip friction: =U(0.5, 1.0).
         silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=1.0)
@@ -576,36 +436,25 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
             silicone_friction
         )
 
-        # Scale cube mass: *U(0.8, 1.2).
-        rng, key1, key2 = jax.random.split(rng, 3)
-        dmass = jax.random.uniform(key1, minval=0.8, maxval=1.2)
-        body_inertia = model.body_inertia.at[cube_body_id].set(
-            model.body_inertia[cube_body_id] * dmass
-        )
-        dpos = jax.random.uniform(key2, (3,), minval=-5e-3, maxval=5e-3)
-        body_ipos = model.body_ipos.at[cube_body_id].set(
-            model.body_ipos[cube_body_id] + dpos
-        )
-
         # Jitter qpos0: +U(-0.05, 0.05).
         rng, key = jax.random.split(rng)
         qpos0 = model.qpos0
         qpos0 = qpos0.at[hand_qids].set(
             qpos0[hand_qids]
-            + jax.random.uniform(key, shape=(23,), minval=-0.05, maxval=0.05)
+            + jax.random.uniform(key, shape=(24,), minval=-0.05, maxval=0.05)
         )
 
         # Scale static friction: *U(0.9, 1.1).
         rng, key = jax.random.split(rng)
         frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-            key, shape=(23,), minval=0.5, maxval=2.0
+            key, shape=(24,), minval=0.5, maxval=2.0
         )
         dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
 
         # Scale armature: *U(1.0, 1.05).
         rng, key = jax.random.split(rng)
         armature = model.dof_armature[hand_qids] * jax.random.uniform(
-            key, shape=(23,), minval=1.0, maxval=1.05
+            key, shape=(24,), minval=1.0, maxval=1.05
         )
         dof_armature = model.dof_armature.at[hand_qids].set(armature)
 
@@ -629,7 +478,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         # Joint damping: *U(0.8, 1.2).
         rng, key = jax.random.split(rng)
         kd = model.dof_damping[hand_qids] * jax.random.uniform(
-            key, (23,), minval=0.8, maxval=1.2
+            key, (24,), minval=0.8, maxval=1.2
         )
         dof_damping = model.dof_damping.at[hand_qids].set(kd)
 
