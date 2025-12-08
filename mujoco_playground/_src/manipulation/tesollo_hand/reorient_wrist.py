@@ -42,13 +42,13 @@ def default_config() -> config_dict.ConfigDict:
         success_threshold=0.1,
         vel_threshold=0.5,
         ang_vel_threshold=0.5,
-        history_len=1,
+        history_len=5,
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
-                joint_pos=0.05,
-                cube_pos=0.02,
-                cube_ori=0.1,
+                joint_pos=0.025,
+                cube_pos=0.005,
+                cube_ori=0.05,
                 # joint_pos=0.0,
                 # cube_pos=0.0,
                 # cube_ori=0.0,
@@ -229,12 +229,12 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         state.info["motor_targets"] = motor_targets
 
         ori_error = self._cube_orientation_error(data)
-        # cube_lin_vel = self._cube_lin_velocity(data)
-        # cube_ang_vel = self._cube_ang_velocity(data)
+        cube_lin_vel = self._cube_lin_velocity(data)
+        cube_ang_vel = self._cube_ang_velocity(data)
         success = (
             (ori_error < self._config.success_threshold)
-            # & (cube_lin_vel < self._config.vel_threshold)
-            # & (cube_ang_vel < self._config.ang_vel_threshold)
+            & (cube_lin_vel < self._config.vel_threshold)
+            & (cube_ang_vel < self._config.ang_vel_threshold)
         )
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
