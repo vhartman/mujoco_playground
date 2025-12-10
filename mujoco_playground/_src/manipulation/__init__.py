@@ -31,6 +31,7 @@ from mujoco_playground._src.manipulation.leap_hand import rotate_z as leap_rotat
 from mujoco_playground._src.manipulation.tesollo_hand import reorient as tesollo_cube_reorient
 from mujoco_playground._src.manipulation.tesollo_hand import rotate_z as tesollo_rotate_z
 from mujoco_playground._src.manipulation.tesollo_hand import reorient_wrist as tesollo_wrist_cube_reorient
+from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
 from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_rotate_z
 
 _envs = {
@@ -47,6 +48,7 @@ _envs = {
     "TesolloCubeReorient": tesollo_cube_reorient.CubeReorient,
     "TesolloCubeRotateZAxis": tesollo_rotate_z.CubeRotateZAxis,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.CubeReorient,
+    "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 }
 
 _cfgs = {
@@ -63,6 +65,7 @@ _cfgs = {
     "TesolloCubeReorient": tesollo_cube_reorient.default_config,
     "TesolloCubeRotateZAxis": tesollo_rotate_z.default_config,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
+    "TesolloKeyboardReach": tesollo_reach.default_config,
 }
 
 _randomizer = {
@@ -72,6 +75,7 @@ _randomizer = {
     "TesolloCubeReorient": tesollo_cube_reorient.domain_randomize,
     "TesolloCubeRotateZAxis": tesollo_rotate_z.domain_randomize,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.domain_randomize,
+    "TesolloKeyboardReach": tesollo_reach.domain_randomize,
 }
 
 
