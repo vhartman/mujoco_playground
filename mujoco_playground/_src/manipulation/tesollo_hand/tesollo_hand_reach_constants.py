@@ -17,7 +17,7 @@
 from mujoco_playground._src import mjx_env
 
 ROOT_PATH = mjx_env.ROOT_PATH / "manipulation" / "tesollo_hand"
-SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_reach.xml"
+SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_reaching.xml"
 
 NQ = 24
 NV = 24

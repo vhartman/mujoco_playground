@@ -107,13 +107,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         self._init_mquat = jp.array(home_key.mquat, dtype=float)
         self._lowers = self._mj_model.actuator_ctrlrange[:, 0]
         self._uppers = self._mj_model.actuator_ctrlrange[:, 1]
-        self._wrist_qids = mjx_env.get_qpos_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
-        self._wrist_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
-        self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
-        self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
-        self._cube_qids = mjx_env.get_qpos_ids(self.mj_model, ["cube_freejoint"])
-        self._floor_geom_id = self._mj_model.geom("floor").id
-        self._cube_geom_id = self._mj_model.geom("cube").id
+        self._wrist_qids = mjx_env.obs_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
         self._default_wrist_pose = self._init_q[self._wrist_qids]

@@ -51,11 +51,11 @@
   <sensor>
     <!-- hand. -->
     <framepos name="palm_position" objtype="site" objname="grasp_site"/>
-    <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c" reftype="site" refname="grasp_site"/>
-    <framepos name="rl_dg_2_tip_c_position" objtype="site" objname="rl_dg_2_tip_c" reftype="site" refname="grasp_site"/>
-    <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c" reftype="site" refname="grasp_site"/>
-    <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c" reftype="site" refname="grasp_site"/>
-    <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c" reftype="site" refname="grasp_site"/>
+    <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c"/>
+    <framepos name="rl_dg_2_tip_c_position" objtype="site" objname="rl_dg_2_tip_c"/>
+    <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c"/>
+    <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c"/>
+    <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c"/>
 
     <!-- goal. -->
     <!-- <framepos name="goal_position" objtype="body" objname="goal_1"/> -->
