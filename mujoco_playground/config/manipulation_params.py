@@ -227,7 +227,7 @@ def brax_ppo_config(
     rl_config.num_resets_per_eval = 1
   elif env_name == "TesolloKeyboardReach":
     rl_config.num_timesteps = 1_000_000_000
-    rl_config.num_evals = 20
+    rl_config.num_evals = 100
     rl_config.num_minibatches = 32
     rl_config.unroll_length = 40
     rl_config.num_updates_per_batch = 4

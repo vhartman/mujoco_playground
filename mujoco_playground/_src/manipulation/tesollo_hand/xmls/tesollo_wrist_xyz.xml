@@ -82,11 +82,14 @@
     <body name="rh" quat="-1 0 -1 0" pos="-0.05 0 0.03">
     <!-- <inertial pos="0.021473 3.1163e-06 0.0028146" quat="0.414969 0.572521 0.572945 0.414433" mass="0.045" diaginertia="1.3718e-05 1.31155e-05 3.31624e-06"/> -->
     <!-- <joint name="rj_wrist_0_1" type="slide" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/> -->
-    <joint name="rj_wrist_0_2" type="slide" pos="0 0 0" axis="0 1 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
-    <joint name="rj_wrist_0_3" type="slide" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-10. 10" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <!-- <joint name="rj_wrist_0_2" type="slide" pos="0 0 0" axis="0 1 0" range="-0.1 0.1" actuatorfrcrange="-1. 1." damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_0_3" type="slide" pos="0 0 0" axis="0 0 1" range="0.0 0.05" actuatorfrcrange="-1. 1." damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+     -->
+    <joint name="rj_wrist_0_2" type="slide" pos="0 0 0" axis="0 1 0" range="-0.01 0.01" actuatorfrcrange="-1. 1." damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_0_3" type="slide" pos="0 0 0" axis="0 0 1" range="0.02 0.05" actuatorfrcrange="-1. 1." damping="0.01" armature="0.00149376" frictionloss="0.02"/>
     
-    <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
-    <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.1 0.1" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
+    <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.2 0.2" actuatorfrcrange="-1.5 1.5" damping="0.01" armature="0.00149376" frictionloss="0.02"/>
     
     <body name="mount">
       <inertial pos="0 0 0" quat="0.414969 0.572521 0.572945 0.414433" mass="0.045" diaginertia="1.3718e-05 1.31155e-05 3.31624e-06"/>
@@ -136,7 +139,7 @@
             <geom class="collision" size="0.011 0.022 0.0095" pos="2.3008e-05 0.014842 4.7446e-06"/>
 
             <geom class="visual" pos="0 0.0363 0" quat="1 0 0 0" type="mesh" mesh="rl_dg_1_tip_c" material="white"/>
-            <site name="rl_dg_1_tip_c" pos="0 -0.0 0.0" group="4"/>
+            <site name="rl_dg_1_tip_c" pos="0 0.0363 0" group="4"/>
 
             <geom name="rl_dg_1_tip" class="tip" size="0.01 0.015 0.009" pos="0 0.0363 0"/>
 
@@ -171,7 +174,7 @@
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_2_tip_c" material="white"/>
-            <site name="rl_dg_2_tip_c" pos="0 -0.0 0.0" group="4"/>
+            <site name="rl_dg_2_tip_c" pos="0 0 0.0255" group="4"/>
 
             <geom name="rl_dg_2_tip" class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
 
@@ -207,7 +210,7 @@
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_3_tip_c" material="white"/>
-            <site name="rl_dg_3_tip_c" pos="0 -0.0 0.0" group="4"/>
+            <site name="rl_dg_3_tip_c" pos="0 0 0.0255" group="4"/>
 
             <geom name="rl_dg_3_tip" class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
           </body>
@@ -242,7 +245,7 @@
             <geom class="collision" size="0.0095 0.011 0.013" pos="2.3008e-05 0.0 0.0125"/>
 
             <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_4_tip_c" material="white"/>
-            <site name="rl_dg_4_tip_c" pos="0 -0.0 0.0" group="4"/>
+            <site name="rl_dg_4_tip_c" pos="0 0 0.0255" group="4"/>
 
             <geom name="rl_dg_4_tip" class="tip" size="0.009 0.009 0.015" pos="0 0 0.0255"/>
           </body>
@@ -278,7 +281,7 @@
             <geom class="collision" size="0.0095 0.011 0.022" pos="5.2052e-05 0.0 0.0176289"/>
 
             <geom class="visual" pos="0 0 0.0363" quat="1 0 0 0" type="mesh" mesh="rl_dg_5_tip_c" material="white"/>
-            <site name="rl_dg_5_tip_c" pos="0 -0.0 0.0" group="4"/>
+            <site name="rl_dg_5_tip_c" pos="0 0 0.0363" group="4"/>
 
             <geom name="rl_dg_5_tip" class="tip" size="0.009 0.009 0.015" pos="0 0 0.0363"/>
           </body>
@@ -360,8 +363,8 @@
 
   <actuator>
     <!-- <position kp="5" kv="2" name="rj_wrist_0_1_a" joint="rj_wrist_0_1" ctrlrange="-0.3 0.3"/> -->
-    <position kp="10" kv="3" name="rj_wrist_0_2_a" joint="rj_wrist_0_2" ctrlrange="-0.3 0.3"/>
-    <position kp="10" kv="3" name="rj_wrist_0_3_a" joint="rj_wrist_0_3" ctrlrange="-0.3 0.3"/>
+    <position kp="1" kv="0.5" name="rj_wrist_0_2_a" joint="rj_wrist_0_2" ctrlrange="-0.1 0.1"/>
+    <position kp="1" kv="0.5" name="rj_wrist_0_3_a" joint="rj_wrist_0_3" ctrlrange="0.0 0.05"/>
 
     <position kp="1" kv="0.5" name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-0.3 0.3"/>
     <position kp="1" kv="0.5" name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-0.3 0.3"/>

@@ -41,10 +41,9 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=1000,
-        success_threshold=0.005,
-        joint_vel_threshold=0.5,
+        success_threshold=0.01,
         history_len=5,
-        future_goal_len=1,
+        future_goal_len=3,
         obs_noise=config_dict.create(
             level=0.0,
             scales=config_dict.create(
@@ -55,14 +54,15 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 termination=-100.0,
-                position=10,
-                neg_goal_distance=0.5,
-                hand_pose=-0.5,
-                wrist_pose=-1.0,
-                action_rate=-0.001,
+                position=0.,
+                neg_goal_distance=0.,
+                hand_pose=-0.01,
+                wrist_pose=-0.1,
+                action_rate=-0.00,
                 joint_vel=-0.01,
-                energy=-1e-3,
+                energy=-0.001,
                 wrist_vel=-0.1,
+                pressing_cost=-1.,
             ),
             success_reward=100.0,
         ),
@@ -104,25 +104,18 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
 
-        self._goal_locations = jp.array(
-            [
-                [0.2, -0.03, -0.05],
-                [0.2, 0.0, -0.05],
-                [0.2, 0.03, -0.05],
-                [0.2, -0.06, -0.05],
-                [0.23, -0.03, -0.05],
-                [0.23, 0.0, -0.05],
-                [0.23, 0.03, -0.05],
-                [0.23, -0.06, -0.05],
-            ]
-        )
+        KEY_NAMES = []
+        for i in range(8):
+            KEY_NAMES.append(f"key_joint_{i}")
 
-        self._goal_ids = [0, 1, 2, 3, 4, 5, 6, 7]
+        self._key_ids = mjx_env.get_qpos_ids(self.mj_model, KEY_NAMES)
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         # randomize the next goals
         rng, goal_rng = jax.random.split(rng, 2)
-        goal_order = jax.random.randint(goal_rng, self._config.future_goal_len, 0, 8)
+        goal_order = jax.random.randint(
+            goal_rng, self._config.future_goal_len, 0, len(self._goal_ids)
+        )
 
         # Randomize the hand pose.
         rng, pos_rng, vel_rng = jax.random.split(rng, 3)
@@ -133,12 +126,17 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         )
         v_hand = 0.0 * jax.random.normal(vel_rng, (consts.NV,))
 
+        q_toggles = jp.zeros(8)
+
+        qpos = jp.concatenate([q_hand, q_toggles])
+        qvel = jp.concatenate([v_hand, q_toggles])
+
         data = mjx_env.make_data(
             self._mj_model,
-            qpos=q_hand,
+            qpos=qpos,
             ctrl=q_hand,
-            qvel=v_hand,
-            mocap_pos=self._goal_locations,
+            qvel=qvel,
+            mocap_pos=self._goal_locations[goal_order[:2]],
             impl=self._mjx_model.impl.value,
             nconmax=self._config.nconmax,
             njmax=self._config.njmax,
@@ -174,19 +172,38 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         )
 
         return jp.any(goal_distance < self._config.success_threshold)
-
+        # keys_status = data.qpos[self._key_ids]
+        # return keys_status[current_goal] < -0.015 
+                      
     def get_nothing_else_pressed(self, data, current_goal):
-        fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
-        z_positions = fingertip_positions[:, 2]
+        # fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
+        # z_positions = fingertip_positions[:, 2]
 
-        goal_distance = jp.linalg.norm(
-            fingertip_positions - self._goal_locations[current_goal], axis=1
-        )
+        # goal_distance = jp.linalg.norm(
+        #     fingertip_positions - self._goal_locations[current_goal], axis=1
+        # )
 
-        return jp.all(
-            (z_positions > 0.00) | (goal_distance < self._config.success_threshold)
-        )
+        # return jp.all(
+        #     (z_positions > -0.03) | (goal_distance < self._config.success_threshold)
+        # )
         # return jp.all((z_positions > 0.1) | (goal_distance < self._config.success_threshold))
+        keys_status = data.qpos[self._key_ids]
+        return jp.all((keys_status > -0.01) | (self._goal_ids == current_goal))
+        # key_ids = self._key_ids
+        # mask = key_ids != current_goal  # exclude that key
+        # keys_status = data.qpos[key_ids] * mask
+        # return jp.all(keys_status > -0.005)
+
+    # def get_pressing_cost(self, data):
+    #     keys_status = data.qpos[self._key_ids]
+
+    #     return jp.sum(keys_status < 0.001)
+    def get_pressing_cost(self, data, current_goal):
+        key_ids = self._key_ids
+        mask = key_ids != current_goal  # exclude that key
+        keys_status = data.qpos[key_ids] * mask
+        return jp.sum((keys_status < -0.005) * jp.abs(keys_status))
+
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         # Apply control and step the physics.
@@ -231,24 +248,31 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         # Sample a new goal and move the existing ones oen up.
         state.info["rng"], goal_rng = jax.random.split(state.info["rng"])
 
-        new_goal = jax.random.randint(goal_rng, self._config.future_goal_len, 0, 8)
+        new_goal = jax.random.randint(goal_rng, (), 0, len(self._goal_ids))
 
-        # goal_order = jp.where(
-        #     success,
-        #     jp.roll(state.info["goal_order"], 1)
-        #     .at[:1]
-        #     .set(new_goal)
-        # )
-        # )
+        shifted_goals = jp.roll(state.info["goal_order"], -1)
+        shifted_goals_with_new_goal = shifted_goals
+        shifted_goals_with_new_goal = shifted_goals_with_new_goal.at[-1].set(new_goal)
+
+        # print("success", success.shape)
+        # print("goal_order", state.info["goal_order"].shape)
+        
+        new_goal_order = jp.where(
+            success,
+            shifted_goals_with_new_goal,
+            state.info["goal_order"]
+        )
+
+        state.info["goal_order"] = new_goal_order
 
         # print(state.data.mocap_pos)
-        # data = data.replace(mocap_pos=self._goal_locations)
+        data = data.replace(mocap_pos=self._goal_locations[new_goal_order[:2]])
 
-        state.info["goal_order"] = jp.where(
-            success,
-            new_goal,
-            state.info["goal_order"],
-        )
+        # state.info["goal_order"] = jp.where(
+        #     success,
+        #     new_goal,
+        #     state.info["goal_order"],
+        # )
 
         state.metrics["reward/success"] = success.astype(float)
         reward += success * self._config.reward_config.success_reward
@@ -265,9 +289,15 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         return state
 
     def _get_termination(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        del info  # Unused.
+        # del info  # Unused.
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
         return nans
+        
+        # current_goal = info["goal_order"][0]
+        # mask = self._key_ids != current_goal  # exclude that key
+        # keys_status = data.qpos[self._key_ids] * mask
+        
+        # return nans | jp.any(keys_status < -0.015)
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
         # Hand joint angles.
@@ -289,10 +319,19 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         info["qpos_error_history"] = qpos_error_history
 
         fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
-        current_goal = info["goal_order"][0]
-        goal_distance = jp.linalg.norm(
-            fingertip_positions - self._goal_locations[current_goal], axis=1
-        )
+        # TODO: Add distances for all goals
+
+        all_goal_distances = []    
+        for goal_id in info["goal_order"]:
+            goal_distance = jp.linalg.norm(
+                fingertip_positions - self._goal_locations[goal_id], axis=1
+            )
+            all_goal_distances.append(goal_distance)
+
+        # current_goal = info["goal_order"][0]
+        # goal_distance = jp.linalg.norm(
+        #     fingertip_positions - self._goal_locations[current_goal], axis=1
+        # )
 
         goal_position_error = jp.min(goal_distance, keepdims=True)
 
@@ -302,8 +341,10 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
             [
                 noisy_joint_angles,  # 24
                 qpos_error_history,  # 24 * history_len
-                goal_position_error,
                 info["last_act"],  # 24
+                self.get_fingertip_positions(data),
+                # goal_position_error,
+                # jp.array(all_goal_distances).flatten(),
                 future_goal_poses,
             ]
         )
@@ -349,13 +390,34 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         cost_wrist_vel = jp.sum(jp.square(data.qvel[self._wrist_qids]))
 
         fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
-        current_goal = info["goal_order"][0]
-        goal_distance = jp.linalg.norm(
-            fingertip_positions - self._goal_locations[current_goal], axis=1
-        )
-        fingertip_goal_reward = jp.max(
-            reward.tolerance(goal_distance, (0, 0.005), margin=0.1, sigmoid="linear")
-        )
+        # current_goal = info["goal_order"][0]
+        # goal_distance = jp.linalg.norm(
+        #     fingertip_positions - self._goal_locations[current_goal], axis=1
+        # )
+        # fingertip_goal_reward = jp.max(
+        #     reward.tolerance(goal_distance, (0, 0.005), margin=0.1, sigmoid="linear")
+        # )
+        goal_distances = []
+        fingertip_goal_rewards = []
+        for i, goal_id in enumerate(info["goal_order"]):
+            # current_goal = info["goal_order"][0]
+            weight = 1. / (1. + i)
+            goal_distance = jp.linalg.norm(
+                fingertip_positions - self._goal_locations[goal_id], axis=1
+            )
+            fingertip_goal_reward = weight * jp.max(
+                reward.tolerance(goal_distance, (0, 0.005), margin=0.05, sigmoid="linear")
+            )
+
+            xy_goal_distance = jp.linalg.norm(
+                (fingertip_positions - self._goal_locations[goal_id, :])[:, :2], axis=1
+            )
+            goal_distances.append(weight * reward.tolerance(xy_goal_distance, (0, 0.005), margin=0.5, sigmoid="linear"))
+            # goal_distances.append(-weight * xy_goal_distance)
+
+            fingertip_goal_rewards.append(fingertip_goal_reward)
+
+        pressing_cost = self.get_pressing_cost(data, info["goal_order"][0])
 
         return {
             "termination": terminated,
@@ -369,8 +431,9 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
             "energy": self._cost_energy(
                 data.qvel[self._hand_dqids], data.actuator_force
             ),
-            "position": fingertip_goal_reward,
-            "neg_goal_distance": -jp.sum(goal_distance),
+            "position": jp.sum(jp.array(fingertip_goal_rewards)),
+            "neg_goal_distance": jp.sum(jp.array(goal_distances)),
+            "pressing_cost": pressing_cost,
         }
 
     def _cost_energy(self, qvel: jax.Array, qfrc_actuator: jax.Array) -> jax.Array:
