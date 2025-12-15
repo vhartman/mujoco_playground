@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Base classes for leap hand."""
+"""Base classes for tesollo hand."""
 
 from typing import Any, Dict, Optional, Union
 
@@ -62,7 +62,7 @@ class TesolloHandReachEnv(mjx_env.MjxEnv):
 
     cnt = 0
     self._num_rows = 2
-    self._num_cols = 4
+    self._num_cols = 6
     for i in range(self._num_rows):
         for j in range(self._num_cols):
             # key_mjcf = mujoco.MjSpec.from_file(
@@ -70,7 +70,7 @@ class TesolloHandReachEnv(mjx_env.MjxEnv):
             # )
 
             pos_x = i * 0.03 + 0.2
-            pos_y = -j * 0.03 + 0.03
+            pos_y = -j * 0.03 + 0.06
 
             # key_mjcf.body('key_0').pos[:2] = np.array([pos_x, pos_y])
             # key_mjcf.body('key_0').name = key_mjcf.body('key_0').name[:-2] + f'_{i * self._num_cols + j}'
