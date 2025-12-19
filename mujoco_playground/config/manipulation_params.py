@@ -19,6 +19,29 @@ from ml_collections import config_dict
 from mujoco_playground._src import manipulation
 
 
+def brax_sac_config(env_name: str, impl: Optional[str] = None):
+  env_config = manipulation.get_default_config(env_name)
+  rl_config = config_dict.create(
+      num_timesteps=5_000_000,
+      num_evals=10,
+      reward_scaling=1.0,
+      episode_length=env_config.episode_length,
+      normalize_observations=True,
+      action_repeat=1,
+      discounting=0.99,
+      learning_rate=1e-3,
+      num_envs=128,
+      batch_size=512,
+      grad_updates_per_step=8,
+      max_replay_size=1048576 * 4,
+      min_replay_size=8192,
+      network_factory=config_dict.create(
+          q_network_layer_norm=True,
+      ),
+  )
+  return rl_config  
+  
+
 def brax_ppo_config(
     env_name: str, impl: Optional[str] = None
 ) -> config_dict.ConfigDict:

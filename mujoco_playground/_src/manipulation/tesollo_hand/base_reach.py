@@ -61,7 +61,7 @@ class TesolloHandReachEnv(mjx_env.MjxEnv):
     # self._mj_spec.copy_during_attach = True
 
     cnt = 0
-    self._num_rows = 2
+    self._num_rows = 3
     self._num_cols = 6
     for i in range(self._num_rows):
         for j in range(self._num_cols):
@@ -69,7 +69,7 @@ class TesolloHandReachEnv(mjx_env.MjxEnv):
             #     "/home/duplo/git/robohand/src/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/key.xml",
             # )
 
-            pos_x = i * 0.03 + 0.2
+            pos_x = i * 0.03 + 0.17
             pos_y = -j * 0.03 + 0.06
 
             # key_mjcf.body('key_0').pos[:2] = np.array([pos_x, pos_y])

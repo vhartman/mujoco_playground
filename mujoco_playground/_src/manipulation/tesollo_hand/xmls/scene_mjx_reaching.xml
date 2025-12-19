@@ -31,30 +31,6 @@
       <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0" rgba="0 1 0 0.5"/>
     </body>
 
-    <!-- <body name="goal_1_0" mocap="true" pos="0.2 -0.06 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_2_0" mocap="true" pos="0.2 -0.03 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_3_0" mocap="true" pos="0.2 0.0 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_4_0" mocap="true" pos="0.2 0.03 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_1_1" mocap="true" pos="0.23 -0.06 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_2_1" mocap="true" pos="0.23 -0.03 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_3_1" mocap="true" pos="0.23 0.0 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body>
-    <body name="goal_4_1" mocap="true" pos="0.23 0.03 -0.05">
-      <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0"/>
-    </body> -->
     <body name="key_0" pos="0.2 0.03 -0.05">
         <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
         <joint name="key_joint_0" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
@@ -116,6 +92,40 @@
     <body name="key_11" pos="0.23 0.06 -0.05">
         <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
         <joint name="key_joint_11" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+
+
+    <body name="key_12" pos="0.17 0.03 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_12" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+    <body name="key_13" pos="0.17 0.0 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_13" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+    <body name="key_14" pos="0.17 -0.03 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_14" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+    <body name="key_15" pos="0.17 -0.06 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_15" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+
+    <body name="key_16" pos="0.17 0.06 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_16" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
+        <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
+    </body>
+
+    <body name="key_17" pos="0.17 -0.09 -0.05">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="key_joint_17" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
         <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
     </body>
   </worldbody>

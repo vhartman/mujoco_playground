@@ -62,7 +62,7 @@ def default_config() -> config_dict.ConfigDict:
                 joint_vel=-0.01,
                 energy=-0.001,
                 wrist_vel=-0.1,
-                pressing_cost=-1.0,
+                pressing_cost=-5.0,
             ),
             success_reward=100.0,
         ),
@@ -193,12 +193,15 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         #     (z_positions > -0.03) | (goal_distance < self._config.success_threshold)
         # )
         # return jp.all((z_positions > 0.1) | (goal_distance < self._config.success_threshold))
-        keys_status = data.qpos[self._key_ids]
-        return jp.all((keys_status > -0.01) | (self._goal_ids == current_goal))
-        # key_ids = self._key_ids
-        # mask = key_ids != current_goal  # exclude that key
-        # keys_status = data.qpos[key_ids] * mask
-        # return jp.all(keys_status > -0.005)
+        # keys_status = data.qpos[self._key_ids]
+        # return jp.all((keys_status > -0.1) | (self._goal_ids == current_goal))
+        key_ids = self._key_ids
+        mask = key_ids != current_goal  # exclude that key
+        # masked_keys_status = data.qpos[key_ids[mask]]
+        # return jp.all(masked_keys_status > -0.1)
+        valid = jp.where(mask, data.qpos[key_ids] > -0.05, True)
+
+        return jp.all(valid)
 
     # def get_pressing_cost(self, data):
     #     keys_status = data.qpos[self._key_ids]
@@ -228,7 +231,7 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
 
         success = self.get_goal_reached(
             data, state.info["goal_order"][0]
-        )  # & self.get_nothing_else_pressed(data, state.info["goal_order"][0])
+        )  & self.get_nothing_else_pressed(data, state.info["goal_order"][0])
 
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -567,8 +570,6 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         return (
             geom_friction,
             body_mass,
-            body_inertia,
-            body_ipos,
             qpos0,
             dof_frictionloss,
             dof_armature,
@@ -580,8 +581,6 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     (
         geom_friction,
         body_mass,
-        body_inertia,
-        body_ipos,
         qpos0,
         dof_frictionloss,
         dof_armature,
@@ -595,8 +594,6 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         {
             "geom_friction": 0,
             "body_mass": 0,
-            "body_inertia": 0,
-            "body_ipos": 0,
             "qpos0": 0,
             "dof_frictionloss": 0,
             "dof_armature": 0,
@@ -610,8 +607,6 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         {
             "geom_friction": geom_friction,
             "body_mass": body_mass,
-            "body_inertia": body_inertia,
-            "body_ipos": body_ipos,
             "qpos0": qpos0,
             "dof_frictionloss": dof_frictionloss,
             "dof_armature": dof_armature,
