@@ -42,7 +42,7 @@ def default_config() -> config_dict.ConfigDict:
         success_threshold=0.1,
         vel_threshold=0.5,
         ang_vel_threshold=0.5,
-        history_len=1,
+        history_len=5,
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(

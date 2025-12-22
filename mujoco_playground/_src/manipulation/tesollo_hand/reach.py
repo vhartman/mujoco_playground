@@ -62,7 +62,7 @@ def default_config() -> config_dict.ConfigDict:
                 joint_vel=-0.01,
                 energy=-0.001,
                 wrist_vel=-0.1,
-                pressing_cost=-5.0,
+                pressing_cost=-200.0,
             ),
             success_reward=100.0,
         ),
@@ -199,7 +199,7 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         mask = key_ids != current_goal  # exclude that key
         # masked_keys_status = data.qpos[key_ids[mask]]
         # return jp.all(masked_keys_status > -0.1)
-        valid = jp.where(mask, data.qpos[key_ids] > -0.05, True)
+        valid = jp.where(mask, data.qpos[key_ids] > -0.01, True)
 
         return jp.all(valid)
 
@@ -211,7 +211,9 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         key_ids = self._key_ids
         mask = key_ids != current_goal  # exclude that key
         keys_status = data.qpos[key_ids] * mask
-        return jp.sum((keys_status < -0.005) * jp.abs(keys_status))
+        # return jp.sum((keys_status < -0.005) * jp.abs(keys_status))
+        return jp.sum(jp.abs(keys_status) + jp.abs(keys_status)**2)
+        # return jp.sum((keys_status < -0.005) * (jp.abs(keys_status) + jp.abs(keys_status)**2))
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         # Apply control and step the physics.
@@ -231,7 +233,7 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
 
         success = self.get_goal_reached(
             data, state.info["goal_order"][0]
-        )  & self.get_nothing_else_pressed(data, state.info["goal_order"][0])
+        )#  & self.get_nothing_else_pressed(data, state.info["goal_order"][0])
 
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -376,6 +378,7 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
             ]
         )
 
+        # return state
         return {
             "state": state,
             "privileged_state": privileged_state,
