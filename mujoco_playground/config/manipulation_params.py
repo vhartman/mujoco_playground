@@ -140,6 +140,20 @@ def brax_ppo_config(
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
+  elif env_name == "MasspointPushCube":
+    rl_config.num_timesteps = 1_800_000_000
+    rl_config.num_evals = 10
+    rl_config.unroll_length = 100
+    rl_config.num_minibatches = 32
+    rl_config.num_updates_per_batch = 8
+    rl_config.discounting = 0.994
+    rl_config.learning_rate = 6e-4
+    rl_config.entropy_cost = 1e-2
+    rl_config.num_envs = 8192
+    rl_config.batch_size = 512
+    rl_config.num_resets_per_eval = 1
+    rl_config.num_eval_envs = 32
+    rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
   elif env_name == "LeapCubeRotateZAxis":
     rl_config.num_timesteps = 100_000_000
     rl_config.num_evals = 10
@@ -258,6 +272,24 @@ def brax_ppo_config(
     rl_config.learning_rate = 3e-4
     rl_config.entropy_cost = 1e-2
     rl_config.num_envs = 2048
+    rl_config.batch_size = 256
+    rl_config.network_factory = config_dict.create(
+        policy_hidden_layer_sizes=(512, 256, 128),
+        value_hidden_layer_sizes=(512, 256, 128),
+        policy_obs_key="state",
+        value_obs_key="privileged_state",
+    )
+    rl_config.num_resets_per_eval = 1
+  elif env_name == "MasspointReach":
+    rl_config.num_timesteps = 500_000_000
+    rl_config.num_evals = 50
+    rl_config.num_minibatches = 64
+    rl_config.unroll_length = 40
+    rl_config.num_updates_per_batch = 4
+    rl_config.discounting = 0.995
+    rl_config.learning_rate = 3e-4
+    rl_config.entropy_cost = 1e-2
+    rl_config.num_envs = 4096
     rl_config.batch_size = 256
     rl_config.network_factory = config_dict.create(
         policy_hidden_layer_sizes=(512, 256, 128),

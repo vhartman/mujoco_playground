@@ -415,7 +415,7 @@ def main(argv):
           rscope_env,
           episode_length=ppo_params.episode_length,
           action_repeat=ppo_params.action_repeat,
-          randomization_fn=training_params.get("randomization_fn"),
+          # randomization_fn=training_params.get("randomization_fn"),
       )
     else:
       rscope_env = env

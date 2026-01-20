@@ -1,6 +1,4 @@
-<mujoco model="tesollo_scene">
-  <include file="tesollo_wrist_xyz.xml"/>
-
+<mujoco model="masspoint_scene">
   <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
 
   <visual>
@@ -128,20 +126,45 @@
         <joint name="key_joint_17" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
         <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
     </body>
+
+    <body name="mp_0" pos="0.15 0.0 0.0">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="mp_0_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.0 0.1" damping="1"/>
+        <joint name="mp_0_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.12 0.1" damping="1"/>
+        <joint name="mp_0_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.06 0.0" damping="1"/>
+        <geom rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="sphere"/>
+        <site name="mp_0_tip" pos="0 0 0.0255" group="4"/>
+    </body>
+
+    <body name="mp_1" pos="0.15 0.0 0.0">
+        <inertial pos="0.0 -0.0774 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="mp_1_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.0 0.1" damping="1"/>
+        <joint name="mp_1_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.12 0.1" damping="1"/>
+        <joint name="mp_1_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".0" limited="true" stiffness="0.5" range="-0.06 0.0" damping="1"/>
+        <geom rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="sphere"/>
+        <site name="mp_1_tip" pos="0 0 0.0255" group="4"/>
+    </body>
+
   </worldbody>
 
   <sensor>
     <!-- hand. -->
-    <framepos name="palm_position" objtype="site" objname="grasp_site"/>
-    <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c"/>
-    <framepos name="rl_dg_2_tip_c_position" objtype="site" objname="rl_dg_2_tip_c"/>
-    <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c"/>
-    <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c"/>
-    <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c"/>
+    <framepos name="mp_0_tip_position" objtype="site" objname="mp_0_tip"/>
+    <framepos name="mp_1_tip_position" objtype="site" objname="mp_1_tip"/>
 
     <!-- goal. -->
     <!-- <framepos name="goal_position" objtype="body" objname="goal_1"/> -->
   </sensor>
+
+  <actuator>
+    <position kp="5" kv="2" name="mp_0_joint_0_a" joint="mp_0_joint_0" ctrlrange="-0.05 0.1"/>
+    <position kp="5" kv="2" name="mp_0_joint_1_a" joint="mp_0_joint_1" ctrlrange="-0.12 0.1"/>
+    <position kp="5" kv="2" name="mp_0_joint_2_a" joint="mp_0_joint_2" ctrlrange="-0.2 0.0"/>
+
+    <position kp="5" kv="1" name="mp_1_joint_0_a" joint="mp_1_joint_0" ctrlrange="-0.05 0.1"/>
+    <position kp="5" kv="1" name="mp_1_joint_1_a" joint="mp_1_joint_1" ctrlrange="-0.12 0.1"/>
+    <position kp="5" kv="1" name="mp_1_joint_2_a" joint="mp_1_joint_2" ctrlrange="-0.2 0.0"/>
+  </actuator>
 
   <contact>
     <exclude body1="key_0" body2="key_1"/>
@@ -200,22 +223,8 @@
 
   <keyframe>
     <key name="home"
-      qpos="
-      0 0 
-      0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 "
-      ctrl="
-      0 0 
-      0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 "/>
+      qpos="0 -0.1 0 0 0 0"
+      ctrl="0 -0.1 0 0 0 0"/>
   </keyframe>
   <!-- <keyframe>
     <key name="home"

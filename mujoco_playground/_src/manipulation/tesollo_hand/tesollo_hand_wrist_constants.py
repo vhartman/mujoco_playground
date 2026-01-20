@@ -29,6 +29,33 @@ WRIST_JOINT_NAMES = [
     "rj_wrist_1_3",
 ]
 
+FINGER_NAMES = [
+    # thumb
+    "rj_dg_1_1",
+    "rj_dg_1_2",
+    "rj_dg_1_3",
+    "rj_dg_1_4",
+    # index
+    "rj_dg_2_1",
+    "rj_dg_2_2",
+    "rj_dg_2_3",
+    "rj_dg_2_4",
+    # middle
+    "rj_dg_3_1",
+    "rj_dg_3_2",
+    "rj_dg_3_3",
+    "rj_dg_3_4",
+    # ring
+    "rj_dg_4_1",
+    "rj_dg_4_2",
+    "rj_dg_4_3",
+    "rj_dg_4_4",
+    #pinky
+    "rj_dg_5_1",
+    "rj_dg_5_2",
+    "rj_dg_5_3",
+    "rj_dg_5_4",
+]
 JOINT_NAMES = [
     "rj_wrist_1_1",
     "rj_wrist_1_2",

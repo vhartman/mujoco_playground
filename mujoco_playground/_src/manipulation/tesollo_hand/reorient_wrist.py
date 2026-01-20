@@ -109,6 +109,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         self._uppers = self._mj_model.actuator_ctrlrange[:, 1]
         self._wrist_qids = mjx_env.get_qpos_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
         self._wrist_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
+        self._finger_qids = mjx_env.get_qpos_ids(self.mj_model, consts.FINGER_NAMES)
         self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
         self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
         self._cube_qids = mjx_env.get_qpos_ids(self.mj_model, ["cube_freejoint"])

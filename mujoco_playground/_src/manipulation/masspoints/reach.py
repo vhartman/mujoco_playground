@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Reorient task for tesollo hand."""
+"""Pressing task with two masspoints."""
 
 from typing import Any, Dict, Optional, Union
 
@@ -25,11 +25,11 @@ import numpy as np
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
-from mujoco_playground._src.manipulation.tesollo_hand import (
-    base_reach as tesollo_hand_reach,
+from mujoco_playground._src.manipulation.masspoints import (
+    base_reach as masspoints_reach,
 )
-from mujoco_playground._src.manipulation.tesollo_hand import (
-    tesollo_hand_reach_constants as consts,
+from mujoco_playground._src.manipulation.masspoints import (
+    masspoint_reach_constants as consts,
 )
 
 
@@ -54,15 +54,13 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 termination=-100.0,
-                position=1.0,
+                position=0.0,
                 neg_goal_distance=0.0,
-                hand_pose=-0.01,
-                wrist_pose=-0.1,
-                action_rate=-0.00,
-                joint_vel=-0.01,
+                hand_pose=-100.,
+                action_rate=-1.,
+                joint_vel=-100.,
                 energy=-0.001,
-                wrist_vel=-0.1,
-                pressing_cost=-100.0,
+                pressing_cost=-0.0,
             ),
             success_reward=100.0,
         ),
@@ -72,7 +70,7 @@ def default_config() -> config_dict.ConfigDict:
     )
 
 
-class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
+class KeyboardMasspointReach(masspoints_reach.MasspointsReachEnv):
     """Reach a series of points with the fingertips."""
 
     def __init__(
@@ -94,14 +92,9 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         self._init_mquat = jp.array(home_key.mquat, dtype=float)
         self._lowers = self._mj_model.actuator_ctrlrange[:, 0]
         self._uppers = self._mj_model.actuator_ctrlrange[:, 1]
-        self._wrist_qids = mjx_env.get_qpos_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
-        self._wrist_dqids = mjx_env.get_qvel_ids(
-            self.mj_model, consts.WRIST_JOINT_NAMES
-        )
         self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
         self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
         self._floor_geom_id = self._mj_model.geom("floor").id
-        self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
 
         KEY_NAMES = []
@@ -156,7 +149,7 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
             "last_act": jp.zeros(self.mjx_model.nu),
             "last_last_act": jp.zeros(self.mjx_model.nu),
             "motor_targets": data.ctrl,
-            "qpos_error_history": jp.zeros(self._config.history_len * 24),
+            "qpos_error_history": jp.zeros(self._config.history_len * 6),
             "goal_order": goal_order,
         }
 
@@ -172,14 +165,14 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
     def get_goal_reached(self, data, current_goal):
-        fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
-        goal_distance = jp.linalg.norm(
-            fingertip_positions - self._goal_locations[current_goal], axis=1
-        )
+        # fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
+        # goal_distance = jp.linalg.norm(
+        #     fingertip_positions - self._goal_locations[current_goal], axis=1
+        # )
 
-        return jp.any(goal_distance < self._config.success_threshold)
-        # keys_status = data.qpos[self._key_ids]
-        # return keys_status[current_goal] < -0.015
+        # return jp.any(goal_distance < self._config.success_threshold)
+        keys_status = data.qpos[self._key_ids]
+        return keys_status[current_goal] < -0.015
 
     def get_nothing_else_pressed(self, data, current_goal):
         # fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
@@ -330,8 +323,8 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
 
         # Joint position error history.
         qpos_error_history = (
-            jp.roll(info["qpos_error_history"], 24)
-            .at[:24]
+            jp.roll(info["qpos_error_history"], 6)
+            .at[:6]
             .set(noisy_joint_angles - info["motor_targets"])
         )
         info["qpos_error_history"] = qpos_error_history
@@ -357,9 +350,9 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
 
         state = jp.concatenate(
             [
-                noisy_joint_angles,  # 24
-                qpos_error_history,  # 24 * history_len
-                info["last_act"],  # 24
+                noisy_joint_angles,  # 6
+                qpos_error_history,  # 6 * history_len
+                info["last_act"],  # 6
                 self.get_fingertip_positions(data),
                 # goal_position_error,
                 # jp.array(all_goal_distances).flatten(),
@@ -402,12 +395,6 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
             jp.square(data.qpos[self._hand_qids] - self._default_pose)
         )
 
-        wrist_pose_reward = jp.sum(
-            jp.square(data.qpos[self._wrist_qids] - self._default_wrist_pose)
-        )
-
-        cost_wrist_vel = jp.sum(jp.square(data.qvel[self._wrist_qids]))
-
         fingertip_positions = self.get_fingertip_positions(data).reshape(-1, 3)
         # current_goal = info["goal_order"][0]
         # goal_distance = jp.linalg.norm(
@@ -448,12 +435,10 @@ class KeyboardReach(tesollo_hand_reach.TesolloHandReachEnv):
         return {
             "termination": terminated,
             "hand_pose": hand_pose_reward,
-            "wrist_pose": wrist_pose_reward,
             "action_rate": self._cost_action_rate(
                 action, info["last_act"], info["last_last_act"]
             ),
             "joint_vel": self._cost_joint_vel(data),
-            "wrist_vel": cost_wrist_vel,
             "energy": self._cost_energy(
                 data.qvel[self._hand_dqids], data.actuator_force
             ),
@@ -529,20 +514,20 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         qpos0 = model.qpos0
         qpos0 = qpos0.at[hand_qids].set(
             qpos0[hand_qids]
-            + jax.random.uniform(key, shape=(24,), minval=-0.05, maxval=0.05)
+            + jax.random.uniform(key, shape=(6,), minval=-0.05, maxval=0.05)
         )
 
         # Scale static friction: *U(0.9, 1.1).
         rng, key = jax.random.split(rng)
         frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-            key, shape=(24,), minval=0.5, maxval=2.0
+            key, shape=(6,), minval=0.5, maxval=2.0
         )
         dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
 
         # Scale armature: *U(1.0, 1.05).
         rng, key = jax.random.split(rng)
         armature = model.dof_armature[hand_qids] * jax.random.uniform(
-            key, shape=(24,), minval=1.0, maxval=1.05
+            key, shape=(6,), minval=1.0, maxval=1.05
         )
         dof_armature = model.dof_armature.at[hand_qids].set(armature)
 
@@ -566,7 +551,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         # Joint damping: *U(0.8, 1.2).
         rng, key = jax.random.split(rng)
         kd = model.dof_damping[hand_qids] * jax.random.uniform(
-            key, (24,), minval=0.8, maxval=1.2
+            key, (6,), minval=0.8, maxval=1.2
         )
         dof_damping = model.dof_damping.at[hand_qids].set(kd)
 
