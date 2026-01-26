@@ -25,14 +25,14 @@ from mujoco.mjx._src import types
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward as reward_util
-from mujoco_playground._src.manipulation.masspoints import base_push
+from mujoco_playground._src.manipulation.masspoints import base_dual_push
 import numpy as np
 
 WORKSPACE_MIN = (0.3, -0.5, 0.0)
 WORKSPACE_MAX = (0.75, 0.7, 0.5)
-OBJ_SAMPLE_MIN = (0.4, -0.2, -0.005)
+OBJ_SAMPLE_MIN = (0.4, -0.4, -0.005)
 # OBJ_SAMPLE_MAX = (0.5, 0.2, 0.04)
-OBJ_SAMPLE_MAX = (0.65, 0.2, 0.04)
+OBJ_SAMPLE_MAX = (0.65, 0.4, 0.04)
 
 
 def default_config():
@@ -45,43 +45,43 @@ def default_config():
       action_repeat=4,
       action_scale=0.5,
       action_history_len=5,
-      obs_history_len=30,
+      obs_history_len=1,
       noise_config=config_dict.create(
           action_min_delay=1,  # env steps
           action_max_delay=2,  # env steps
           obs_min_delay=1,  # env steps
           obs_max_delay=2,  # env steps
           noise_scales=config_dict.create(
-              obj_pos=0.001,  # meters
-              obj_angle=1.0,  # degrees
-              robot_qpos=0.001,  # radians
-              robot_qvel=0.001,  # radians/s
+              obj_pos=0.00,  # meters
+              obj_angle=0.0,  # degrees
+              robot_qpos=0.000,  # radians
+              robot_qvel=0.000,  # radians/s
           ),
       ),
       reward_config=config_dict.create(
           termination_reward=-50.0,
           success_reward=500.0,
-          success_wait_reward=3.0,
-          success_step_count=30,
+          success_wait_reward=0.001,
+          success_step_count=10,
           reward_scales=config_dict.create(
               # Gripper goes to the box.
-              gripper_box=2.0,
+              gripper_box=0.5,
               # Box goes to the target mocap.
-              box_target=8.0,
-              box_orientation=6.0,
+              box_target=0.5,
+              box_orientation=0.5,
               # Gripper collides with side of object, instead of top.
             #   gripper_collision_side=1.0,
               # Arm stays close to target pose.
               # Reduce joint velocity.
-              joint_vel=1.0,
+              joint_vel=0.0,
               # Avoid joint vel limits.
-              joint_vel_limit=3.0,
+              joint_vel_limit=0.0,
               # Torque penalty of the arm.
-              total_command=-0.1,
+              total_command=-0.0,
               # Reduce action rate.
-              action_rate=-0.1,
+              action_rate=-0.0,
               # penalty for closeness
-              collision_penalty=-5.
+              collision_penalty=0.
           ),
       ),
       impl="jax",
@@ -100,9 +100,9 @@ def get_rand_dir(rng: jax.Array) -> jax.Array:
   return jp.array([x, y, z])
 
 ROOT_PATH = mjx_env.ROOT_PATH / "manipulation" / "masspoints"
-SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_pushing.xml"
+SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_dual_box_pushing.xml"
 
-class MasspointPushCube(base_push.MasspointsPushEnv):
+class MasspointDualPushCube(base_dual_push.MasspointsDualPushEnv):
   """Environment for pushing a cube with a Panda robot and Robotiq gripper."""
 
   def __init__(
@@ -118,12 +118,10 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
         self._post_init()
 
   def _get_rand_target_pos(
-      self, rng: jax.Array, offset: jax.Array
+      self, rng: jax.Array, offset: jax.Array, init_pos: jax.Array
   ) -> jax.Array:
-    # min_pos = jp.array([-offset * 0.4, -offset, -0.005]) + self._init_obj_pos
-    # max_pos = jp.array([offset * 0.4, offset, 0.005]) + self._init_obj_pos
-    min_pos = jp.array([-0.56 + 0.4, -offset, -0.005]) + self._init_obj_pos
-    max_pos = jp.array([-0.56 + 0.4 + offset * 0.7, offset, 0.005]) + self._init_obj_pos
+    min_pos = jp.array([-0.56 + 0.4, -offset*0.5, -0.005]) + init_pos
+    max_pos = jp.array([-0.56 + 0.4 + offset * 0.7, offset*0.5, 0.005]) + init_pos
     pos = jax.random.uniform(rng, (3,), minval=min_pos, maxval=max_pos)
     return jp.clip(pos, np.array(OBJ_SAMPLE_MIN), np.array(OBJ_SAMPLE_MAX))
 
@@ -137,27 +135,41 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     return target_quat
 
   def reset(self, rng: jax.Array) -> mjx_env.State:
-    rng, rng_box1, rng_box2, rng_target, rng_robot_arm, rng_theta = (
-        jax.random.split(rng, 6)
+    rng, rng_box1_pos, rng_box1_quat, rng_target_1, rng_robot_arm, rng_target1_theta, rng_box1, rng_box2, rng_target, rng_theta = (
+        jax.random.split(rng, 10)
     )
 
     # intialize box position
-    box_pos = self._get_rand_target_pos(rng_box1, jp.array(0.15))
-    box_pos = box_pos.at[2].set(self._init_obj_pos[2])
-    box_quat = self._get_rand_target_quat(rng_box2, jp.array(360))
+    box_1_pos = self._get_rand_target_pos(rng_box1_pos, jp.array(0.15), self._init_obj_1_pos)
+    box_1_pos = box_1_pos.at[2].set(self._init_obj_1_pos[2])
+    box_1_quat = self._get_rand_target_quat(rng_box1_quat, jp.array(360))
 
     # initialize target position
-    target_pos = self._get_rand_target_pos(rng_target, jp.array(0.05))
+    target_1_pos = self._get_rand_target_pos(rng_target_1, jp.array(0.05), self._init_obj_1_pos)
 
     # initialize target orientation
-    target_quat = self._get_rand_target_quat(rng_theta, jp.array(45))
-    target_quat = math.quat_mul(box_quat, target_quat)
+    target_1_quat = self._get_rand_target_quat(rng_target1_theta, jp.array(45))
+    target_1_quat = math.quat_mul(box_1_quat, target_1_quat)
+    
+    # intialize box position
+    box_2_pos = self._get_rand_target_pos(rng_box1, jp.array(0.15), self._init_obj_2_pos)
+    box_2_pos = box_2_pos.at[2].set(self._init_obj_2_pos[2])
+    box_2_quat = self._get_rand_target_quat(rng_box2, jp.array(360))
+
+    # initialize target position
+    target_2_pos = self._get_rand_target_pos(rng_target, jp.array(0.05), self._init_obj_2_pos)
+
+    # initialize target orientation
+    target_2_quat = self._get_rand_target_quat(rng_theta, jp.array(45))
+    target_2_quat = math.quat_mul(box_2_quat, target_2_quat)
 
     # initialize mjx.Data
     init_q = (
         jp.array(self._init_q)
-        .at[self._obj_qposadr : self._obj_qposadr + 7]
-        .set(jp.concatenate([box_pos, box_quat]))
+        .at[self._obj_1_qposadr : self._obj_1_qposadr + 7]
+        .set(jp.concatenate([box_1_pos, box_1_quat]))
+        .at[self._obj_2_qposadr : self._obj_2_qposadr + 7]
+        .set(jp.concatenate([box_2_pos, box_2_quat]))
     )
     # sample random joint position for robot arm
     init_q = init_q.at[self._masspoints_qids].set(
@@ -174,8 +186,8 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
         qpos=init_q,
         qvel=jp.zeros(self._mjx_model.nv, dtype=float),
         ctrl=self._init_ctrl,
-        mocap_pos=jp.array([target_pos, target_pos]),
-        mocap_quat=jp.array([target_quat, target_quat]),
+        mocap_pos=jp.array([target_1_pos, target_2_pos]),
+        mocap_quat=jp.array([target_1_quat, target_2_quat]),
         impl=self._mjx_model.impl.value,
         nconmax=self._config.nconmax,
         njmax=self._config.njmax,
@@ -185,18 +197,23 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     metrics = {
         "out_of_bounds": jp.array(0.0, dtype=float),
         "success": jp.array(0.0, dtype=float),
-        "success_1": jp.array(0.0, dtype=float),
-        "success_2": jp.array(0.0, dtype=float),
+        "success_1_box_1": jp.array(0.0, dtype=float),
+        "success_2_box_1": jp.array(0.0, dtype=float),
+        "success_1_box_2": jp.array(0.0, dtype=float),
+        "success_2_box_2": jp.array(0.0, dtype=float),
+        "subsuccess": jp.array(0.0, dtype=float),
         **{k: 0.0 for k in self._config.reward_config.reward_scales.keys()},
     }
     info = {
         "rng": rng,
+        "box_1_success": jp.array(0, dtype=float),
+        "box_2_success": jp.array(0, dtype=float),
         "last_action": jp.zeros(6, dtype=float),
         "action_history": jp.zeros(self._config.action_history_len * 6),
         "success_step_count": jp.array(0, dtype=int),
         "prev_step_success": jp.array(0, dtype=int),
         "curriculum_id": jp.array(0, dtype=int),
-        "angle_curriculum": jp.array([45, 45, 90, 135, 180, 180], dtype=float),
+        "angle_curriculum": jp.array([20, 30, 45, 90, 135, 180], dtype=float),
         "pos_curriculum": jp.array([0.05, 0.05, 0.1, 0.2, 0.4, 0.4], dtype=float),
     }
     obs = self._get_single_obs(data, info)
@@ -236,7 +253,8 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
         k: v * self._config.reward_config.reward_scales[k]
         for k, v in rewards.items()
     }
-    reward = jp.clip(sum(rewards.values()), -1e4, 1e4)
+    reward = sum(rewards.values())
+    # reward = jp.clip(sum(rewards.values()), -1e4, 1e4)
     reward_scale_sum = sum(
         self._config.reward_config.reward_scales[k] for k in rewards
     )
@@ -247,9 +265,12 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     reward += self._config.reward_config.termination_reward * termination
 
     # success reward
-    state, success, success_wait = self._get_success(state)
-    reward += self._config.reward_config.success_wait_reward * success_wait
+    state, success = self._get_success(state)
+    sub_success = state.info["box_1_success"] + state.info["box_2_success"]
+    reward += self._config.reward_config.success_wait_reward * sub_success
     reward += self._config.reward_config.success_reward * success
+
+    rewards["subsuccess"] = sub_success * 1.0
 
     # finalize reward
     reward *= self.dt
@@ -279,131 +300,182 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     return state
 
   def _get_termination(self, data: mjx.Data):
-    box_pos = data.xpos[self._obj_body]
-    box_oob = box_pos[2] < -0.01
-    box_oob |= (box_pos[0] > WORKSPACE_MAX[0]) | (box_pos[0] < WORKSPACE_MIN[0])
-    box_oob |= (box_pos[1] > WORKSPACE_MAX[1]) | (box_pos[1] < WORKSPACE_MIN[1])
+    box_1_pos = data.xpos[self._obj_1_body]
+    box_1_oob = box_1_pos[2] < -0.01
+    box_1_oob |= (box_1_pos[0] > WORKSPACE_MAX[0]) | (box_1_pos[0] < WORKSPACE_MIN[0])
+    box_1_oob |= (box_1_pos[1] > WORKSPACE_MAX[1]) | (box_1_pos[1] < WORKSPACE_MIN[1])
     
-    return box_oob
+    box_2_pos = data.xpos[self._obj_2_body]
+    box_2_oob = box_2_pos[2] < -0.01
+    box_2_oob |= (box_2_pos[0] > WORKSPACE_MAX[0]) | (box_2_pos[0] < WORKSPACE_MIN[0])
+    box_2_oob |= (box_2_pos[1] > WORKSPACE_MAX[1]) | (box_2_pos[1] < WORKSPACE_MIN[1])
+    
+    return box_1_oob | box_2_oob
 
   def _get_success(
       self, state: mjx_env.State
   ) -> Tuple[mjx_env.State, jax.Array, jax.Array]:
     data = state.data
-    target_pos = data.mocap_pos[self._mocap_target, :].ravel()
-    target_quat = data.mocap_quat[self._mocap_target, :].ravel()
-    box_pos = data.xpos[self._obj_body]
-    box_quat = data.xquat[self._obj_body]
-    ori_error = self._orientation_error(box_quat, target_quat)
 
-    # get success condition
-    success_cond_1 = jp.linalg.norm(target_pos - box_pos) < 0.03  # 3cm
-    success_cond_2 = ori_error < (10 / 180 * jp.pi)  # 10 degrees
-    success_cond_3 = (
-        state.info["success_step_count"]
-        >= self._config.reward_config.success_step_count
-    )
-    success = success_cond_1 & success_cond_2 & success_cond_3
+    for box_name, mocap_target, obj_body in zip(["box_1", "box_2"], [self._mocap_target_1, self._mocap_target_2], [self._obj_1_body, self._obj_2_body]):
+    # for box_name, mocap_target, obj_body in zip(["box_1"], [self._mocap_target_1], [self._obj_1_body]):
+        target_pos = data.mocap_pos[mocap_target, :].ravel()
+        target_quat = data.mocap_quat[mocap_target, :].ravel()
+        box_pos = data.xpos[obj_body]
+        box_quat = data.xquat[obj_body]
+        ori_error = self._orientation_error(box_quat, target_quat)
+
+        # get success condition
+        success_cond_1 = jp.linalg.norm(target_pos - box_pos) < 0.05  # 3cm
+        success_cond_2 = ori_error < (180 / 180 * jp.pi)  # 10 degrees
+        # success_cond_3 = (
+        #     state.info["success_step_count"]
+        #     >= self._config.reward_config.success_step_count
+        # )
+        box_success = success_cond_1 & success_cond_2
+
+        # if we have already achieved success for a box, we keep it
+        state.info[f"{box_name}_success"] = jp.maximum(box_success.astype(float), state.info[f"{box_name}_success"])
+
+        state.metrics[f"success_1_{box_name}"] = 1. * success_cond_1.astype(float)
+        state.metrics[f"success_2_{box_name}"] = 1. * success_cond_2.astype(float)
+
+    success = (state.info["box_1_success"] + state.info["box_2_success"]) > 1.5
+    # success = state.info["box_1_success"]
+    # success = state.info["box_2_success"]
 
     # report metrics
     state.metrics["success"] = success.astype(float)
-    state.metrics["success_1"] = success_cond_1.astype(float)
-    state.metrics["success_2"] = success_cond_2.astype(float)
+    # state.metrics["success_1"] = success_cond_1.astype(float)
+    # state.metrics["success_2"] = success_cond_2.astype(float)
 
-    # calculate success counter for next step
-    state.info["prev_step_success"] = (success_cond_1 & success_cond_2).astype(
-        int
-    )
-    state.info["success_step_count"] = jp.where(
-        state.info["prev_step_success"], state.info["success_step_count"] + 1, 0
-    )
-    state.info["prev_step_success"] *= 1 - success
-    state.info["success_step_count"] *= 1 - success
+    # # calculate success counter for next step
+    # state.info["prev_step_success"] = (success_cond_1 & success_cond_2).astype(
+    #     int
+    # )
+    # state.info["success_step_count"] = jp.where(
+    #     state.info["prev_step_success"], state.info["success_step_count"] + 1, 0
+    # )
+    # state.info["prev_step_success"] *= 1 - success
+    # state.info["success_step_count"] *= 1 - success
 
-    sub_success = success_cond_1 & success_cond_2
-    return state, success, sub_success
+    # sub_success = success_cond_1 & success_cond_2
+    return state, success
 
   def _reset_if_success(
       self, state: mjx_env.State, success: jax.Array
   ) -> mjx_env.State:
-    target_pos = state.data.mocap_pos[self._mocap_target, :].ravel()
-    target_quat = state.data.mocap_quat[self._mocap_target, :].squeeze()
     # increase curriculum step
     state.info["curriculum_id"] += success.astype(int)
     state.info["curriculum_id"] = jp.minimum(state.info["curriculum_id"], len(state.info["pos_curriculum"])-1)
     max_pos = state.info["pos_curriculum"][state.info["curriculum_id"]]
     max_angle = state.info["angle_curriculum"][state.info["curriculum_id"]]
+    
+    state.info["rng"], key1, key2, key3, key4 = jax.random.split(state.info["rng"], 5)
+
     # sample new target position and orientation
-    new_target_pos = jp.where(
+    target_1_pos = state.data.mocap_pos[self._mocap_target_1, :].ravel()
+    target_1_quat = state.data.mocap_quat[self._mocap_target_1, :].squeeze()
+    new_target_1_pos = jp.where(
         success,
-        self._get_rand_target_pos(state.info["rng"], max_pos),
-        target_pos,
+        self._get_rand_target_pos(key1, max_pos, self._init_obj_1_pos),
+        target_1_pos,
     )
-    new_target_quat = jp.where(
+    new_target_1_quat = jp.where(
         success,
         math.quat_mul(
-            state.data.xquat[self._obj_body],
-            self._get_rand_target_quat(state.info["rng"], max_angle),
+            state.data.xquat[self._obj_1_body],
+            self._get_rand_target_quat(key2, max_angle),
         ),
-        target_quat,
+        target_1_quat,
     )
+
+    target_2_pos = state.data.mocap_pos[self._mocap_target_2, :].ravel()
+    target_2_quat = state.data.mocap_quat[self._mocap_target_2, :].squeeze()
+    new_target_2_pos = jp.where(
+        success,
+        self._get_rand_target_pos(key3, max_pos, self._init_obj_2_pos),
+        target_2_pos,
+    )
+    new_target_2_quat = jp.where(
+        success,
+        math.quat_mul(
+            state.data.xquat[self._obj_2_body],
+            self._get_rand_target_quat(key4, max_angle),
+        ),
+        target_2_quat,
+    )
+
     data = state.data.replace(
-        mocap_pos=jp.array([new_target_pos, new_target_pos]),
-        mocap_quat=jp.array([new_target_quat, new_target_quat]),
+        mocap_pos=jp.array([new_target_1_pos, new_target_2_pos]),
+        mocap_quat=jp.array([new_target_1_quat, new_target_2_quat]),
     )
+
+    # resets box-wise success to zero if success == 1, keeps it at the same value otherwise
+    state.info["box_1_success"] = state.info["box_1_success"] * (1 - success.astype(int))
+    state.info["box_2_success"] = state.info["box_2_success"] * (1 - success.astype(int))
+
     return state.replace(data=data)
 
   def _get_reward(
       self, data: mjx.Data, info: dict[str, Any], action: jax.Array
   ) -> dict[str, jax.Array]:
-    # Target, gripper, and object rewards.
-    target_pos = data.mocap_pos[self._mocap_target, :].ravel()
-    box_pos = data.xpos[self._obj_body]
-    side_dir = box_pos - target_pos
-    side_dir = math.normalize(side_dir) * 0.1 * (math.norm(side_dir) > 1e-3)
-    box_side_pos = side_dir + box_pos
-    # gripper_pos = data.site_xpos[self._gripper_site]
+    total_box_target = 0.
+    total_box_orientation = 0.
+    total_gripper_box = 0.
+
+    gripper_box_rewards = jp.zeros((2,2), dtype=float)
+    
     masspoint_pos = self.get_fingertip_positions(data).reshape(-1, 3)
-    # masspoint_pos = self.get_fingertip_positions(data)[:3]
+        
+    # Target, gripper, and object rewards.
+    for i, (mocap_target, obj_body) in enumerate(zip([self._mocap_target_1, self._mocap_target_2], [self._obj_1_body, self._obj_2_body])):
+    # for mocap_target, obj_body in zip([self._mocap_target_1], [self._obj_1_body]):
+    # for mocap_target, obj_body in zip([self._mocap_target_2], [self._obj_2_body]):
+        target_pos = data.mocap_pos[mocap_target, :].ravel()
+        box_pos = data.xpos[obj_body]
+        side_dir = box_pos - target_pos
+        side_dir = math.normalize(side_dir) * 0.05 * (math.norm(side_dir) > 1e-3)
+        box_side_pos = side_dir + box_pos
+        # gripper_pos = data.site_xpos[self._gripper_site]
+        # masspoint_pos = self.get_fingertip_positions(data)[:3]
 
-    # print(box_pos)
-    # print(masspoint_pos)
-    # print(jp.linalg.norm(box_pos - masspoint_pos, axis=1))
+        # print(box_pos)
+        # print(masspoint_pos)
+        # print(jp.linalg.norm(box_pos - masspoint_pos, axis=1))
 
-    gripper_box = jp.sum(
-    reward_util.tolerance(
-        # jp.linalg.norm(box_pos - masspoint_pos, axis=1),
-        jp.linalg.norm(box_side_pos - masspoint_pos, axis=1),
-        # jp.linalg.norm(box_side_pos - masspoint_pos),
-        (0, 0.01),
-        margin=1.0,
-        sigmoid="linear",
-    )
-    )
+        gripper_box = reward_util.tolerance(
+                # jp.linalg.norm(box_pos - masspoint_pos, axis=1),
+                jp.linalg.norm(box_side_pos - masspoint_pos, axis=1),
+                # jp.linalg.norm(box_side_pos - masspoint_pos),
+                (0, 0.01),
+                margin=0.5,
+                sigmoid="linear",
+            )
 
-    box_target = reward_util.tolerance(
-        jp.linalg.norm(box_pos[:2] - target_pos[:2]),
-        (0, 0.005),
-        margin=0.4,
-        sigmoid="reciprocal",
-    )
+        gripper_box_rewards = gripper_box_rewards.at[i, :].set(gripper_box)
+        # jax.debug.print("{x}", x=gripper_box_rewards)
 
-    target_quat = data.mocap_quat[self._mocap_target, :].squeeze()
-    ori_error = self._orientation_error(data.xquat[self._obj_body], target_quat)
-    box_orientation = reward_util.tolerance(
-        ori_error, (0, 0.2), margin=jp.pi, sigmoid="reciprocal"
-    )
+        box_target = reward_util.tolerance(
+            jp.linalg.norm(box_pos[:2] - target_pos[:2]),
+            (0, 0.005),
+            margin=0.4,
+            sigmoid="reciprocal",
+        )
 
-    # hand_box_normal = []
-    # for sensorid in self._gripper_obj_normal_sensor:
-    #   adr = self._mj_model.sensor_adr[sensorid]
-    #   dim = self._mj_model.sensor_dim[sensorid]
-    #   hand_box_normal.append(data.sensordata[adr : adr + dim])
+        target_quat = data.mocap_quat[mocap_target, :].squeeze()
+        ori_error = self._orientation_error(data.xquat[obj_body], target_quat)
+        box_orientation = reward_util.tolerance(
+            ori_error, (0, 0.2), margin=jp.pi, sigmoid="reciprocal"
+        )
 
-    # hand_box_normal = jp.mean(jp.array(hand_box_normal), axis=0)
-    # hand_box_normal = math.normalize(hand_box_normal)
-    # hand_box_normal_side = jp.cross(jp.array([0.0, 0.0, 1.0]), hand_box_normal)
-    # gripper_collision_side = jp.linalg.norm(hand_box_normal_side)
+        total_box_target += box_target
+        total_box_orientation += box_orientation
+        # total_gripper_box += gripper_box
+
+    # jax.debug.print("{x}", x=gripper_box_rewards)
+
+    total_gripper_box = jp.sum(jp.max(gripper_box_rewards, axis=0))
 
     # Action regularization.
     joint_vel_mse = jp.linalg.norm(
@@ -433,10 +505,10 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     )
 
     return {
-        "box_target": box_target,
-        "box_orientation": box_orientation,
-        "gripper_box": gripper_box,
-        # "gripper_collision_side": gripper_collision_side,
+        "box_target": total_box_target,
+        "box_orientation": total_box_orientation,
+        "gripper_box": total_gripper_box,
+        
         "joint_vel": joint_vel,
         "joint_vel_limit": 1 - joints_near_vel_limits,
         "total_command": total_command,
@@ -473,27 +545,45 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
     return obs
 
   def _get_single_obs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-    print(data.mocap_pos)
-    print(data.mocap_pos[self._mocap_target, :])
-    target_pos = data.mocap_pos[self._mocap_target, :].ravel()
-    print(target_pos)
-    target_quat = data.mocap_quat[self._mocap_target, :].ravel()
-    target_mat = math.quat_to_mat(target_quat)
+    target_1_pos = data.mocap_pos[self._mocap_target_1, :].ravel()
+    target_1_quat = data.mocap_quat[self._mocap_target_1, :].ravel()
+    target_1_mat = math.quat_to_mat(target_1_quat)
+    target_1_orientation = target_1_mat.ravel()[3:]
+
+    target_2_pos = data.mocap_pos[self._mocap_target_2, :].ravel()
+    target_2_quat = data.mocap_quat[self._mocap_target_2, :].ravel()
+    target_2_mat = math.quat_to_mat(target_2_quat)
+    target_2_orientation = target_2_mat.ravel()[3:]
 
     # Add noise to object position and orientation.
-    info["rng"], key1, key2, key3 = jax.random.split(info["rng"], 4)
+    info["rng"], key1, key2, key3, key4, key5, key6 = jax.random.split(info["rng"], 7)
     angle = jax.random.uniform(
         key1,
         minval=0,
         maxval=self._config.noise_config.noise_scales.obj_angle * jp.pi / 180,
     )
     rand_quat = math.axis_angle_to_quat(get_rand_dir(key2), angle)
-    obj_quat = data.xquat[self._obj_body]
-    obj_quat_w_noise = math.quat_mul(rand_quat, obj_quat)
-    obj_pos = data.xpos[self._obj_body]
-    obj_pos_w_noise = obj_pos + jax.random.uniform(
+    obj_1_quat = data.xquat[self._obj_1_body]
+    obj_1_quat_w_noise = math.quat_mul(rand_quat, obj_1_quat)
+    obj_1_pos = data.xpos[self._obj_1_body]
+    obj_1_pos_w_noise = obj_1_pos + jax.random.uniform(
         key3, (3,), minval=-1, maxval=1
     ) * self._config.noise_config.noise_scales.obj_pos
+    obj_1_orientation_w_noise = math.quat_to_mat(obj_1_quat_w_noise).ravel()[3:]
+    
+    angle = jax.random.uniform(
+        key4,
+        minval=0,
+        maxval=self._config.noise_config.noise_scales.obj_angle * jp.pi / 180,
+    )
+    rand_quat = math.axis_angle_to_quat(get_rand_dir(key5), angle)
+    obj_2_quat = data.xquat[self._obj_2_body]
+    obj_2_quat_w_noise = math.quat_mul(rand_quat, obj_2_quat)
+    obj_2_pos = data.xpos[self._obj_2_body]
+    obj_2_pos_w_noise = obj_2_pos + jax.random.uniform(
+        key6, (3,), minval=-1, maxval=1
+    ) * self._config.noise_config.noise_scales.obj_pos
+    obj_2_orientation_w_noise = math.quat_to_mat(obj_2_quat_w_noise).ravel()[3:]
 
     # Add noise to robot proprio observation.
     info["rng"], key1, key2, key3 = jax.random.split(info["rng"], 4)
@@ -510,19 +600,22 @@ class MasspointPushCube(base_push.MasspointsPushEnv):
         key2, minval=0, maxval=self._config.noise_config.noise_scales.robot_qvel
     )
 
-    target_orientation = target_mat.ravel()[3:]
-    obj_orientation_w_noise = math.quat_to_mat(obj_quat_w_noise).ravel()[3:]
-
     obs = jp.concatenate([
-        target_pos,
-        target_orientation,
+        target_1_pos,
+        target_1_orientation,
+        target_2_pos,
+        target_2_orientation,
         info["last_action"],
         # Robot joint angles and velocities.
         robot_qpos_w_noise,
         robot_qvel_w_noise,
         # Object position and orientation.
-        obj_orientation_w_noise,
-        obj_pos_w_noise,
+        obj_1_orientation_w_noise,
+        obj_1_pos_w_noise,
+        obj_2_orientation_w_noise,
+        obj_2_pos_w_noise,
+        info["box_1_success"].reshape(-1),
+        info["box_2_success"].reshape(-1),
     ])
     return obs
 

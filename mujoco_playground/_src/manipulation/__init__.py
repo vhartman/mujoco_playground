@@ -36,6 +36,7 @@ from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_
 
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
+from mujoco_playground._src.manipulation.masspoints import masspoint_dual_push_cube as masspoint_dual_push
 
 _envs = {
     "AlohaHandOver": aloha_handover.HandOver,
@@ -53,7 +54,8 @@ _envs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.CubeReorient,
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
-    "MasspointPushCube":masspoint_push.MasspointPushCube
+    "MasspointPushCube":masspoint_push.MasspointPushCube,
+    "MasspointDualPushCube":masspoint_dual_push.MasspointDualPushCube,
 }
 
 _cfgs = {
@@ -73,6 +75,7 @@ _cfgs = {
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
+    "MasspointDualPushCube": masspoint_dual_push.default_config,
 
 }
 

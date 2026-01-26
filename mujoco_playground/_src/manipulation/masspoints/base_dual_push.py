@@ -42,7 +42,7 @@ def get_assets() -> Dict[str, bytes]:
   return assets
 
 
-class MasspointsPushEnv(mjx_env.MjxEnv):
+class MasspointsDualPushEnv(mjx_env.MjxEnv):
   """Base class for masspoint push environments."""
 
   def __init__(
@@ -75,30 +75,50 @@ class MasspointsPushEnv(mjx_env.MjxEnv):
     self._jnt_vel_range = np.array(self.jnt_vel_range())
 
     self._joint_range_init_percent_limit = np.array(
-        [1., 1., 1., 1., 1., 1.0]
+        [1., 1., 1., 1., 1., 1.]
     )
     self._joint_vel_limit_percentage = 0.9
 
-    obj_name="box"
+    obj_1_name="box_1"
+    obj_2_name="box_2"
     keyframe="home"
     
-    self._obj_body = self.mj_model.body(obj_name).id
-    self._obj_geom = self.mj_model.geom(obj_name).id
-    self._obj_qposadr = self.mj_model.jnt_qposadr[
-        self.mj_model.body(obj_name).jntadr[0]
+    self._obj_1_body = self.mj_model.body(obj_1_name).id
+    self._obj_1_geom = self.mj_model.geom(obj_1_name).id
+    self._obj_1_qposadr = self.mj_model.jnt_qposadr[
+        self.mj_model.body(obj_1_name).jntadr[0]
     ]
-    self._mocap_target = self.mj_model.body("mocap_target").mocapid
+
+    self._obj_2_body = self.mj_model.body(obj_2_name).id
+    self._obj_2_geom = self.mj_model.geom(obj_2_name).id
+    self._obj_2_qposadr = self.mj_model.jnt_qposadr[
+        self.mj_model.body(obj_2_name).jntadr[0]
+    ]
+
+    self._mocap_target_1 = self.mj_model.body("mocap_target_1").mocapid
+    self._mocap_target_2 = self.mj_model.body("mocap_target_2").mocapid
+
     self._floor_geom = self.mj_model.geom("floor").id
     self._wall_geom = self.mj_model.geom("wall").id
     self._init_q = self.mj_model.keyframe(keyframe).qpos.copy()
-    self._init_obj_pos = np.array(
-        self._init_q[self._obj_qposadr : self._obj_qposadr + 3],
+    self._init_obj_1_pos = np.array(
+        self._init_q[self._obj_1_qposadr : self._obj_1_qposadr + 3],
         dtype=np.float32,
     )
-    self._init_obj_quat = np.array(
-        self._init_q[self._obj_qposadr + 3 : self._obj_qposadr + 7],
+    self._init_obj_1_quat = np.array(
+        self._init_q[self._obj_1_qposadr + 3 : self._obj_1_qposadr + 7],
         dtype=np.float32,
     )
+
+    self._init_obj_2_pos = np.array(
+        self._init_q[self._obj_2_qposadr : self._obj_2_qposadr + 3],
+        dtype=np.float32,
+    )
+    self._init_obj_2_quat = np.array(
+        self._init_q[self._obj_2_qposadr + 3 : self._obj_2_qposadr + 7],
+        dtype=np.float32,
+    )
+
     self._init_ctrl = self.mj_model.keyframe(keyframe).ctrl
     self._lowers, self._uppers = self.mj_model.actuator_ctrlrange.T
   
@@ -121,6 +141,7 @@ class MasspointsPushEnv(mjx_env.MjxEnv):
         [-0.1, 0.1],
         [-0.05, 0.05],
     ]
+
   # Sensor readings.
   def get_fingertip_positions(self, data: mjx.Data) -> jax.Array:
     """Get fingertip positions relative to the grasp site."""
