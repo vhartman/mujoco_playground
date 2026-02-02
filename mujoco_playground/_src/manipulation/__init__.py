@@ -37,6 +37,12 @@ from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
 from mujoco_playground._src.manipulation.masspoints import masspoint_dual_push_cube as masspoint_dual_push
+from mujoco_playground._src.manipulation.masspoints import masspoint_goal_reach as masspoint_goal_reach
+from mujoco_playground._src.manipulation.masspoints import masspoint_goal_reach_sequence as masspoint_goal_reach_sequence
+
+from mujoco_playground._src.manipulation.ur10 import ur10_goal_reach as ur10_goal_reach
+from mujoco_playground._src.manipulation.ur10 import ur10_goal_reach_unassigned as ur10_goal_reach_unassigned
+
 
 _envs = {
     "AlohaHandOver": aloha_handover.HandOver,
@@ -53,9 +59,15 @@ _envs = {
     "TesolloCubeRotateZAxis": tesollo_rotate_z.CubeRotateZAxis,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.CubeReorient,
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
+
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
     "MasspointDualPushCube":masspoint_dual_push.MasspointDualPushCube,
+    "MasspointReachGoal": masspoint_goal_reach.MasspointGoalReach,
+    "MasspointReachGoalSequence": masspoint_goal_reach_sequence.MasspointGoalReachSequence,
+
+    "UR10GoalReach": ur10_goal_reach.DualUR10GoalReach,
+    "UnassignedUR10GoalReach": ur10_goal_reach_unassigned.UnassignedDualUR10GoalReach
 }
 
 _cfgs = {
@@ -73,10 +85,15 @@ _cfgs = {
     "TesolloCubeRotateZAxis": tesollo_rotate_z.default_config,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
+
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
     "MasspointDualPushCube": masspoint_dual_push.default_config,
+    "MasspointReachGoal": masspoint_goal_reach.default_config,
+    "MasspointReachGoalSequence":masspoint_goal_reach_sequence.default_config,
 
+    "UR10GoalReach": ur10_goal_reach.default_config,
+    "UnassignedUR10GoalReach": ur10_goal_reach_unassigned.default_config
 }
 
 _randomizer = {
@@ -88,6 +105,7 @@ _randomizer = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
+
 }
 
 

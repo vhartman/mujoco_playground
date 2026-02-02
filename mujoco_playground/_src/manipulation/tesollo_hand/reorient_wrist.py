@@ -47,12 +47,12 @@ def default_config() -> config_dict.ConfigDict:
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
-                joint_pos=0.025,
-                cube_pos=0.005,
-                cube_ori=0.05,
-                # joint_pos=0.0,
-                # cube_pos=0.0,
-                # cube_ori=0.0,
+                # joint_pos=0.025,
+                # cube_pos=0.005,
+                # cube_ori=0.05,
+                joint_pos=0.0,
+                cube_pos=0.0,
+                cube_ori=0.0,
             ),
             random_ori_injection_prob=0.0,
         ),

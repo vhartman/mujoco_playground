@@ -70,7 +70,7 @@
         <joint name="mp_0_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="0.5" frictionloss="0.02"/>
         <joint name="mp_0_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="0.5" frictionloss="0.02"/>
         <joint name="mp_0_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" springref=".0" range="-0.05 0.05" damping="0.1" frictionloss="0.02"/>
-        <geom rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
+        <geom name="mp_0" rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
         <site name="mp_0_tip" pos="0 0 0.0255" group="4"/>
     </body>
 
@@ -79,7 +79,7 @@
         <joint name="mp_1_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="1"/>
         <joint name="mp_1_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="1"/>
         <joint name="mp_1_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" range="-0.05 0.05" damping="0.1" springref=".0"/>
-        <geom rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
+        <geom name="mp_1" rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
         <site name="mp_1_tip" pos="0 0 0.0255" group="4"/>
     </body>
 
