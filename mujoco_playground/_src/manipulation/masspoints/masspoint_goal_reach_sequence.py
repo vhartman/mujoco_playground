@@ -30,8 +30,10 @@ import numpy as np
 
 WORKSPACE_MIN = (0.3, -0.5, 0.0)
 WORKSPACE_MAX = (0.75, 0.7, 0.5)
+# OBJ_SAMPLE_MIN = (0.2, -0.5, -0.005)
+# OBJ_SAMPLE_MAX = (0.7, 0.5, 0.04)
+
 OBJ_SAMPLE_MIN = (0.4, -0.4, -0.005)
-# OBJ_SAMPLE_MAX = (0.5, 0.2, 0.04)
 OBJ_SAMPLE_MAX = (0.65, 0.4, 0.04)
 
 
@@ -43,7 +45,7 @@ def default_config():
       sim_dt=0.005,
       episode_length=3000,
       action_repeat=4,
-      action_scale=0.5,
+      action_scale=1.5,
       action_history_len=5,
       obs_history_len=1,
       noise_config=config_dict.create(
@@ -79,7 +81,7 @@ def default_config():
               # Reduce action rate.
               action_rate=-0.1,
               # penalty for closeness
-              collision_penalty=0.
+              collision_penalty=-10.
           ),
       ),
       impl="jax",
@@ -118,8 +120,8 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
   def _get_rand_target_pos(
       self, rng: jax.Array, offset: jax.Array, init_pos: jax.Array
   ) -> jax.Array:
-    min_pos = jp.array([-0.56 + 0.4, -offset*0.5, -0.005]) + init_pos
-    max_pos = jp.array([-0.56 + 0.4 + offset * 0.7, offset*0.5, 0.005]) + init_pos
+    min_pos = jp.array([-offset * 0.25, -offset*0.2, -0.005]) + init_pos
+    max_pos = jp.array([offset * 0.25, offset*0.2, 0.005]) + init_pos
     pos = jax.random.uniform(rng, (3,), minval=min_pos, maxval=max_pos)
     return jp.clip(pos, np.array(OBJ_SAMPLE_MIN), np.array(OBJ_SAMPLE_MAX))
 
@@ -199,7 +201,8 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
         "prev_step_success": jp.array(0, dtype=int),
         "curriculum_id": jp.array(0, dtype=int),
         "angle_curriculum": jp.array([20, 30, 45, 90, 135, 180], dtype=float),
-        "pos_curriculum": jp.array([0.05, 0.05, 0.1, 0.2, 0.4, 0.4], dtype=float),
+        # "pos_curriculum": jp.array([1., 1., 1., 1., 1., 1.], dtype=float),
+        "pos_curriculum": jp.array([0.05, 0.1, 0.3, 0.5, 0.8, 1.], dtype=float),
     }
     obs = self._get_single_obs(data, info)
     info["obs_history"] = jp.zeros(self._config.obs_history_len * obs.shape[0])
