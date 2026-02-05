@@ -167,6 +167,8 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    # rl_config.network_factory.init_noise_std = 5.,
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
     # rl_config.network_factory.policy_hidden_layer_sizes = (256, 256, 256)
   elif env_name == "MasspointReachGoal" or env_name == "MasspointReachGoalSequence":
@@ -182,6 +184,7 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
   elif env_name == "UR10GoalReach" or env_name == "UnassignedUR10GoalReach":
     rl_config.num_timesteps = 5_800_000_000
@@ -196,6 +199,8 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    # rl_config.network_factory.init_noise_std = 5.,
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
     # rl_config.network_factory.policy_hidden_layer_sizes = (256, 256, 256)
   elif env_name == "LeapCubeRotateZAxis":

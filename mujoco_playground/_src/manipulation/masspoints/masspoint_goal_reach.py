@@ -43,7 +43,7 @@ def default_config():
       sim_dt=0.005,
       episode_length=3000,
       action_repeat=4,
-      action_scale=0.5,
+      action_scale=1.,
       action_history_len=5,
       obs_history_len=1,
       noise_config=config_dict.create(

@@ -1,4 +1,6 @@
 <mujoco model="masspoint_scene">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
   <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
 
   <option timestep="0.005" iterations="10" ls_iterations="10" integrator="implicitfast">
@@ -40,28 +42,16 @@
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" contype="1" pos="0 0 -0.0197"/>
 
     <light pos="0 0 3" dir="0 0 -1" directional="true"/>
-    <geom name="wall" size="0.48 0.75 0.05" type="plane" contype="1" pos="0.946 0 0.5" quat="1 0 -1 0"/>
     <geom name="pad" type="box" pos="0.54586 0.02337 -0.02" size="0.315 0.6 0.01" contype="0" conaffinity="0" rgba="0.5 0.5 0.5 0.2"/>
     <geom name="camera_tracking_box" type="box" pos="0.59586 0.02337 -0.02" size="0.21 0.32 0.02" contype="0" conaffinity="0" rgba="0.5 0.0 0.5 0.1"/>
-    <body name="box_1" pos="0.5 0 0.0">
-      <freejoint name="box_1_joint"/>
-      <geom type="box" name="box_1" size="0.07553 0.11482 0.05073" condim="3"
-        friction="0.6"  solref="0.02 1" priority="1"
-        mass="0.05" material="box"/>
-    </body>
+    
     <body mocap="true" name="mocap_target_1">
-      <geom type="box" size="0.05 0.07 0.05073" contype="0" conaffinity="0"
+      <geom type="box" size="0.02 0.02 0.02" contype="0" conaffinity="0"
        material="box_alpha"/>
     </body>
 
-    <body name="box_2" pos="0.5 0 0.0">
-      <freejoint name="box_2_joint"/>
-      <geom type="box" name="box_2" size="0.07553 0.11482 0.05073" condim="3"
-        friction="0.6"  solref="0.02 1" priority="1"
-        mass="0.05" material="box"/>
-    </body>
     <body mocap="true" name="mocap_target_2">
-      <geom type="box" size="0.05 0.07 0.05073" contype="0" conaffinity="0"
+      <geom type="box" size="0.02 0.02 0.02" contype="0" conaffinity="0"
        material="box_alpha"/>
     </body>
 
@@ -70,7 +60,8 @@
         <joint name="mp_0_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="0.5" frictionloss="0.02"/>
         <joint name="mp_0_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="0.5" frictionloss="0.02"/>
         <joint name="mp_0_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" springref=".0" range="-0.05 0.05" damping="0.1" frictionloss="0.02"/>
-        <geom name="mp_0" rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
+        <joint name="mp_0_joint_3" pos="0.0 0.0 0.0" axis="0 0 1" type="hinge" limited="true" springref=".0" range="-3.2 3.2" damping="0.1" frictionloss="0.02"/>
+        <geom rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.04 0.04 0.04" type="box"/>
         <site name="mp_0_tip" pos="0 0 0.0255" group="4"/>
     </body>
 
@@ -79,7 +70,8 @@
         <joint name="mp_1_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="1"/>
         <joint name="mp_1_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="1"/>
         <joint name="mp_1_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" range="-0.05 0.05" damping="0.1" springref=".0"/>
-        <geom name="mp_1" rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.02 0.01 0.005" type="sphere"/>
+        <joint name="mp_1_joint_3" pos="0.0 0.0 0.0" axis="0 0 1" type="hinge" limited="true" springref=".0" range="-3.2 3.2" damping="0.1" frictionloss="0.02"/>
+        <geom rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.04 0.04 0.04" type="box"/>
         <site name="mp_1_tip" pos="0 0 0.0255" group="4"/>
     </body>
 
@@ -95,17 +87,17 @@
     <position kp="3" kv="1" name="mp_0_joint_0_a" joint="mp_0_joint_0" ctrlrange="-0.0 0.8"/>
     <position kp="3" kv="1" name="mp_0_joint_1_a" joint="mp_0_joint_1" ctrlrange="-0.5 0.5"/>
     <position kp="5" kv="1" name="mp_0_joint_2_a" joint="mp_0_joint_2" ctrlrange="-0.05 0.05"/>
+    <position kp="5" kv="1" name="mp_0_joint_3_a" joint="mp_0_joint_3" ctrlrange="-3.2 3.2"/>
 
     <position kp="3" kv="1" name="mp_1_joint_0_a" joint="mp_1_joint_0" ctrlrange="-0.0 0.8"/>
     <position kp="3" kv="1" name="mp_1_joint_1_a" joint="mp_1_joint_1" ctrlrange="-0.5 0.5"/>
     <position kp="5" kv="1" name="mp_1_joint_2_a" joint="mp_1_joint_2" ctrlrange="-0.05 0.05"/>
+    <position kp="5" kv="1" name="mp_1_joint_3_a" joint="mp_1_joint_3" ctrlrange="-3.2 3.2"/>
   </actuator>
 
   <keyframe>
     <key name="home"
-      qpos="0.56784 -0.153974 0.0306525 0 0 0 0.99882
-      0.56784 0.15 0.0306525 0 0 0 0.99882 
-      0.3 -0.1 0 0.3 0 0"
+      qpos="0.3 -0.1 0 0.3 0 0"
       ctrl="0.3 -0.1 0 0.3 0 0"/>
   </keyframe>
 </mujoco>
