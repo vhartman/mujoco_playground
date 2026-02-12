@@ -40,6 +40,9 @@
     <framezaxis name="cube_upvector" objtype="body" objname="cube"/>
 
     <!-- hand. -->
+    <framepos name="wrist_position" objtype="site" objname="wrist_site"/>
+    <framequat name="wrist_orientation" objtype="site" objname="wrist_site"/>
+    
     <framepos name="palm_position" objtype="site" objname="grasp_site"/>
     <framequat name="palm_orientation" objtype="site" objname="grasp_site"/>
     <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c" reftype="site" refname="grasp_site"/>

@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Base classes for leap hand."""
+"""Base classes for tesollo hand."""
 
 from typing import Any, Dict, Optional, Union
 
+import numpy as np
 from etils import epath
 import jax
 import jax.numpy as jp
@@ -24,8 +25,10 @@ import mujoco
 from mujoco import mjx
 
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_wrist_constants as consts
+from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_grasp_constants as consts
 
+import mujoco.viewer
+import time
 
 def get_assets() -> Dict[str, bytes]:
   assets = {}
@@ -39,7 +42,7 @@ def get_assets() -> Dict[str, bytes]:
   return assets
 
 
-class TesolloHandWristEnv(mjx_env.MjxEnv):
+class TesolloHandGraspEnv(mjx_env.MjxEnv):
   """Base class for TESOLLO hand environments."""
 
   def __init__(
@@ -50,9 +53,10 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
   ) -> None:
     super().__init__(config, config_overrides)
     self._model_assets = get_assets()
-    self._mj_model = mujoco.MjModel.from_xml_string(
-        epath.Path(xml_path).read_text(), assets=self._model_assets
-    )
+    self._mj_spec = mujoco.MjSpec.from_file(xml_path, assets=self._model_assets)
+
+    self._mj_model = self._mj_spec.compile()
+
     self._mj_model.opt.timestep = self._config.sim_dt
 
     self._mj_model.vis.global_.offwidth = 3840
@@ -61,20 +65,26 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
 
+    # d = mujoco.MjData(self._mj_model)
+    
+    # with mujoco.viewer.launch_passive(self._mj_model, d) as viewer:
+    #   # Close the viewer automatically after 30 wall-seconds.
+    #   while viewer.is_running():
+    #     # mj_step can be replaced with code that also evaluates
+    #     # a policy and applies a control signal before stepping the physics.
+    #     mujoco.mj_step(self._mj_model, d)
+
+    #     # Example modification of a viewer option: toggle contact points every two seconds.
+    #     with viewer.lock():
+    #       viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(d.time % 2)
+
+    #     # Pick up changes to the physics state, apply perturbations, update options from GUI.
+    #     viewer.sync()
+
+    #     # Rudimentary time keeping, will drift relative to wall clock.
+    #     time.sleep(0.01)
+
   # Sensor readings.
-
-  def get_wrist_position(self, data: mjx.Data) -> jax.Array:
-    return mjx_env.get_sensor_data(self.mj_model, data, "wrist_position")
-
-  def get_wrist_orientation(self, data: mjx.Data) -> jax.Array:
-    return mjx_env.get_sensor_data(self.mj_model, data, "wrist_orientation")
-
-  def get_palm_position(self, data: mjx.Data) -> jax.Array:
-    return mjx_env.get_sensor_data(self.mj_model, data, "palm_position")
-
-  def get_palm_orientation(self, data: mjx.Data) -> jax.Array:
-    return mjx_env.get_sensor_data(self.mj_model, data, "palm_orientation")
-
   def get_cube_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "cube_position")
 
@@ -98,6 +108,11 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
 
   def get_cube_goal_upvector(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "cube_goal_upvector")
+  def get_palm_position(self, data: mjx.Data) -> jax.Array:
+    return mjx_env.get_sensor_data(self.mj_model, data, "palm_position")
+
+  def get_palm_orientation(self, data: mjx.Data) -> jax.Array:
+    return mjx_env.get_sensor_data(self.mj_model, data, "palm_orientation")
 
   def get_fingertip_positions(self, data: mjx.Data) -> jax.Array:
     """Get fingertip positions relative to the grasp site."""
