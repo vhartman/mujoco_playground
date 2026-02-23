@@ -58,10 +58,12 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
+                fingertip_pos = 0.5,
+
                 cube_ang_vel=-0.1,
                 cube_lin_vel=-0.1,
                 orientation=5.0,
-                position=0.5,
+                position=0.01,
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
@@ -420,6 +422,14 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         cube_pos_reward = reward.tolerance(
             cube_pose_mse, (0, 0.02), margin=0.05, sigmoid="linear"
         )
+        
+        fingertip_distances = self.get_fingertip_global_positions(data).reshape(-1, 3) - cube_pos
+        # fingertip_reward = jp.sum(jp.linalg.norm(fingertip_distances, axis=1))
+        fingertip_reward = jp.sum(
+            reward.tolerance(
+                jp.linalg.norm(fingertip_distances, axis=1), (0, 0.035), margin=0.05, sigmoid="reciprocal"
+            )
+        )
 
         terminated = self._get_termination(data, info)
 
@@ -439,6 +449,8 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         cube_ang_vel = self._cube_ang_velocity(data)
 
         return {
+            "fingertip_pos": fingertip_reward,
+
             "cube_lin_vel": cube_lin_vel,
             "cube_ang_vel": cube_ang_vel,
             "orientation": self._reward_cube_orientation(data),

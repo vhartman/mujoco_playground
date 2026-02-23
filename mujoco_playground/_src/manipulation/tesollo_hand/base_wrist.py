@@ -105,6 +105,13 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
         mjx_env.get_sensor_data(self.mj_model, data, f"{name}_position")
         for name in consts.FINGERTIP_NAMES
     ])
+  
+  def get_fingertip_global_positions(self, data: mjx.Data) -> jax.Array:
+    """Get fingertip positions relative to the grasp site."""
+    return jp.concatenate([
+        mjx_env.get_sensor_data(self.mj_model, data, f"{name}_position_global")
+        for name in consts.FINGERTIP_NAMES
+    ])
 
   # Accessors.
 
