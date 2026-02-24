@@ -41,7 +41,7 @@ def default_config():
       sim_dt=0.005,
       episode_length=3000,
       action_repeat=4,
-      action_scale=2.,
+      action_scale=1.5,
       action_history_len=5,
       obs_history_len=1,
       noise_config=config_dict.create(
@@ -66,18 +66,18 @@ def default_config():
               box_target=0.1,
               box_orientation=0.01,
               # penalty for going far away from initial q
-              joint_pose_diff=-0.05,              
+              joint_pose_diff=-0.01,              
               # Reduce joint velocity.
-              joint_vel=1.,
+              joint_vel=0.1,
               # Avoid joint vel limits.
-              joint_vel_limit=1.,
+              joint_vel_limit=0.1,
               # Torque penalty of the arm.
               total_command=-0.0,
               # Reduce action rate.
               action_rate=-0.0,
               # penalty for closeness
             #   collision_penalty=-0.01
-              collision_penalty=-0.0
+              collision_penalty=-0.01
           ),
       ),
       impl="jax",
@@ -464,6 +464,7 @@ class UnassignedDualUR10GoalReach(ur10_base.DualUR10Base):
     robot_qpos = data.qpos[
         self._robots_qids
     ]
+    # joint_pos_diff = jp.sum(jp.abs(self._init_q[self._robots_qids] - robot_qpos))
     joint_pos_diff = jp.linalg.norm(self._init_q[self._robots_qids] - robot_qpos)
 
     contact_margin = 0.0
