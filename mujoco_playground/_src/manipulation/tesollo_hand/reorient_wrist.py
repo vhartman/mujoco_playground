@@ -50,15 +50,16 @@ def default_config() -> config_dict.ConfigDict:
                 # joint_pos=0.025,
                 # cube_pos=0.005,
                 # cube_ori=0.05,
-                joint_pos=0.0,
-                cube_pos=0.0,
+                joint_pos=0.00,
+                cube_pos=0.00,
                 cube_ori=0.0,
             ),
-            random_ori_injection_prob=0.0,
+            random_ori_injection_prob=0.00,
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos = 0.5,
+                fingertip_pos = 0.1,
+                cube_force = -0.1,
 
                 cube_ang_vel=-0.1,
                 cube_lin_vel=-0.1,
@@ -67,8 +68,8 @@ def default_config() -> config_dict.ConfigDict:
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
-                action_rate=-0.005,
-                joint_vel=-0.01,
+                action_rate=-0.05,
+                joint_vel=-0.1,
                 energy=-1e-3,
                 wrist_vel=-0.1,
             ),
@@ -348,8 +349,8 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         noisy_pose = noisy_pose * (1 - m) + rand_pose * m
 
         # Cube position error history.
-        palm_pos = self.get_palm_position(data)
-        cube_pos_error = palm_pos - noisy_pose[:3]
+        wrist_pos = self.get_wrist_position(data)
+        cube_pos_error = noisy_pose[:3] - wrist_pos
         cube_pos_error_history = (
             jp.roll(info["cube_pos_error_history"], 3).at[:3].set(cube_pos_error)
         )
@@ -367,7 +368,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         info["cube_ori_error_history"] = cube_ori_error_history
 
         # Uncorrupted cube pose for critic.
-        cube_pos_error_uncorrupted = palm_pos - self.get_cube_position(data)
+        cube_pos_error_uncorrupted = self.get_cube_position(data) - wrist_pos
         cube_quat_uncorrupted = self.get_cube_orientation(data)
         quat_diff_uncorrupted = math.quat_mul(
             cube_quat_uncorrupted, math.quat_inv(goal_quat)
@@ -378,7 +379,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
             [
                 noisy_joint_angles,  # 23
                 qpos_error_history,  # 23 * history_len
-                cube_pos_error_history,  # 3 * history_len
+                0 * cube_pos_error_history,  # 3 * history_len
                 cube_ori_error_history,  # 6 * history_len
                 info["last_act"],  # 23
             ]
@@ -448,8 +449,20 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         cube_lin_vel = self._cube_lin_velocity(data)
         cube_ang_vel = self._cube_ang_velocity(data)
 
+        def get_contact_forces(data):
+            return mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1,3)
+
+        # size is 10*3
+        contact_forces = jp.linalg.norm(get_contact_forces(data),axis=1)
+        sum_contact_forces = jp.sum(contact_forces)
+
+        # jax.debug.print("contact {x}", x=contact_forces)
+        # jax.debug.print("sum {x}", x=sum_contact_forces)
+
         return {
             "fingertip_pos": fingertip_reward,
+
+            "cube_force": sum_contact_forces,
 
             "cube_lin_vel": cube_lin_vel,
             "cube_ang_vel": cube_ang_vel,
@@ -584,14 +597,14 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
         rng, key = jax.random.split(rng)
         # Fingertip friction: =U(0.5, 1.0).
-        silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=1.0)
+        silicone_friction = jax.random.uniform(key, (1,), minval=1.0, maxval=2.0)
         geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(
             silicone_friction
         )
 
         # Scale cube mass: *U(0.8, 1.2).
         rng, key1, key2 = jax.random.split(rng, 3)
-        dmass = jax.random.uniform(key1, minval=0.8, maxval=1.2)
+        dmass = jax.random.uniform(key1, minval=0.5, maxval=1.5)
         body_inertia = model.body_inertia.at[cube_body_id].set(
             model.body_inertia[cube_body_id] * dmass
         )

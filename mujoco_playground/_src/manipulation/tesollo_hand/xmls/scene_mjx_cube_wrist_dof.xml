@@ -26,7 +26,7 @@
     <body name="goal" mocap="true" pos="0.325 0.17 0.0475">
       <!-- <geom type="mesh" mesh="cube_mesh" material="dexcube" contype="0" conaffinity="0" density="0" group="2"/> -->
       <geom type="mesh" mesh="cube_mesh" material="dexcube" contype="0" conaffinity="0" density="0" group="2"/>
-      <geom type="box" size=".025 .025 .025" mass=".108" group="3"/>
+      <geom type="box" size=".035 .035 .035" mass=".05" group="3"/>
     </body>
   </worldbody>
 
@@ -38,6 +38,8 @@
     <frameangvel name="cube_angvel" objtype="body" objname="cube"/>
     <frameangacc name="cube_angacc" objtype="body" objname="cube"/>
     <framezaxis name="cube_upvector" objtype="body" objname="cube"/>
+
+    <contact name="cube_force" geom1="cube" num="10" data="force"/>
 
     <!-- hand. -->
     <framepos name="wrist_position" objtype="site" objname="wrist_site"/>
@@ -83,7 +85,7 @@
   <keyframe>
     <key name="home"
       qpos="
-      0 0 0
+      0 -0.3 0
       0.06 -0.6 0.6 0.6
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
@@ -91,7 +93,7 @@
       0.1 0.47 1.1 0.5
       0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
       ctrl="
-      0 0 0
+      0 -0.3 0
       0.06 -0.6 0.6 0.6
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
