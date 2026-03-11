@@ -60,6 +60,9 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
 
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
+    
+    # self._mjx_model.opt._impl.contact_sensor_maxmatch = 128
+    # print(self._mjx_model.opt)
 
   # Sensor readings.
 

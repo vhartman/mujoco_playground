@@ -50,16 +50,16 @@ def default_config() -> config_dict.ConfigDict:
                 # joint_pos=0.025,
                 # cube_pos=0.005,
                 # cube_ori=0.05,
-                joint_pos=0.00,
-                cube_pos=0.00,
-                cube_ori=0.0,
+                joint_pos=0.001,
+                cube_pos=0.01,
+                cube_ori=0.01,
             ),
             random_ori_injection_prob=0.00,
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos = 0.1,
-                cube_force = -0.1,
+                fingertip_pos = 0.5,
+                cube_force = -0.5,
 
                 cube_ang_vel=-0.1,
                 cube_lin_vel=-0.1,
@@ -68,8 +68,8 @@ def default_config() -> config_dict.ConfigDict:
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
-                action_rate=-0.05,
-                joint_vel=-0.1,
+                action_rate=-0.01,
+                joint_vel=-0.01,
                 energy=-1e-3,
                 wrist_vel=-0.1,
             ),
@@ -82,7 +82,7 @@ def default_config() -> config_dict.ConfigDict:
             pert_duration_steps=[1, 100],
             pert_wait_steps=[60, 150],
         ),
-        impl="jax",
+        impl="warp",
         nconmax=200 * 8192,
         njmax=1024,
     )
@@ -452,11 +452,16 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         def get_contact_forces(data):
             return mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1,3)
 
-        # size is 10*3
-        contact_forces = jp.linalg.norm(get_contact_forces(data),axis=1)
-        sum_contact_forces = jp.sum(contact_forces)
+        # size is 100*3
+        contact_forces_norm = jp.linalg.norm(get_contact_forces(data),axis=1)
+        contact_forces_reward = 1 - reward.tolerance(
+            contact_forces_norm,
+            (0,2),
+            2,
+        )
+        sum_contact_forces = jp.sum(contact_forces_reward)
 
-        # jax.debug.print("contact {x}", x=contact_forces)
+        # jax.debug.print("contact {x}", x=contact_forces_norm)
         # jax.debug.print("sum {x}", x=sum_contact_forces)
 
         return {
