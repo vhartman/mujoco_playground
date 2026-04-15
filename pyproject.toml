@@ -33,6 +33,7 @@ dependencies = [
     "mujoco>=3.3.6.dev",
     "mujoco-warp>=3.7.0.1",
     "orbax-checkpoint>=0.11.22",
+    "rscope",
     "tqdm",
     "opencv-python",
     "zmq",
@@ -56,6 +57,7 @@ mujoco = { index = "mujoco" }
 warp-lang = { index = "nvidia" }
 mujoco-mjx = { git = "https://github.com/google-deepmind/mujoco", rev = "main", subdirectory = "mjx" }
 mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp"}
+rscope = { git = "https://github.com/vhartman/rscope.git" }
 
 [project.optional-dependencies]
 warp = [
