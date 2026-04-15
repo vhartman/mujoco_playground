@@ -32,6 +32,7 @@ dependencies = [
     "mujoco-mjx>=3.3.6.dev",
     "mujoco>=3.3.6.dev",
     "orbax-checkpoint>=0.11.22",
+    "rscope",
     "tqdm",
 ]
 keywords = ["mjx", "mujoco", "sim2real", "reinforcement learning"]
@@ -50,6 +51,7 @@ explicit = true
 mujoco = { index = "mujoco" }
 warp-lang = { index = "nvidia" }
 mujoco-mjx = { git = "https://github.com/google-deepmind/mujoco", rev = "main", subdirectory = "mjx" }
+rscope = { git = "https://github.com/vhartman/rscope.git" }
 
 [project.optional-dependencies]
 warp = [
