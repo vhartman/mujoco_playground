@@ -58,7 +58,7 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos = 0.5,
+                fingertip_pos = 0.0,
                 cube_force = -0.5,
 
                 cube_ang_vel=-0.1,
@@ -68,7 +68,7 @@ def default_config() -> config_dict.ConfigDict:
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
-                action_rate=-0.01,
+                action_rate=-0.005,
                 joint_vel=-0.01,
                 energy=-1e-3,
                 wrist_vel=-0.1,
@@ -602,7 +602,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
         rng, key = jax.random.split(rng)
         # Fingertip friction: =U(0.5, 1.0).
-        silicone_friction = jax.random.uniform(key, (1,), minval=1.0, maxval=2.0)
+        silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=2.0)
         geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(
             silicone_friction
         )

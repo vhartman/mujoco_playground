@@ -24,14 +24,15 @@
     </default>
 
     <default class="collision">
-      <geom group="3" friction="0.2" solref="0.02 1.5" solimp="0.95 0.99 0.01" type="box" mass="0" material="black"/>
+      <geom group="3" friction="0.2" solref="0.02 1.5" solimp="0.95 0.99 0.001" type="box" mass="0" material="black"/>
+      <!-- <geom group="3" friction="0.2" solref="0.002 1.5" solimp="0.95 0.99 0.001" type="box" mass="0" material="black"/> -->
       <default class="palm">
         <!-- <geom type="capsule" size="0.012 0.008" pos="0 -0.03 0.015" quat="1 1 0 0" friction="0.7 0.05 0.0002"/> -->
-        <geom condim="3" friction="2 0.1 0.0002" rgba=".7 .7 .7 .3"/>
+        <geom condim="3" friction="2 0.5 0.001" rgba=".7 .7 .7 .3"/>
       </default>
       <default class="tip">
         <!-- <geom type="capsule" size="0.012 0.008" pos="0 -0.03 0.015" quat="1 1 0 0" friction="0.7 0.05 0.0002"/> -->
-        <geom margin="0.001" condim="4" friction="2 0.1 0.0002" rgba=".5 .5 .5 .3" solimp="0.99 0.999 0.0001"/>
+        <geom margin="0.001" condim="4" friction="1 0.1 0.0002" rgba=".5 .5 .5 .3" solimp="0.99 0.999 0.0001"/>
       </default>
     </default>
   </default>
@@ -173,7 +174,8 @@
           <inertial pos="-4.7446e-06 2.3008e-05 0.023958" quat="0.998727 0.0504191 0.000239574 0.00141058" mass="0.045" diaginertia="6.4181e-06 6.01585e-06 2.42154e-06"/>
           <joint name="rj_dg_2_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_2_3_c"/>
-          <geom class="collision" size="0.0095 0.011 0.016" pos="2.3008e-05 0.0 0.027"/>
+          <geom class="collision" size="0.0095 0.011 0.012" pos="2.3008e-05 0.0 0.023"/>
+          <geom class="collision" size="0.0095 0.006 0.003" pos="2.3008e-05 0.0 0.038"/>
 
           <body name="rl_dg_2_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
@@ -216,7 +218,9 @@
           <joint name="rj_dg_3_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_3_3_c"/>
           <!-- <geom class="collision" size="0.0095 0.011 0.022" pos="2.3008e-05 0.0 0.0175"/> -->
-          <geom class="collision" size="0.0095 0.011 0.016" pos="2.3008e-05 0.0 0.027"/>
+          <!-- <geom class="collision" size="0.0095 0.011 0.016" pos="2.3008e-05 0.0 0.027"/> -->
+          <geom class="collision" size="0.0095 0.011 0.012" pos="2.3008e-05 0.0 0.023"/>
+          <geom class="collision" size="0.0095 0.006 0.003" pos="2.3008e-05 0.0 0.038"/>
 
           <body name="rl_dg_3_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
@@ -260,7 +264,9 @@
           <joint name="rj_dg_4_3" pos="0 0 0" axis="0 1 0" range="0 1.5708" />
           <geom type="mesh" class="visual" mesh="rl_dg_4_3_c"/>
           <!-- <geom class="collision" size="0.0095 0.011 0.022" pos="2.3008e-05 0.0 0.0175"/> -->
-          <geom class="collision" size="0.0095 0.011 0.016" pos="2.3008e-05 0.0 0.027"/>
+          <!-- <geom class="collision" size="0.0095 0.011 0.016" pos="2.3008e-05 0.0 0.027"/> -->
+          <geom class="collision" size="0.0095 0.011 0.012" pos="2.3008e-05 0.0 0.023"/>
+          <geom class="collision" size="0.0095 0.006 0.003" pos="2.3008e-05 0.0 0.038"/>
 
           <body name="rl_dg_4_4" pos="0 0 0.0388">
             <inertial pos="4.4568e-05 -0.00389127 0.0160588" quat="0.526445 0.843914 -0.0138865 0.10233" mass="0.03" diaginertia="6.58495e-06 5.22897e-06 2.6024e-06"/>
