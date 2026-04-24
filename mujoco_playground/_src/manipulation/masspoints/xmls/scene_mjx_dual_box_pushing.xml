@@ -46,7 +46,7 @@
     <body name="box_1" pos="0.5 0 0.0">
       <freejoint name="box_1_joint"/>
       <geom type="box" name="box_1" size="0.07553 0.11482 0.05073" condim="3"
-        friction="0.6" contype="2" conaffinity="1" solref="0.02 1" priority="1"
+        friction="0.6"  solref="0.02 1" priority="1"
         mass="0.05" material="box"/>
     </body>
     <body mocap="true" name="mocap_target_1">
@@ -57,7 +57,7 @@
     <body name="box_2" pos="0.5 0 0.0">
       <freejoint name="box_2_joint"/>
       <geom type="box" name="box_2" size="0.07553 0.11482 0.05073" condim="3"
-        friction="0.6" contype="2" conaffinity="1" solref="0.02 1" priority="1"
+        friction="0.6"  solref="0.02 1" priority="1"
         mass="0.05" material="box"/>
     </body>
     <body mocap="true" name="mocap_target_2">

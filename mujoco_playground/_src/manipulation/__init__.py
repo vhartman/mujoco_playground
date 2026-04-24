@@ -28,11 +28,14 @@ from mujoco_playground._src.manipulation.franka_emika_panda import pick_cartesia
 from mujoco_playground._src.manipulation.franka_emika_panda_robotiq import push_cube as robotiq_push_cube
 from mujoco_playground._src.manipulation.leap_hand import reorient as leap_cube_reorient
 from mujoco_playground._src.manipulation.leap_hand import rotate_z as leap_rotate_z
+from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_rotate_z
+
 from mujoco_playground._src.manipulation.tesollo_hand import reorient as tesollo_cube_reorient
 from mujoco_playground._src.manipulation.tesollo_hand import rotate_z as tesollo_rotate_z
 from mujoco_playground._src.manipulation.tesollo_hand import reorient_wrist as tesollo_wrist_cube_reorient
 from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
-from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_rotate_z
+
+from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
 
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
@@ -60,6 +63,8 @@ _envs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.CubeReorient,
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 
+    "TesolloGrasp": tesollo_grasp.Grasp,
+
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
     "MasspointDualPushCube":masspoint_dual_push.MasspointDualPushCube,
@@ -85,6 +90,7 @@ _cfgs = {
     "TesolloCubeRotateZAxis": tesollo_rotate_z.default_config,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
+    "TesolloGrasp": tesollo_grasp.default_config,
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
@@ -103,6 +109,7 @@ _randomizer = {
     "TesolloCubeReorient": tesollo_cube_reorient.domain_randomize,
     "TesolloCubeRotateZAxis": tesollo_rotate_z.domain_randomize,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.domain_randomize,
+    "TesolloGrasp": tesollo_grasp.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 

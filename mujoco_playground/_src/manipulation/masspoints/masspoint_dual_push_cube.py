@@ -68,20 +68,20 @@ def default_config():
               gripper_box=0.5,
               # Box goes to the target mocap.
               box_target=0.5,
-              box_orientation=0.5,
+            box_orientation=0.5,
               # Gripper collides with side of object, instead of top.
             #   gripper_collision_side=1.0,
               # Arm stays close to target pose.
               # Reduce joint velocity.
-              joint_vel=0.0,
+              joint_vel=0.1,
               # Avoid joint vel limits.
-              joint_vel_limit=0.0,
+              joint_vel_limit=0.1,
               # Torque penalty of the arm.
-              total_command=-0.0,
+              total_command=-0.1,
               # Reduce action rate.
-              action_rate=-0.0,
+              action_rate=-0.1,
               # penalty for closeness
-              collision_penalty=0.
+              collision_penalty=-1.
           ),
       ),
       impl="jax",
@@ -327,7 +327,7 @@ class MasspointDualPushCube(base_dual_push.MasspointsDualPushEnv):
 
         # get success condition
         success_cond_1 = jp.linalg.norm(target_pos - box_pos) < 0.05  # 3cm
-        success_cond_2 = ori_error < (180 / 180 * jp.pi)  # 10 degrees
+        success_cond_2 = ori_error < (45 / 180 * jp.pi)  # 10 degrees
         # success_cond_3 = (
         #     state.info["success_step_count"]
         #     >= self._config.reward_config.success_step_count

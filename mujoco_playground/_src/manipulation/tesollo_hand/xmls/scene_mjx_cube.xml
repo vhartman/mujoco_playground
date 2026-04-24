@@ -46,6 +46,12 @@
     <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c" reftype="site" refname="grasp_site"/>
     <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c" reftype="site" refname="grasp_site"/>
     <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c" reftype="site" refname="grasp_site"/>
+    
+    <framepos name="rl_dg_1_tip_c_position_global" objtype="site" objname="rl_dg_1_tip_c"/>
+    <framepos name="rl_dg_2_tip_c_position_global" objtype="site" objname="rl_dg_2_tip_c"/>
+    <framepos name="rl_dg_3_tip_c_position_global" objtype="site" objname="rl_dg_3_tip_c"/>
+    <framepos name="rl_dg_4_tip_c_position_global" objtype="site" objname="rl_dg_4_tip_c"/>
+    <framepos name="rl_dg_5_tip_c_position_global" objtype="site" objname="rl_dg_5_tip_c"/>
 
     <!-- goal. -->
     <framequat name="cube_goal_orientation" objtype="body" objname="goal"/>

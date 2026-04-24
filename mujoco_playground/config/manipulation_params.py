@@ -167,6 +167,8 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    # rl_config.network_factory.init_noise_std = 5.,
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
     # rl_config.network_factory.policy_hidden_layer_sizes = (256, 256, 256)
   elif env_name == "MasspointReachGoal" or env_name == "MasspointReachGoalSequence":
@@ -182,6 +184,7 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
   elif env_name == "UR10GoalReach" or env_name == "UnassignedUR10GoalReach":
     rl_config.num_timesteps = 5_800_000_000
@@ -196,6 +199,8 @@ def brax_ppo_config(
     rl_config.batch_size = 512
     rl_config.num_resets_per_eval = 1
     rl_config.num_eval_envs = 32
+    # rl_config.network_factory.init_noise_std = 5.,
+    rl_config.network_factory.distribution_type="normal"
     rl_config.network_factory.policy_hidden_layer_sizes = (64, 64, 64, 64)
     # rl_config.network_factory.policy_hidden_layer_sizes = (256, 256, 256)
   elif env_name == "LeapCubeRotateZAxis":
@@ -279,7 +284,7 @@ def brax_ppo_config(
     rl_config.discounting = 0.99
     rl_config.learning_rate = 3e-4
     rl_config.entropy_cost = 1e-2
-    rl_config.num_envs = 8192
+    rl_config.num_envs = 4096
     rl_config.batch_size = 256
     rl_config.network_factory = config_dict.create(
         policy_hidden_layer_sizes=(512, 256, 128),
@@ -299,6 +304,25 @@ def brax_ppo_config(
     rl_config.entropy_cost = 1e-2
     rl_config.num_envs = 4096
     rl_config.batch_size = 256
+    rl_config.network_factory = config_dict.create(
+        policy_hidden_layer_sizes=(512, 256, 128),
+        value_hidden_layer_sizes=(512, 256, 128),
+        policy_obs_key="state",
+        value_obs_key="privileged_state",
+    )
+    rl_config.num_resets_per_eval = 1
+  elif env_name == "TesolloGrasp":
+    rl_config.num_timesteps = 1_000_000_000
+    rl_config.num_evals = 20
+    rl_config.num_minibatches = 32
+    rl_config.unroll_length = 40
+    rl_config.num_updates_per_batch = 4
+    rl_config.discounting = 0.99
+    rl_config.learning_rate = 3e-4
+    rl_config.entropy_cost = 1e-2
+    rl_config.num_envs = 4096
+    rl_config.batch_size = 256
+    rl_config.network_factory.distribution_type="normal",
     rl_config.network_factory = config_dict.create(
         policy_hidden_layer_sizes=(512, 256, 128),
         value_hidden_layer_sizes=(512, 256, 128),

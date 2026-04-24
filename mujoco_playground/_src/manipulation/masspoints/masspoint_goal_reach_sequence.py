@@ -25,16 +25,16 @@ from mujoco.mjx._src import types
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward as reward_util
-from mujoco_playground._src.manipulation.masspoints import base_goal_reach
+from mujoco_playground._src.manipulation.masspoints import base_goal_reach_w_ori
 import numpy as np
 
 WORKSPACE_MIN = (0.3, -0.5, 0.0)
 WORKSPACE_MAX = (0.75, 0.7, 0.5)
-# OBJ_SAMPLE_MIN = (0.2, -0.5, -0.005)
-# OBJ_SAMPLE_MAX = (0.7, 0.5, 0.04)
+OBJ_SAMPLE_MIN = (0.2, -0.5, -0.005)
+OBJ_SAMPLE_MAX = (0.7, 0.5, 0.04)
 
-OBJ_SAMPLE_MIN = (0.4, -0.4, -0.005)
-OBJ_SAMPLE_MAX = (0.65, 0.4, 0.04)
+# OBJ_SAMPLE_MIN = (0.4, -0.4, -0.005)
+# OBJ_SAMPLE_MAX = (0.65, 0.4, 0.04)
 
 
 def default_config():
@@ -45,7 +45,7 @@ def default_config():
       sim_dt=0.005,
       episode_length=3000,
       action_repeat=4,
-      action_scale=1.5,
+      action_scale=1.0,
       action_history_len=5,
       obs_history_len=1,
       noise_config=config_dict.create(
@@ -73,9 +73,9 @@ def default_config():
             #   gripper_collision_side=1.0,
               # Arm stays close to target pose.
               # Reduce joint velocity.
-              joint_vel=0.1,
+              joint_vel=0.5,
               # Avoid joint vel limits.
-              joint_vel_limit=0.1,
+              joint_vel_limit=0.5,
               # Torque penalty of the arm.
               total_command=-0.1,
               # Reduce action rate.
@@ -100,9 +100,10 @@ def get_rand_dir(rng: jax.Array) -> jax.Array:
   return jp.array([x, y, z])
 
 ROOT_PATH = mjx_env.ROOT_PATH / "manipulation" / "masspoints"
-SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_dual_goal_reaching.xml"
+# SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_dual_goal_reaching.xml"
+SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_dual_goal_reaching_with_ori.xml"
 
-class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
+class MasspointGoalReachSequence(base_goal_reach_w_ori.MasspointsGoalReachEnv):
   """Environment for pushing a cube with a Panda robot and Robotiq gripper."""
 
   def __init__(
@@ -120,8 +121,8 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
   def _get_rand_target_pos(
       self, rng: jax.Array, offset: jax.Array, init_pos: jax.Array
   ) -> jax.Array:
-    min_pos = jp.array([-offset * 0.25, -offset*0.2, -0.005]) + init_pos
-    max_pos = jp.array([offset * 0.25, offset*0.2, 0.005]) + init_pos
+    min_pos = jp.array([-offset * 0.35, -offset*0.5, -0.005]) + init_pos
+    max_pos = jp.array([offset * 0.35, offset*0.5, 0.005]) + init_pos
     pos = jax.random.uniform(rng, (3,), minval=min_pos, maxval=max_pos)
     return jp.clip(pos, np.array(OBJ_SAMPLE_MIN), np.array(OBJ_SAMPLE_MAX))
 
@@ -165,7 +166,7 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
     init_q = init_q.at[self._masspoints_qids].set(
         jax.random.uniform(
             rng_robot_arm,
-            (6,),
+            (8,),
             minval=self._jnt_range[:, 0] * self._joint_range_init_percent_limit,
             maxval=self._jnt_range[:, 1] * self._joint_range_init_percent_limit,
         )
@@ -195,8 +196,8 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
     info = {
         "rng": rng,
         "success": jp.array(0., dtype=float),
-        "last_action": jp.zeros(6, dtype=float),
-        "action_history": jp.zeros(self._config.action_history_len * 6),
+        "last_action": jp.zeros(8, dtype=float),
+        "action_history": jp.zeros(self._config.action_history_len * 8),
         "success_step_count": jp.array(0, dtype=int),
         "prev_step_success": jp.array(0, dtype=int),
         "curriculum_id": jp.array(0, dtype=int),
@@ -212,7 +213,7 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
     return state
 
   def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-    action_history = jp.roll(state.info["action_history"], 6).at[:6].set(action)
+    action_history = jp.roll(state.info["action_history"], 8).at[:8].set(action)
     state.info["action_history"] = action_history
 
     # add action delay
@@ -223,7 +224,7 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
         minval=self._config.noise_config.action_min_delay,
         maxval=self._config.noise_config.action_max_delay,
     )
-    action_w_delay = action_history.reshape((-1, 6))[action_idx[0]]
+    action_w_delay = action_history.reshape((-1, 8))[action_idx[0]]
 
     # get the ctrl
     ctrl = action_w_delay * self._config.action_scale
@@ -313,12 +314,12 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
 
         # get success condition
         success_cond_1 = jp.linalg.norm(target_pos - masspoint_pos) < 0.04  # 3cm
-        success_cond_2 = ori_error < (180 / 180 * jp.pi)  # 10 degrees
+        success_cond_2 = ori_error < (30 / 180 * jp.pi)  # 10 degrees
         # success_cond_3 = (
         #     state.info["success_step_count"]
         #     >= self._config.reward_config.success_step_count
         # )
-        box_success = 1. * success_cond_1 #& success_cond_2
+        box_success = (success_cond_1 & success_cond_2)
 
         # if we have already achieved success for a box, we keep it
         state.info["success"] = jp.maximum(box_success.astype(float), state.info["success"])
@@ -429,7 +430,7 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
         )
 
         total_ee_target += box_target
-        total_ee_orientation += box_orientation * 0.
+        total_ee_orientation += box_orientation
         # total_gripper_box += gripper_box
 
     # jax.debug.print("{x}", x=gripper_box_rewards)
@@ -545,4 +546,4 @@ class MasspointGoalReachSequence(base_goal_reach.MasspointsGoalReachEnv):
 
   @property
   def action_size(self):
-    return 6
+    return 8

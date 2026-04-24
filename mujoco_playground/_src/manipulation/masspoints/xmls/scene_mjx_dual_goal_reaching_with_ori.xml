@@ -1,0 +1,103 @@
+<mujoco model="masspoint_scene">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
+
+  <option timestep="0.005" iterations="10" ls_iterations="10" integrator="implicitfast">
+    <flag eulerdamp="disable"/>
+  </option>
+
+  <visual>
+    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
+    <rgba force="1 0 0 1"/>
+    <global azimuth="-40" elevation="-30"/>
+    <map force="0.01"/>
+    <quality shadowsize="8192"/>
+    <scale contactwidth="0.075" contactheight="0.025" forcewidth="0.05" com="0.05" framewidth="0.01" framelength="0.2"/>
+  </visual>
+
+  <asset>
+    <texture name="box" type="cube" fileup="assets/fileup.png" fileback="assets/fileback.png"
+      filedown="assets/filedown.png" filefront="assets/filefront.png" fileleft="assets/fileleft.png"
+      fileright="assets/fileright.png"/>
+    <material name="box" texture="box"/>
+    <texture name="box_alpha" type="cube" fileup="assets/fileup_light.png" fileback="assets/fileback_light.png"
+      filedown="assets/filedown_light.png" filefront="assets/filefront_light.png" fileleft="assets/fileleft_light.png"
+      fileright="assets/fileright_light.png"/>
+    <material name="box_alpha" texture="box_alpha"/>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
+      width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
+  </asset>
+
+  <default>
+    <!-- <joint axis="0 1 0" damping=".1"/> -->
+    <joint axis="0 1 0" frictionloss="0.0002"/>
+  </default>
+
+  <worldbody>
+    <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
+    <!-- <geom name="floor" pos="0 0 -0.01" size="0 0 0.01" type="plane" material="groundplane" contype="1" conaffinity="1"/> -->
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" contype="1" pos="0 0 -0.0197"/>
+
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <geom name="pad" type="box" pos="0.54586 0.02337 -0.02" size="0.315 0.6 0.01" contype="0" conaffinity="0" rgba="0.5 0.5 0.5 0.2"/>
+    <geom name="camera_tracking_box" type="box" pos="0.59586 0.02337 -0.02" size="0.21 0.32 0.02" contype="0" conaffinity="0" rgba="0.5 0.0 0.5 0.1"/>
+    
+    <body mocap="true" name="mocap_target_1">
+      <geom type="box" size="0.02 0.02 0.02" contype="0" conaffinity="0"
+       material="box_alpha"/>
+    </body>
+
+    <body mocap="true" name="mocap_target_2">
+      <geom type="box" size="0.02 0.02 0.02" contype="0" conaffinity="0"
+       material="box_alpha"/>
+    </body>
+
+    <body name="mp_0" pos="0.15 0.05 0.05">
+        <inertial pos="0.0 -0. 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="mp_0_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="0.5" frictionloss="0.02"/>
+        <joint name="mp_0_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="0.5" frictionloss="0.02"/>
+        <joint name="mp_0_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" springref=".0" range="-0.05 0.05" damping="0.1" frictionloss="0.02"/>
+        <joint name="mp_0_joint_3" pos="0.0 0.0 0.0" axis="0 0 1" type="hinge" limited="true" springref=".0" range="-3.2 3.2" damping="0.1" frictionloss="0.02"/>
+        <geom rgba="0 0 0 1" pos="0.0 -0.00 0.0" size="0.04 0.04 0.04" type="box"/>
+        <site name="mp_0_tip" pos="0 0 0.0255" group="4"/>
+    </body>
+
+    <body name="mp_1" pos="0.15 -0.05 0.05">
+        <inertial pos="0.0 -0.0 0.0" mass=".01" diaginertia="0.001 0.001 0.001"/>
+        <joint name="mp_1_joint_0" pos="0.0 0.0 0.0" axis="1 0 0" type="slide" limited="true" range="-0.0 0.8" damping="1"/>
+        <joint name="mp_1_joint_1" pos="0.0 0.0 0.0" axis="0 1 0" type="slide" limited="true" range="-0.5 0.5" damping="1"/>
+        <joint name="mp_1_joint_2" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" limited="true" range="-0.05 0.05" damping="0.1" springref=".0"/>
+        <joint name="mp_1_joint_3" pos="0.0 0.0 0.0" axis="0 0 1" type="hinge" limited="true" springref=".0" range="-3.2 3.2" damping="0.1" frictionloss="0.02"/>
+        <geom rgba="1 1 1 1" pos="0.0 -0.00 0.0" size="0.04 0.04 0.04" type="box"/>
+        <site name="mp_1_tip" pos="0 0 0.0255" group="4"/>
+    </body>
+
+  </worldbody>
+
+  <sensor>
+    <!-- hand. -->
+    <framepos name="mp_0_tip_position" objtype="site" objname="mp_0_tip"/>
+    <framepos name="mp_1_tip_position" objtype="site" objname="mp_1_tip"/>
+  </sensor>
+
+  <actuator>
+    <position kp="3" kv="1" name="mp_0_joint_0_a" joint="mp_0_joint_0" ctrlrange="-0.0 0.8"/>
+    <position kp="3" kv="1" name="mp_0_joint_1_a" joint="mp_0_joint_1" ctrlrange="-0.5 0.5"/>
+    <position kp="5" kv="1" name="mp_0_joint_2_a" joint="mp_0_joint_2" ctrlrange="-0.05 0.05"/>
+    <position kp="5" kv="1" name="mp_0_joint_3_a" joint="mp_0_joint_3" ctrlrange="-3.2 3.2"/>
+
+    <position kp="3" kv="1" name="mp_1_joint_0_a" joint="mp_1_joint_0" ctrlrange="-0.0 0.8"/>
+    <position kp="3" kv="1" name="mp_1_joint_1_a" joint="mp_1_joint_1" ctrlrange="-0.5 0.5"/>
+    <position kp="5" kv="1" name="mp_1_joint_2_a" joint="mp_1_joint_2" ctrlrange="-0.05 0.05"/>
+    <position kp="5" kv="1" name="mp_1_joint_3_a" joint="mp_1_joint_3" ctrlrange="-3.2 3.2"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home"
+      qpos="0.3 -0.1 0 0.3 0 0"
+      ctrl="0.3 -0.1 0 0.3 0 0"/>
+  </keyframe>
+</mujoco>

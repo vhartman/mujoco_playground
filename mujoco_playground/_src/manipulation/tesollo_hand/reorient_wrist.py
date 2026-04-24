@@ -50,18 +50,21 @@ def default_config() -> config_dict.ConfigDict:
                 # joint_pos=0.025,
                 # cube_pos=0.005,
                 # cube_ori=0.05,
-                joint_pos=0.0,
-                cube_pos=0.0,
-                cube_ori=0.0,
+                joint_pos=0.001,
+                cube_pos=0.01,
+                cube_ori=0.01,
             ),
-            random_ori_injection_prob=0.0,
+            random_ori_injection_prob=0.00,
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
+                fingertip_pos = 0.0,
+                cube_force = -0.5,
+
                 cube_ang_vel=-0.1,
                 cube_lin_vel=-0.1,
                 orientation=5.0,
-                position=0.5,
+                position=0.01,
                 termination=-100.0,
                 hand_pose=-0.5,
                 wrist_pose=-1.0,
@@ -79,7 +82,7 @@ def default_config() -> config_dict.ConfigDict:
             pert_duration_steps=[1, 100],
             pert_wait_steps=[60, 150],
         ),
-        impl="jax",
+        impl="warp",
         nconmax=200 * 8192,
         njmax=1024,
     )
@@ -346,8 +349,8 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         noisy_pose = noisy_pose * (1 - m) + rand_pose * m
 
         # Cube position error history.
-        palm_pos = self.get_palm_position(data)
-        cube_pos_error = palm_pos - noisy_pose[:3]
+        wrist_pos = self.get_wrist_position(data)
+        cube_pos_error = noisy_pose[:3] - wrist_pos
         cube_pos_error_history = (
             jp.roll(info["cube_pos_error_history"], 3).at[:3].set(cube_pos_error)
         )
@@ -365,7 +368,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         info["cube_ori_error_history"] = cube_ori_error_history
 
         # Uncorrupted cube pose for critic.
-        cube_pos_error_uncorrupted = palm_pos - self.get_cube_position(data)
+        cube_pos_error_uncorrupted = self.get_cube_position(data) - wrist_pos
         cube_quat_uncorrupted = self.get_cube_orientation(data)
         quat_diff_uncorrupted = math.quat_mul(
             cube_quat_uncorrupted, math.quat_inv(goal_quat)
@@ -376,7 +379,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
             [
                 noisy_joint_angles,  # 23
                 qpos_error_history,  # 23 * history_len
-                cube_pos_error_history,  # 3 * history_len
+                0 * cube_pos_error_history,  # 3 * history_len
                 cube_ori_error_history,  # 6 * history_len
                 info["last_act"],  # 23
             ]
@@ -420,6 +423,14 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         cube_pos_reward = reward.tolerance(
             cube_pose_mse, (0, 0.02), margin=0.05, sigmoid="linear"
         )
+        
+        fingertip_distances = self.get_fingertip_global_positions(data).reshape(-1, 3) - cube_pos
+        # fingertip_reward = jp.sum(jp.linalg.norm(fingertip_distances, axis=1))
+        fingertip_reward = jp.sum(
+            reward.tolerance(
+                jp.linalg.norm(fingertip_distances, axis=1), (0, 0.035), margin=0.05, sigmoid="reciprocal"
+            )
+        )
 
         terminated = self._get_termination(data, info)
 
@@ -438,7 +449,26 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         cube_lin_vel = self._cube_lin_velocity(data)
         cube_ang_vel = self._cube_ang_velocity(data)
 
+        def get_contact_forces(data):
+            return mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1,3)
+
+        # size is 100*3
+        contact_forces_norm = jp.linalg.norm(get_contact_forces(data),axis=1)
+        contact_forces_reward = 1 - reward.tolerance(
+            contact_forces_norm,
+            (0,2),
+            2,
+        )
+        sum_contact_forces = jp.sum(contact_forces_reward)
+
+        # jax.debug.print("contact {x}", x=contact_forces_norm)
+        # jax.debug.print("sum {x}", x=sum_contact_forces)
+
         return {
+            "fingertip_pos": fingertip_reward,
+
+            "cube_force": sum_contact_forces,
+
             "cube_lin_vel": cube_lin_vel,
             "cube_ang_vel": cube_ang_vel,
             "orientation": self._reward_cube_orientation(data),
@@ -572,14 +602,14 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
         rng, key = jax.random.split(rng)
         # Fingertip friction: =U(0.5, 1.0).
-        silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=1.0)
+        silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=2.0)
         geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(
             silicone_friction
         )
 
         # Scale cube mass: *U(0.8, 1.2).
         rng, key1, key2 = jax.random.split(rng, 3)
-        dmass = jax.random.uniform(key1, minval=0.8, maxval=1.2)
+        dmass = jax.random.uniform(key1, minval=0.5, maxval=1.5)
         body_inertia = model.body_inertia.at[cube_body_id].set(
             model.body_inertia[cube_body_id] * dmass
         )

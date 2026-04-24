@@ -60,8 +60,17 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
 
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
+    
+    # self._mjx_model.opt._impl.contact_sensor_maxmatch = 128
+    # print(self._mjx_model.opt)
 
   # Sensor readings.
+
+  def get_wrist_position(self, data: mjx.Data) -> jax.Array:
+    return mjx_env.get_sensor_data(self.mj_model, data, "wrist_position")
+
+  def get_wrist_orientation(self, data: mjx.Data) -> jax.Array:
+    return mjx_env.get_sensor_data(self.mj_model, data, "wrist_orientation")
 
   def get_palm_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "palm_position")
@@ -97,6 +106,13 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
     """Get fingertip positions relative to the grasp site."""
     return jp.concatenate([
         mjx_env.get_sensor_data(self.mj_model, data, f"{name}_position")
+        for name in consts.FINGERTIP_NAMES
+    ])
+  
+  def get_fingertip_global_positions(self, data: mjx.Data) -> jax.Array:
+    """Get fingertip positions relative to the grasp site."""
+    return jp.concatenate([
+        mjx_env.get_sensor_data(self.mj_model, data, f"{name}_position_global")
         for name in consts.FINGERTIP_NAMES
     ])
 
