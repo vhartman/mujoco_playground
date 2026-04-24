@@ -3,13 +3,13 @@
   <!-- <option cone="elliptic" impratio="10"/> -->
 
   <option timestep="0.01" integrator="Euler" iterations="5" ls_iterations="8">
-    <flag eulerdamp="disable"/>
+    <flag eulerdamp="disable" multiccd="disable" nativeccd="disable"/>
   </option>
 
   <custom>
     <numeric data="200" name="max_contact_points"/>
     <!-- <numeric data="12" name="max_geom_pairs"/> -->
-    <numeric  data="64" name="contact_sensor_maxmatch"/>
+    <numeric  data="128" name="contact_sensor_maxmatch"/>
 
   </custom>
 

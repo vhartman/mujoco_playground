@@ -31,9 +31,13 @@ dependencies = [
     "ml_collections",
     "mujoco-mjx>=3.3.6.dev",
     "mujoco>=3.3.6.dev",
+    "mujoco-warp>=3.7.0.1",
     "orbax-checkpoint>=0.11.22",
     "tqdm",
-    "opencv-python"
+    "opencv-python",
+    "zmq",
+    "warp-lang==1.12.1",
+    "rscope"
 ]
 keywords = ["mjx", "mujoco", "sim2real", "reinforcement learning"]
 
@@ -51,10 +55,11 @@ explicit = true
 mujoco = { index = "mujoco" }
 warp-lang = { index = "nvidia" }
 mujoco-mjx = { git = "https://github.com/google-deepmind/mujoco", rev = "main", subdirectory = "mjx" }
+mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp"}
 
 [project.optional-dependencies]
 warp = [
-    "warp-lang>=1.9.0.dev",
+    "warp-lang>=1.12.0.dev",
 ]
 test = [
     "absl-py",
