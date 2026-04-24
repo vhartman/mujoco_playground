@@ -101,6 +101,10 @@ _LOGGING = flags.DEFINE_boolean(
     "logging", False, "With data logging?"
 )
 
+_PLOTTING = flags.DEFINE_boolean(
+    "plotting", False, "With data logging?"
+)
+
 _REAL = flags.DEFINE_boolean(
     "real_sys", False, "closed loop?"
 )
@@ -419,7 +423,7 @@ def main(argv):
 
     start_time = time.time()
 
-    if _LOGGING.value:
+    if _LOGGING.value or _PLOTTING.value:
         timestamps = []
 
         actual_wrist_poses = []
@@ -433,6 +437,9 @@ def main(argv):
 
         sim_obs = []
         actual_obs = []
+
+        all_actions = []
+        all_targets = []
 
     act = np.zeros(23)
     targets = np.zeros(23)
@@ -501,13 +508,14 @@ def main(argv):
                     cube_ori = cube_ori_rot_mat.as_quat(scalar_first=True)
 
                     # cube_goal_pos = None
-                    cube_goal_ori = eval_env.get_cube_orientation(data)
+                    cube_goal_ori = eval_env.get_cube_goal_orientation(data)
 
                     cube_pos_error = cube_pos
 
                     quat_diff = mujoco.mjx._src.math.quat_mul(
                         cube_ori, mujoco.mjx._src.math.quat_inv(cube_goal_ori)
                     )
+                    print(2.0 * jp.asin(jp.clip(mujoco.mjx._src.math.norm(quat_diff[1:]), a_max=1.0)))
                     xmat_diff = mujoco.mjx._src.math.quat_to_mat(quat_diff).ravel()[3:]
 
                     cube_ori_error = xmat_diff
@@ -526,6 +534,13 @@ def main(argv):
                     # prev_act = state.info["motor_targets"]
                     prev_act = act
 
+                    # print(cube_ori_error)
+
+                    # qpos: 23
+                    # qpos_err_hist: eval_env._config.history_len * 23
+                    # cube_pos_err_hist: eval_env._config.history_len * 3
+                    # cube_ori_err_hist: eval_env._config.history_len * 6
+                    # prev_act: 23
                     obs = jp.concatenate([
                         qpos,
                         qpos_err_hist,
@@ -533,11 +548,6 @@ def main(argv):
                         cube_ori_err_hist,
                         prev_act
                     ])
-
-                    print(state.data.qpos[eval_env._cube_qids])
-                    print(cube_pos, cube_ori)
-
-                    # TODO: LOG values to compare real obs vs simulated obs
 
                     state.obs["state"] = obs
 
@@ -550,10 +560,10 @@ def main(argv):
                     full_q = full_q.at[eval_env._cube_qids[3:]].set(cube_ori)
                     full_q = full_q.at[eval_env._cube_qids[:3]].set(cube_pos[:3])
 
-                    tmp = state.data.replace(
-                        qpos=full_q,
-                        # qvel=state.data.qvel * 0
-                    )
+                    # tmp = state.data.replace(
+                    #     qpos=full_q,
+                    #     # qvel=state.data.qvel * 0
+                    # )
 
                     # state = state.replace(data=tmp)
                     # state = state.replace(data=tmp,obs=state.obs)
@@ -562,7 +572,7 @@ def main(argv):
                     # print(qpos)
                     # print(state.obs["state"][:23])
 
-                    if _LOGGING.value:
+                    if _LOGGING.value or _PLOTTING.value:
                         sim_obs.append(state.obs["state"])
                         actual_obs.append(obs)
 
@@ -589,9 +599,10 @@ def main(argv):
                 targets = qpos + delta
                 targets = jp.clip(targets, eval_env._lowers, eval_env._uppers)
 
+                alpha = eval_env._config.ema_alpha
                 targets = (
-                    eval_env._config.ema_alpha * targets
-                    + (1 - eval_env._config.ema_alpha) * prev_targets
+                    alpha * targets
+                    + (1 - alpha) * prev_targets
                 )
 
                 # hand_cmd = hand_pose + delta[3:]
@@ -627,7 +638,7 @@ def main(argv):
                 )
 
                 # listeners/loggers
-                if _LOGGING.value:
+                if _LOGGING.value or _PLOTTING.value:
                     timestamps.append(time.time() - start_time)
 
                     # actualy log -> should be async ideally, but whatever for now
@@ -638,6 +649,9 @@ def main(argv):
                     robot_ee_pose = robot_joint_listener.get()
                     desired_wrist_poses.append(desired_wrist_pose)
                     actual_wrist_poses.append(robot_ee_pose)
+
+                    all_actions.append(act)
+                    all_targets.append(targets)
 
                 viewer.sync()
                 time.sleep(env_cfg["ctrl_dt"])
@@ -664,15 +678,52 @@ def main(argv):
         np.save(os.path.join(folder_name, "actual_observations.npy"), np.array(actual_obs))
         np.save(os.path.join(folder_name, "simulated_observations.npy"), np.array(sim_obs))
 
+        # Observations
+        np.save(os.path.join(folder_name, "actions.npy"), np.array(all_actions))
+        np.save(os.path.join(folder_name, "targets.npy"), np.array(all_targets))
+
         print(f"Exported data to {folder_name}")
 
-        plt.figure()
+    if _PLOTTING.value:
+        plt.figure("Observations wrist")
         plt.plot(np.array(actual_obs)[:, :3])
         plt.plot(np.array(sim_obs)[:, :3], '--')
 
-        plt.figure()
+        plt.figure("Observations hand")
         plt.plot(np.array(actual_obs)[:, 3:23])
         plt.plot(np.array(sim_obs)[:, 3:23], '--')
+
+        fig = plt.figure("Rest of obs")
+        # qpos: 23
+        # qpos_err_hist: eval_env._config.history_len * 23
+        # cube_pos_err_hist: eval_env._config.history_len * 3
+        # cube_ori_err_hist: eval_env._config.history_len * 6
+        # prev_act: 23
+        ax = fig.add_subplot(4, 1, 1)
+        start_idx = 23
+        num_obs = eval_env._config.history_len*23
+        ax.plot(np.array(actual_obs)[:, start_idx:start_idx+num_obs])
+        
+        ax = fig.add_subplot(4, 1, 2)
+        start_idx = start_idx + num_obs
+        num_obs = eval_env._config.history_len*3
+        ax.plot(np.array(actual_obs)[:, start_idx:start_idx+num_obs])
+
+        ax = fig.add_subplot(4, 1, 3)
+        start_idx = start_idx + num_obs
+        num_obs = eval_env._config.history_len*6
+        ax.plot(np.array(actual_obs)[:, start_idx:start_idx+num_obs])
+
+        ax = fig.add_subplot(4, 1, 4)
+        start_idx = start_idx + num_obs
+        num_obs = 23
+        ax.plot(np.array(actual_obs)[:, start_idx:start_idx+num_obs])
+
+        plt.figure("pred. actions")
+        plt.plot(np.array(all_actions))
+
+        plt.figure("comp. targets")
+        plt.plot(np.array(all_targets))
 
         plt.show()
 
