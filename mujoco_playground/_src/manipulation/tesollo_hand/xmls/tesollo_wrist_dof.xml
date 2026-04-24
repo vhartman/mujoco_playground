@@ -1,5 +1,5 @@
 <mujoco model="dg5f_right">
-  <compiler angle="radian" meshdir="/home/duplo/git/robohand/src/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"/>
+  <compiler angle="radian" meshdir="meshes/tesollo"/>
   <!-- <option cone="elliptic" impratio="10"/> -->
 
   <option timestep="0.01" integrator="Euler" iterations="5" ls_iterations="8">
@@ -40,37 +40,37 @@
   <asset>
     <material name="black" rgba="0.2 0.2 0.2 1"/>
     <material name="white" rgba="0.9 0.9 0.9 1"/>
-    
+
     <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
 
     <mesh name="rl_dg_mount_c" content_type="model/stl" file="rl_dg_mount_c_simple.STL"/>
     <mesh name="rl_dg_base_c" content_type="model/stl" file="rl_dg_base_c_simple.STL"/>
     <mesh name="rl_dg_palm_c" content_type="model/stl" file="rl_dg_palm_c.STL"/>
-    
+
     <mesh name="rl_dg_1_1_c" content_type="model/stl" file="rl_dg_1_1_c.STL"/>
     <mesh name="rl_dg_1_2_c" content_type="model/stl" file="rl_dg_1_2_c.STL"/>
     <mesh name="rl_dg_1_3_c" content_type="model/stl" file="rl_dg_1_3_c.STL"/>
     <mesh name="rl_dg_1_4_c" content_type="model/stl" file="rl_dg_1_4_c.STL"/>
     <mesh name="rl_dg_1_tip_c" content_type="model/stl" file="rl_dg_1_tip_c_simple.STL"/>
-    
+
     <mesh name="rl_dg_2_1_c" content_type="model/stl" file="rl_dg_2_1_c.STL"/>
     <mesh name="rl_dg_2_2_c" content_type="model/stl" file="rl_dg_2_2_c.STL"/>
     <mesh name="rl_dg_2_3_c" content_type="model/stl" file="rl_dg_2_3_c.STL"/>
     <mesh name="rl_dg_2_4_c" content_type="model/stl" file="rl_dg_2_4_c.STL"/>
     <mesh name="rl_dg_2_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
-    
+
     <mesh name="rl_dg_3_1_c" content_type="model/stl" file="rl_dg_3_1_c.STL"/>
     <mesh name="rl_dg_3_2_c" content_type="model/stl" file="rl_dg_3_2_c.STL"/>
     <mesh name="rl_dg_3_3_c" content_type="model/stl" file="rl_dg_3_3_c.STL"/>
     <mesh name="rl_dg_3_4_c" content_type="model/stl" file="rl_dg_3_4_c.STL"/>
     <mesh name="rl_dg_3_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
-    
+
     <mesh name="rl_dg_4_1_c" content_type="model/stl" file="rl_dg_4_1_c.STL"/>
     <mesh name="rl_dg_4_2_c" content_type="model/stl" file="rl_dg_4_2_c.STL"/>
     <mesh name="rl_dg_4_3_c" content_type="model/stl" file="rl_dg_4_3_c.STL"/>
     <mesh name="rl_dg_4_4_c" content_type="model/stl" file="rl_dg_4_4_c.STL"/>
     <mesh name="rl_dg_4_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
-    
+
     <mesh name="rl_dg_5_1_c" content_type="model/stl" file="rl_dg_5_1_c.STL"/>
     <mesh name="rl_dg_5_2_c" content_type="model/stl" file="rl_dg_5_2_c.STL"/>
     <mesh name="rl_dg_5_3_c" content_type="model/stl" file="rl_dg_5_3_c.STL"/>
@@ -332,7 +332,7 @@
     </body>
 
   </worldbody>
-  
+
   <contact>
     <!-- collisions with mount -->
     <exclude body1="mount" body2="rl_dg_1_1"/>
@@ -379,7 +379,7 @@
     <exclude body1="rl_dg_3_1" body2="rl_dg_2_1"/>
     <exclude body1="rl_dg_3_1" body2="rl_dg_4_1"/>
     <exclude body1="rl_dg_4_1" body2="rl_dg_2_1"/>
-  
+
     <exclude body1="rl_dg_1_1" body2="rl_dg_1_3"/>
     <exclude body1="rl_dg_1_1" body2="rl_dg_1_4"/>
     <exclude body1="rl_dg_1_2" body2="rl_dg_1_4"/>
@@ -416,7 +416,7 @@
     <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
     <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
     <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
- 
+
     <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
     <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
     <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
@@ -426,11 +426,11 @@
     <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
     <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
     <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
- 
+
     <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
     <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
     <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
     <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
   </actuator>
-  
+
 </mujoco>
