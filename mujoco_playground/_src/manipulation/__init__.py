@@ -33,6 +33,7 @@ from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_
 from mujoco_playground._src.manipulation.tesollo_hand import reorient as tesollo_cube_reorient
 from mujoco_playground._src.manipulation.tesollo_hand import rotate_z as tesollo_rotate_z
 from mujoco_playground._src.manipulation.tesollo_hand import reorient_wrist as tesollo_wrist_cube_reorient
+from mujoco_playground._src.manipulation.tesollo_hand import pinch as tesollo_pinch
 from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
 
 from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
@@ -91,6 +92,8 @@ _cfgs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "TesolloGrasp": tesollo_grasp.default_config,
+    "TesolloPinch": tesollo_pinch.default_config,
+
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
