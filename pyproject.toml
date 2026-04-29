@@ -25,7 +25,7 @@ dependencies = [
     "brax>=0.12.5",
     "etils",
     "flax",
-    "jax[cuda]==0.7.2",
+    "jax[cuda12]>=0.8.0",
     "lxml",
     "mediapy",
     "ml_collections",
