@@ -88,7 +88,7 @@ def default_config() -> config_dict.ConfigDict:
     )
 
 
-class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
+class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
     """Reorient a cube to match a goal orientation."""
 
     def __init__(
