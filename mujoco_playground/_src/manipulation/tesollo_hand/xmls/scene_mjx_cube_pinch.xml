@@ -81,7 +81,7 @@
   <worldbody>
     <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
     <geom name="floor" pos="0 0 0" size="0 0 0.01" type="plane" material="grid" contype="1" conaffinity="1"/>
-    <frame pos="-0.18 0.04 0.12" quat="-1 1 -1 1">
+    <frame pos="-0.18 0.04 0.08" quat="-1 1 -1 1">
       <include file="tesollo_wrist_dof_clean.xml"/>
     </frame>
     <include file="cube_clean.xml"/>
@@ -219,15 +219,15 @@
   <keyframe>
     <key name="home"
       qpos="
-      -0.00321 -0.166 0.00714
+      -0 0 0
       -0.167 -1.69 0.254 0.775
       -0.172 0.0 0.819 0.45
       -0.104 1.08 1.49 1.5
       0.000154 1.21 1.43 1.33
       0.00107 0.256 1.23 1.5
-      0 0 0.03 1 0 0 0"
+      0 -0.06 0.03 0.5 0 0 0.86"
       ctrl="
-      -0.00321 -0.166 0.00714
+      -0.0 0 0.0
       -0.167 -1.69 0.254 0.775
       -0.172 0.0 0.819 0.45
       -0.104 1.08 1.49 1.5

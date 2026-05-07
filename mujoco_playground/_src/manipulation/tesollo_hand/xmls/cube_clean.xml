@@ -1,5 +1,5 @@
 <frame>
-  <body name="cube" pos="0.11 0.0 0.1">
+  <body name="cube">
     <freejoint name="cube_freejoint"/>
 
     <!-- collision geom — named "cube" so contact force sensors work -->

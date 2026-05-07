@@ -47,6 +47,9 @@ def default_config() -> config_dict.ConfigDict:
         episode_length=1000,
         # Target total contact force from hand on cube sides, in Newtons.
         force_target=10.0,
+        # Force must stay within ±force_tolerance N of target for success_hold_time seconds.
+        force_tolerance=0.5,
+        success_hold_time=3.0,
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -178,6 +181,7 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
             "step": 0,
             "steps_since_last_success": 0,
             "success_count": 0,
+            "consecutive_success_steps": jp.zeros(()),
             "last_act": jp.zeros(_N_ACTIVE),
             "last_last_act": jp.zeros(_N_ACTIVE),
             "motor_targets": data.ctrl,  # full 23-dim
@@ -192,6 +196,7 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         for k in self._config.reward_config.scales.keys():
             metrics[f"reward/{k}"] = jp.zeros(())
         metrics["reward/success"] = jp.zeros((), dtype=float)
+        metrics["consecutive_success_steps"] = jp.zeros(())
         metrics["steps_since_last_success"] = 0
         metrics["success_count"] = 0
 
@@ -219,9 +224,20 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
-        # Success: total hand-cube contact force within 10 % of target.
+        # Success: force held within ±force_tolerance N of target for success_hold_time seconds.
         total_force = self._total_contact_force(data)
-        success = total_force >= self._config.force_target * 0.9
+        in_tolerance = (
+            (total_force >= self._config.force_target - self._config.force_tolerance)
+            & (total_force <= self._config.force_target + self._config.force_tolerance)
+        )
+        hold_steps_required = jp.round(self._config.success_hold_time / self._config.ctrl_dt)
+        consecutive = jp.where(
+            in_tolerance,
+            state.info["consecutive_success_steps"] + 1.0,
+            jp.zeros(()),
+        )
+        state.info["consecutive_success_steps"] = consecutive
+        success = consecutive >= hold_steps_required
 
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -231,6 +247,7 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         )
         state.metrics["steps_since_last_success"] = state.info["steps_since_last_success"]
         state.metrics["success_count"] = state.info["success_count"]
+        state.metrics["consecutive_success_steps"] = consecutive
 
         done = self._get_termination(data, state.info)
         obs = self._get_obs(data, state.info)

@@ -44,10 +44,10 @@ import tensorboardX
 import wandb
 
 
-xla_flags = os.environ.get("XLA_FLAGS", "")
-xla_flags += " --xla_gpu_triton_gemm_any=True"
-os.environ["XLA_FLAGS"] = xla_flags
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# Use CUDA's stream-ordered allocator; avoids BFC fragmentation when JAX and
+# warp share the same GPU (the BFC allocator OOMs even with free memory).
+os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")
 os.environ["MUJOCO_GL"] = "egl"
 
 # Ignore the info logs from brax
