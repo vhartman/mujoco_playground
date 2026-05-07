@@ -8,3 +8,4 @@ checkpoints/
 logs
 uv.lock
 .zed/
+wandb/
