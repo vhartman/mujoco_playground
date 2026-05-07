@@ -1,6 +1,10 @@
 <mujoco model="tesollo_scene">
   <compiler angle="radian" meshdir="meshes/tesollo"/>
 
+  <option timestep="0.01" integrator="Euler" iterations="5" ls_iterations="8">
+    <flag eulerdamp="disable" multiccd="disable" nativeccd="disable"/>
+  </option>
+
   <statistic center="0.118 -0.023 0.063" extent="0.4" meansize="0.01"/>
 
   <visual>

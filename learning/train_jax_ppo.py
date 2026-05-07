@@ -205,7 +205,8 @@ def main(argv):
 
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)
-  env_cfg["impl"] = _IMPL.value
+  if _IMPL.present:
+    env_cfg["impl"] = _IMPL.value
 
   ppo_params = get_rl_config(_ENV_NAME.value)
 
