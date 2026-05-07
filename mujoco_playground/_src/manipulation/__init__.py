@@ -65,6 +65,7 @@ _envs = {
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 
     "TesolloGrasp": tesollo_grasp.Grasp,
+    "TesolloPinch": tesollo_pinch.CubePinch,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
