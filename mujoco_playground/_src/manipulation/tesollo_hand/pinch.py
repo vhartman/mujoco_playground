@@ -99,10 +99,6 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         self._post_init()
 
     def _post_init(self) -> None:
-        # Match pinch_env_sim.py: hand placement.
-        self._mj_model.body("rh").pos = np.array([-0.18, 0.04, 0.12])
-        self._mj_model.body("rh").quat = np.array([-1.0, 1.0, -1.0, 1.0])
-        # Rebuild MJX model after mutating mj_model.
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
 
         home_key = self._mj_model.keyframe("home")
