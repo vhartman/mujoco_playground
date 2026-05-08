@@ -1,12 +1,12 @@
 import time
 import mujoco
 import mujoco.viewer
-import os
 
-MESH_DIR = (
-    "/home/nikola/Projects/DexterousManipulation/mujoco_playground"
-    "/mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"
-)
+import pathlib
+
+mujoco_dir = pathlib.Path(__file__).parent.parent
+MESH_DIR = mujoco_dir / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/meshes/tesollo"
+
 
 # All 33 STL files (named by stem); used both for the grid and the assembled hand.
 MESHES = [

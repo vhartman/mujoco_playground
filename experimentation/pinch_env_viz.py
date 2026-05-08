@@ -1,7 +1,7 @@
 import argparse
 import mujoco
 import mujoco.viewer
-import numpy as np
+import pathlib
 from mujoco_playground._src.manipulation.tesollo_hand.pinch import CubePinch
 
 parser = argparse.ArgumentParser()
@@ -12,7 +12,10 @@ source = args.source
 if source == "xml":
     f = 'scene_mjx_cube_pinch.xml'
 
-    m = mujoco.MjModel.from_xml_path('../mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/xmls/'+f)
+    mujoco_dir = pathlib.Path(__file__).parent.parent
+    XML_DIR = mujoco_dir / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/"
+
+    m = mujoco.MjModel.from_xml_path(str(XML_DIR / f))
     hand_object = m.body("rh")
 
     data = mujoco.MjData(m)

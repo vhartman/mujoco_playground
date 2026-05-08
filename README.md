@@ -37,16 +37,15 @@ pip install playground
 ### From Source
 
 > [!IMPORTANT]
-> Requires Python 3.10 or later.
+> Requires Python 3.11 or later.
 
 1. `git clone git@github.com:google-deepmind/mujoco_playground.git && cd mujoco_playground`
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/), a faster alternative to `pip`
 3. Create a virtual environment: `uv venv --python 3.11`
 4. Activate it: `source .venv/bin/activate`
-5. Install CUDA 12 jax: `uv pip install -U "jax[cuda12]"`
+5. Install all dependencies: `uv sync --extra all`
     * Verify GPU backend: `python -c "import jax; print(jax.default_backend())"` should print gpu
-6. Install playground: `uv pip install -e ".[all]"`
-7. Verify installation (and download Menagerie): `python -c "import mujoco_playground"`
+6. Verify installation (and download Menagerie): `python -c "import mujoco_playground"`
 
 #### Madrona-MJX (optional)
 
