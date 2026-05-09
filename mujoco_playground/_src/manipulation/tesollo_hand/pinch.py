@@ -51,7 +51,7 @@ def default_config() -> config_dict.ConfigDict:
         force_tolerance=0.5,
         success_hold_time=3.0,
         obs_noise=config_dict.create(
-            level=1.0,
+            level=0.0,
             scales=config_dict.create(
                 joint_pos=0.001,
                 joint_vel=0.01,
@@ -258,6 +258,9 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         metrics["f_thumb"] = jp.zeros(())
         metrics["f_index"] = jp.zeros(())
         metrics["opposing"] = jp.zeros(())
+        metrics["termination/drift"] = jp.zeros(())
+        metrics["termination/nan"] = jp.zeros(())
+        metrics["termination/tip_on_ground"] = jp.zeros(())
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -310,7 +313,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         state.metrics["success_count"] = state.info["success_count"]
         state.metrics["consecutive_success_steps"] = consecutive
 
-        done = self._get_termination(data, state.info)
+        done, term_reasons = self._get_termination(data, state.info)
+        state.metrics["termination/drift"] = term_reasons["drift"].astype(float)
+        state.metrics["termination/nan"] = term_reasons["nan"].astype(float)
+        state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
         obs = self._get_obs(data, state.info)
         rewards = self._get_reward(data, action, state.info, state.metrics, done)
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
@@ -330,14 +336,17 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
-    def _get_termination(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+    def _get_termination(
+        self, data: mjx.Data, info: dict[str, Any]
+    ) -> tuple[jax.Array, dict[str, jax.Array]]:
         del info
         cube_xy = self.get_cube_position(data)[:2]
-        drift = jp.linalg.norm(cube_xy - self._init_cube_pos[:2])
+        drift = jp.linalg.norm(cube_xy - self._init_cube_pos[:2]) > 0.15
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         tip_on_ground = jp.any(tips[:2, 2] < 0.005)
-        return (drift > 0.15) | nans | tip_on_ground
+        reasons = {"drift": drift, "nan": nans, "tip_on_ground": tip_on_ground}
+        return drift | nans | tip_on_ground, reasons
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
         joint_angles = data.qpos[self._hand_qids]
