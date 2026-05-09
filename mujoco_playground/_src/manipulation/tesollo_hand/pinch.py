@@ -62,7 +62,7 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 cube_force=5.0,
-                fingertip_pos=0.1,
+                fingertip_reach=0.5,
                 cube_lin_vel=-0.1,
                 cube_ang_vel=-0.1,
                 hand_pose=-0.2,
@@ -201,6 +201,9 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         metrics["consecutive_success_steps"] = jp.zeros(())
         metrics["steps_since_last_success"] = 0
         metrics["success_count"] = 0
+        metrics["f_thumb"] = jp.zeros(())
+        metrics["f_index"] = jp.zeros(())
+        metrics["opposing"] = jp.zeros(())
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -229,7 +232,7 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         # Success: pinch force held within ±force_tolerance N of target for
         # success_hold_time seconds. Pinch force only fires when thumb and index
         # touch opposing sides of the cube.
-        total_force = self._pinch_force(data)
+        total_force, f_thumb, f_index, opposing = self._pinch_components(data)
         in_tolerance = (
             (total_force >= self._config.force_target - self._config.force_tolerance)
             & (total_force <= self._config.force_target + self._config.force_tolerance)
@@ -266,6 +269,9 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         state.metrics["reward/success"] = success.astype(float)
         for k, v in rewards.items():
             state.metrics[f"reward/{k}"] = v
+        state.metrics["f_thumb"] = f_thumb
+        state.metrics["f_index"] = f_index
+        state.metrics["opposing"] = opposing
 
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
@@ -275,7 +281,9 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         cube_xy = self.get_cube_position(data)[:2]
         drift = jp.linalg.norm(cube_xy - self._init_cube_pos[:2])
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
-        return (drift > 0.15) | nans
+        tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
+        tip_on_ground = jp.any(tips[:2, 2] < 0.005)
+        return (drift > 0.15) | nans | tip_on_ground
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
         joint_angles = data.qpos[self._hand_qids]
@@ -332,14 +340,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         f = mjx_env.get_sensor_data(self.mj_model, data, sensor_name).reshape(-1, 3)
         return jp.sum(jp.linalg.norm(f, axis=1))
 
-    def _pinch_force(self, data: mjx.Data) -> jax.Array:
-        """Effective pinch force: thumb and index pushing opposing sides of the cube.
-
-        Returns ``min(|f_thumb|, |f_index|) * opposing``, where ``opposing`` is in
-        ``[0, 1]`` and equals 1 when the cube-center→tip directions are
-        antiparallel. Fires only when both fingertips are in contact with the
-        cube on opposite sides.
-        """
+    def _pinch_components(
+        self, data: mjx.Data
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        """Return (pinch_force, f_thumb, f_index, opposing) for logging and reward."""
         f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
         f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
 
@@ -351,7 +355,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         d_index = d_index / (jp.linalg.norm(d_index) + 1e-6)
 
         opposing = jp.clip(-jp.dot(d_thumb, d_index), 0.0, 1.0)
-        return jp.minimum(f_thumb, f_index) * opposing
+        return jp.minimum(f_thumb, f_index) * opposing, f_thumb, f_index, opposing
+
+    def _pinch_force(self, data: mjx.Data) -> jax.Array:
+        return self._pinch_components(data)[0]
 
     def _get_reward(
         self,
@@ -374,19 +381,16 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
             sigmoid="gaussian",
         )
 
-        # Shaping: pull fingertips toward cube surface.
         cube_pos = self.get_cube_position(data)
-        tip_dists = jp.linalg.norm(
-            self.get_fingertip_global_positions(data).reshape(-1, 3) - cube_pos,
-            axis=1,
-        )
-        fingertip_reward = jp.sum(
-            reward.tolerance(tip_dists, bounds=(0, 0.035), margin=0.05, sigmoid="reciprocal")
+        tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
+        reach_dists = jp.linalg.norm(tips[:2] - cube_pos, axis=1)
+        fingertip_reach = jp.sum(
+            reward.tolerance(reach_dists, bounds=(0, 0.035), margin=0.1, sigmoid="reciprocal")
         )
 
         return {
             "cube_force": force_reward,
-            "fingertip_pos": fingertip_reward,
+            "fingertip_reach": fingertip_reach,
             "cube_lin_vel": self._cube_lin_velocity(data),
             "cube_ang_vel": self._cube_ang_velocity(data),
             "hand_pose": jp.sum(jp.square(data.qpos[self._hand_qids] - self._default_pose)),
