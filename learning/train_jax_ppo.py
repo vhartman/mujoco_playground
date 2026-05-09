@@ -20,6 +20,7 @@ import json
 import os
 import time
 import warnings
+import yaml
 
 from absl import app
 from absl import flags
@@ -162,6 +163,12 @@ _TRAINING_METRICS_STEPS = flags.DEFINE_integer(
     "Number of steps between logging training metrics. Increase if training"
     " experiences slowdown.",
 )
+_ENV_OVERRIDES_FILE = flags.DEFINE_string(
+    "env_overrides_file",
+    None,
+    "Path to a YAML file of flat-dotted env-config overrides "
+    "(e.g. 'obs_noise.level: 2.0'). Applied on top of the env's default_config.",
+)
 
 
 def get_rl_config(env_name: str) -> config_dict.ConfigDict:
@@ -262,7 +269,13 @@ def main(argv):
   if _VISION.value:
     env_cfg.vision = True
     env_cfg.vision_config.render_batch_size = ppo_params.num_envs
-  env = registry.load(_ENV_NAME.value, config=env_cfg)
+
+  env_overrides = None
+  if _ENV_OVERRIDES_FILE.value:
+    with open(_ENV_OVERRIDES_FILE.value, "r", encoding="utf-8") as f:
+      env_overrides = yaml.safe_load(f)
+
+  env = registry.load(_ENV_NAME.value, config=env_cfg, config_overrides=env_overrides)
   if _RUN_EVALS.present:
     ppo_params.run_evals = _RUN_EVALS.value
   if _LOG_TRAINING_METRICS.present:

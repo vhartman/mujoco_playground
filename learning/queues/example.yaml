@@ -1,0 +1,82 @@
+# Training-run queue example
+#
+# Run with:
+#   python learning/run_queue.py --queue learning/queues/example.yaml
+#   python learning/run_queue.py --queue learning/queues/example.yaml --dry-run
+#   python learning/run_queue.py --queue learning/queues/example.yaml --start-from 2
+#
+# Each run is executed sequentially as a subprocess of train_jax_ppo.py.
+# On failure the queue continues and reports a summary at the end.
+#
+# Logs land in:
+#   logs/_queue/<queue-name>-<timestamp>/
+#     run-00-<env>-<suffix>.log
+#     run-00-<env>-<suffix>-overrides.yaml   ← env_overrides written here
+#     run-01-...
+#     status.json                             ← updated after each run
+
+# ── defaults ──────────────────────────────────────────────────────────────
+# Shared flag values and env_overrides applied to every run.
+# Per-run values override these.
+defaults:
+  script: learning/train_jax_ppo.py
+  flags:
+    use_wandb: true
+    num_evals: 10
+
+# ── runs ──────────────────────────────────────────────────────────────────
+runs:
+  # Run 0: baseline — XML gains, no noise
+  - flags:
+      env_name: TesolloPinch
+      suffix: baseline
+      seed: 1
+      num_timesteps: 50_000_000
+    env_overrides:
+      obs_noise.level: 0.0
+
+  # Run 1: default obs noise, increased force target
+  - flags:
+      env_name: TesolloPinch
+      suffix: force15
+      seed: 1
+      num_timesteps: 50_000_000
+    env_overrides:
+      force_target: 15.0
+
+  # Run 2: override PID gains — stiffer fingers, unchanged wrist
+  - flags:
+      env_name: TesolloPinch
+      suffix: kp5
+      seed: 1
+      num_timesteps: 50_000_000
+    env_overrides:
+      pid_gains.enable: true
+      pid_gains.finger_kp: 5.0
+      pid_gains.finger_kv: 0.5
+
+  # Run 3: sweep obs noise level with per-group gain override
+  - flags:
+      env_name: TesolloPinch
+      suffix: noise2x_kp5
+      seed: 1
+      num_timesteps: 50_000_000
+    env_overrides:
+      obs_noise.level: 2.0
+      obs_noise.scales.joint_pos: 0.002
+      obs_noise.scales.cube_pos: 0.01
+      pid_gains.enable: true
+      pid_gains.finger_kp: 5.0
+      pid_gains.wrist_kp: [15.0, 80.0, 15.0]
+      pid_gains.wrist_kv: [2.0, 10.0, 2.0]
+
+  # Run 4: per-actuator gain override (length-23 list, order matches ACTUATOR_NAMES)
+  # wrist_1(3) + thumb(4) + index(4) + middle(4) + ring(4) + pinky(4) = 23
+  - flags:
+      env_name: TesolloPinch
+      suffix: per_act
+      seed: 2
+      num_timesteps: 50_000_000
+    env_overrides:
+      pid_gains.enable: true
+      pid_gains.kp_per_actuator: [10, 75, 10, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]

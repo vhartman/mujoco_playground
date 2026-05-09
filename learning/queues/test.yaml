@@ -1,0 +1,21 @@
+defaults:
+  flags:
+    env_name: TesolloPinch
+    num_timesteps: 2_000_000
+    num_evals: 3
+    num_envs: 16
+    use_wandb: false
+  env_overrides:
+    nconmax: 3200
+
+runs:
+  - flags:
+      suffix: test-baseline
+      seed: 1
+
+  - flags:
+      suffix: test-kp5
+      seed: 1
+    env_overrides:
+      pid_gains.enable: true
+      pid_gains.finger_kp: 5.0

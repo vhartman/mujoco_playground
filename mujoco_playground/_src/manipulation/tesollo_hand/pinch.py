@@ -82,6 +82,19 @@ def default_config() -> config_dict.ConfigDict:
             pert_duration_steps=[1, 100],
             pert_wait_steps=[60, 150],
         ),
+        # PID gains for all 23 actuators (3 wrist + 5 fingers x 4).
+        # When enable=True these override the XML-baked values at load time.
+        # kp_per_actuator / kv_per_actuator: optional length-23 lists that
+        # override the group defaults on a per-actuator basis.
+        pid_gains=config_dict.create(
+            enable=False,
+            wrist_kp=[10.0, 75.0, 10.0],
+            wrist_kv=[2.0, 10.0, 2.0],
+            finger_kp=3.0,
+            finger_kv=0.0,
+            kp_per_actuator=[],
+            kv_per_actuator=[],
+        ),
         impl="warp",
         nconmax=200 * 8192,
         njmax=1024,
@@ -106,6 +119,9 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
     def _post_init(self) -> None:
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
 
+        if self._config.pid_gains.enable:
+            self._apply_pid_gains()
+
         home_key = self._mj_model.keyframe("home")
         self._init_q = jp.array(home_key.qpos, dtype=float)
         # Active: wrist(3) + thumb(4) + index(4). Fixed: middle + ring + pinky.
@@ -125,6 +141,44 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         self._default_pose = self._init_q[self._hand_qids]
         # Initial cube xy used for drift-based termination.
         self._init_cube_pos = jp.array(home_key.qpos[self._cube_qids[:3]])
+
+    def _apply_pid_gains(self) -> None:
+        """Override actuator PID gains from config, replacing XML-baked values.
+
+        MuJoCo <position kp kv> maps to:
+          gainprm[:, 0] = kp
+          biasprm[:, 1] = -kp  (position error term)
+          biasprm[:, 2] = -kv  (velocity error term)
+        """
+        cfg = self._config.pid_gains
+        nu = self._mjx_model.nu  # 23
+
+        if cfg.kp_per_actuator:
+            kp = jp.array(cfg.kp_per_actuator, dtype=float)
+        else:
+            kp = jp.concatenate([
+                jp.array(cfg.wrist_kp, dtype=float),      # (3,)
+                jp.full((nu - 3,), cfg.finger_kp),        # (20,)
+            ])
+
+        if cfg.kv_per_actuator:
+            kv = jp.array(cfg.kv_per_actuator, dtype=float)
+        else:
+            kv = jp.concatenate([
+                jp.array(cfg.wrist_kv, dtype=float),      # (3,)
+                jp.full((nu - 3,), cfg.finger_kv),        # (20,)
+            ])
+
+        gainprm = self._mjx_model.actuator_gainprm.at[:, 0].set(kp)
+        biasprm = (
+            self._mjx_model.actuator_biasprm
+            .at[:, 1].set(-kp)
+            .at[:, 2].set(-kv)
+        )
+        self._mjx_model = self._mjx_model.tree_replace({
+            "actuator_gainprm": gainprm,
+            "actuator_biasprm": biasprm,
+        })
 
     @property
     def action_size(self) -> int:
