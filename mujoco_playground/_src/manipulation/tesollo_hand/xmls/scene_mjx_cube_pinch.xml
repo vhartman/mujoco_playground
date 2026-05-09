@@ -196,6 +196,8 @@
     <framezaxis name="cube_upvector" objtype="body" objname="cube"/>
 
     <contact name="cube_force" geom1="cube" subtree2="rh" num="32" data="force"/>
+    <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
 
     <!-- hand. -->
     <framepos name="wrist_position" objtype="site" objname="wrist_site"/>

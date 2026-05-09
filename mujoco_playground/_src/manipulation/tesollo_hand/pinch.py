@@ -55,6 +55,8 @@ def default_config() -> config_dict.ConfigDict:
             scales=config_dict.create(
                 joint_pos=0.001,
                 joint_vel=0.01,
+                cube_pos=0.005,
+                cube_quat=0.02,
             ),
         ),
         reward_config=config_dict.create(
@@ -224,8 +226,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
-        # Success: force held within ±force_tolerance N of target for success_hold_time seconds.
-        total_force = self._total_contact_force(data)
+        # Success: pinch force held within ±force_tolerance N of target for
+        # success_hold_time seconds. Pinch force only fires when thumb and index
+        # touch opposing sides of the cube.
+        total_force = self._pinch_force(data)
         in_tolerance = (
             (total_force >= self._config.force_target - self._config.force_tolerance)
             & (total_force <= self._config.force_target + self._config.force_tolerance)
@@ -276,17 +280,32 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
         joint_angles = data.qpos[self._hand_qids]
         joint_vel = data.qvel[self._hand_dqids]
+        cube_pos = self.get_cube_position(data)
+        cube_quat = self.get_cube_orientation(data)
 
-        # Noisy proprioception: actor input is q and qdot only.
-        info["rng"], pos_rng, vel_rng = jax.random.split(info["rng"], 3)
+        # Noisy proprioception + cube pose for the actor.
+        info["rng"], pos_rng, vel_rng, cpos_rng, cquat_rng = jax.random.split(
+            info["rng"], 5
+        )
         noisy_q = joint_angles + (
             2 * jax.random.uniform(pos_rng, shape=joint_angles.shape) - 1
         ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_pos
         noisy_qdot = joint_vel + (
             2 * jax.random.uniform(vel_rng, shape=joint_vel.shape) - 1
         ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_vel
+        noisy_cube_pos = cube_pos + (
+            2 * jax.random.uniform(cpos_rng, shape=cube_pos.shape) - 1
+        ) * self._config.obs_noise.level * self._config.obs_noise.scales.cube_pos
+        noisy_cube_quat = cube_quat + (
+            2 * jax.random.uniform(cquat_rng, shape=cube_quat.shape) - 1
+        ) * self._config.obs_noise.level * self._config.obs_noise.scales.cube_quat
+        noisy_cube_quat = noisy_cube_quat / (
+            jp.linalg.norm(noisy_cube_quat) + 1e-6
+        )
 
-        state = jp.concatenate([noisy_q, noisy_qdot])  # 46
+        state = jp.concatenate(
+            [noisy_q, noisy_qdot, noisy_cube_pos, noisy_cube_quat]
+        )  # 53
 
         # Privileged critic state: ground truth proprioception + cube kinematics
         # + fingertip positions. Contact forces excluded (reward signal only).
@@ -308,6 +327,32 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         ).reshape(-1, 3)
         return jp.sum(jp.linalg.norm(forces, axis=1))
 
+    def _fingertip_force(self, data: mjx.Data, sensor_name: str) -> jax.Array:
+        """Total contact force magnitude on a single fingertip vs. the cube."""
+        f = mjx_env.get_sensor_data(self.mj_model, data, sensor_name).reshape(-1, 3)
+        return jp.sum(jp.linalg.norm(f, axis=1))
+
+    def _pinch_force(self, data: mjx.Data) -> jax.Array:
+        """Effective pinch force: thumb and index pushing opposing sides of the cube.
+
+        Returns ``min(|f_thumb|, |f_index|) * opposing``, where ``opposing`` is in
+        ``[0, 1]`` and equals 1 when the cube-center→tip directions are
+        antiparallel. Fires only when both fingertips are in contact with the
+        cube on opposite sides.
+        """
+        f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
+        f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
+
+        cube_pos = self.get_cube_position(data)
+        tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
+        d_thumb = tips[0] - cube_pos
+        d_index = tips[1] - cube_pos
+        d_thumb = d_thumb / (jp.linalg.norm(d_thumb) + 1e-6)
+        d_index = d_index / (jp.linalg.norm(d_index) + 1e-6)
+
+        opposing = jp.clip(-jp.dot(d_thumb, d_index), 0.0, 1.0)
+        return jp.minimum(f_thumb, f_index) * opposing
+
     def _get_reward(
         self,
         data: mjx.Data,
@@ -318,9 +363,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
     ) -> dict[str, jax.Array]:
         del metrics
 
-        # Primary: tolerance reward peaked at force_target (10 N).
-        # The sensor already filters to hand-cube contacts only.
-        total_force = self._total_contact_force(data)
+        # Primary: tolerance reward peaked at force_target (10 N) using the
+        # opposing-side pinch force between thumb and index. Fires only when the
+        # two fingers contact the cube on opposite sides.
+        total_force = self._pinch_force(data)
         force_reward = reward.tolerance(
             total_force,
             bounds=(self._config.force_target, self._config.force_target),
