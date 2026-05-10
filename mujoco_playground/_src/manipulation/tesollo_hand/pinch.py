@@ -64,7 +64,7 @@ def default_config() -> config_dict.ConfigDict:
                 cube_force=5.0,
                 fingertip_reach=0.5,
                 cube_lin_vel=-0.1,
-                cube_ang_vel=-0.1,
+                cube_ang_vel=-0.8,
                 hand_pose=-0.2,
                 wrist_pose=-0.5,
                 action_rate=-0.005,
@@ -289,7 +289,8 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         # Success: pinch force held within ±force_tolerance N of target for
         # success_hold_time seconds. Pinch force only fires when thumb and index
         # touch opposing sides of the cube.
-        total_force, f_thumb, f_index, opposing = self._pinch_components(data)
+        f_thumb, f_index, opposing = self._pinch_components(data)
+        total_force = jp.minimum(f_thumb, f_index) * opposing
         in_tolerance = (
             (total_force >= self._config.force_target - self._config.force_tolerance)
             & (total_force <= self._config.force_target + self._config.force_tolerance)
@@ -418,10 +419,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         d_index = d_index / (jp.linalg.norm(d_index) + 1e-6)
 
         opposing = jp.clip(-jp.dot(d_thumb, d_index), 0.0, 1.0)
-        return jp.minimum(f_thumb, f_index) * opposing, f_thumb, f_index, opposing
+        return f_thumb, f_index, opposing
 
     def _pinch_force(self, data: mjx.Data) -> jax.Array:
-        return self._pinch_components(data)[0]
+        return jp.minimum(*self._pinch_components(data)[:2]) * self._pinch_components(data)[2]
 
     def _get_reward(
         self,

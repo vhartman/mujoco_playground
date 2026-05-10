@@ -9,3 +9,5 @@ logs
 uv.lock
 .zed/
 wandb/
+learning/queues/
+*.mp4

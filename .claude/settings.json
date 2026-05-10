@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, subprocess\ndata = json.load(sys.stdin)\nfp = data.get('tool_input', {}).get('file_path', '')\nif '/queues/' in fp and fp.endswith('.yaml'):\n    r = subprocess.run(['.venv/bin/python3', 'learning/validate_queue.py', fp], text=True)\n    sys.exit(r.returncode)\n\"",
+            "statusMessage": "Validating queue..."
+          }
+        ]
+      }
+    ]
+  }
+}
