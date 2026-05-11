@@ -2,26 +2,43 @@ import argparse
 import mujoco
 import mujoco.viewer
 import pathlib
-from mujoco_playground._src.manipulation.tesollo_hand.pinch import CubePinch
+from mujoco_playground._src.manipulation.tesollo_hand.pinch import (
+    CubePinchForce,
+    CubePinchProprio,
+    CubePinchBaseline,
+)
+from mujoco_playground._src.manipulation.tesollo_hand.base_wrist import get_assets
+from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.static_grasp import (
+    build_static_grasp_scene,
+)
+
+_XML_ENVS = {"pinch_full", "pinch_restricted"}
+
+_RL_ENVS = {
+    "cube_pinch_force": CubePinchForce,
+    "cube_pinch_proprio": CubePinchProprio,
+    "cube_pinch_baseline": CubePinchBaseline,
+}
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--source", choices=["xml", "rl_env"], default="xml")
+parser.add_argument(
+    "--env",
+    choices=[*_XML_ENVS, *_RL_ENVS],
+    default="cube_pinch_proprio",
+)
 parser.add_argument("--mode", default="active", choices=["passive", "active"])
 args = parser.parse_args()
-source = args.source
 
-if source == "xml":
-    f = 'scene_mjx_cube_pinch.xml'
-
-    mujoco_dir = pathlib.Path(__file__).parent.parent
-    XML_DIR = mujoco_dir / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/"
-
-    m = mujoco.MjModel.from_xml_path(str(XML_DIR / f))
-    hand_object = m.body("rh")
-
+if args.env in _XML_ENVS:
+    if args.env == "pinch_full":
+        mujoco_dir = pathlib.Path(__file__).parent.parent
+        xml_dir = mujoco_dir / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/"
+        m = mujoco.MjModel.from_xml_path(str(xml_dir / "scene_mjx_cube_pinch.xml"))
+    else:
+        m = mujoco.MjModel.from_xml_string(build_static_grasp_scene(), assets=get_assets())
     data = mujoco.MjData(m)
-elif source == "rl_env":
-    env = CubePinch()
+else:
+    env = _RL_ENVS[args.env]()
     m = env.mj_model
     data = mujoco.MjData(m)
 
