@@ -14,7 +14,7 @@
 # ==============================================================================
 """Base classes for leap hand."""
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from etils import epath
 import jax
@@ -44,7 +44,7 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
 
   def __init__(
       self,
-      xml_source: str | function,
+      xml_source: str | Callable,
       config: config_dict.ConfigDict,
       config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
   ) -> None:
