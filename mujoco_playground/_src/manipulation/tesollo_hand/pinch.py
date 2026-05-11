@@ -380,12 +380,14 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
             jp.linalg.norm(noisy_cube_quat) + 1e-6
         )
 
+        ctrl_targets = data.ctrl[:_N_ACTIVE]
+
         state = jp.concatenate(
-            [noisy_q, noisy_qdot, noisy_cube_pos, noisy_cube_quat]
-        )  # 53
+            [noisy_q, noisy_qdot, noisy_cube_pos, noisy_cube_quat, ctrl_targets]
+        )  # 53 + 11 = 64
 
         # Privileged critic state: ground truth proprioception + cube kinematics
-        # + fingertip positions. Contact forces excluded (reward signal only).
+        # + fingertip positions + ctrl targets. Contact forces excluded (reward signal only).
         privileged_state = jp.concatenate([
             joint_angles,
             joint_vel,
@@ -393,6 +395,7 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
             self.get_cube_linvel(data),
             self.get_cube_angvel(data),
             self.get_fingertip_positions(data),
+            ctrl_targets,
         ])
 
         return {"state": state, "privileged_state": privileged_state}
