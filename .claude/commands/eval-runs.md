@@ -15,7 +15,7 @@ Run deterministic evaluation rollouts for one or more training runs and save vid
 Run this single command from the project root:
 
 ```bash
-MUJOCO_GL=egl .venv/bin/python learning/eval_runs.py $ARGUMENTS
+MUJOCO_GL=egl .venv/bin/python experimentation/eval_runs.py $ARGUMENTS
 ```
 
 The script handles run discovery, evaluation, and renaming. Videos are saved as `<suffix>.mp4` in the project root. Report the summary table printed by the script, and note any failed runs.
