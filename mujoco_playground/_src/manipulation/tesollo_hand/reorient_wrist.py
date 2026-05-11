@@ -97,7 +97,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandWristEnv):
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
         super().__init__(
-            xml_path=consts.CUBE_XML.as_posix(),
+            xml_source=consts.CUBE_XML.as_posix(),
             config=config,
             config_overrides=config_overrides,
         )

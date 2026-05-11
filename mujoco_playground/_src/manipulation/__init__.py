@@ -65,7 +65,9 @@ _envs = {
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 
     "TesolloGrasp": tesollo_grasp.Grasp,
-    "TesolloPinch": tesollo_pinch.CubePinch,
+    "TesolloPinchForce": tesollo_pinch.CubePinchForce,
+    "TesolloPinchProprio": tesollo_pinch.CubePinchProprio,
+    "TesolloPinchBaseline": tesollo_pinch.CubePinchBaseline,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -93,7 +95,9 @@ _cfgs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "TesolloGrasp": tesollo_grasp.default_config,
-    "TesolloPinch": tesollo_pinch.default_config,
+    "TesolloPinchForce": tesollo_pinch.default_config,
+    "TesolloPinchProprio": tesollo_pinch.default_config,
+    "TesolloPinchBaseline": tesollo_pinch.default_config,
 
 
     "MasspointReach": masspoint_reach.default_config,

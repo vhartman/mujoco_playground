@@ -20,20 +20,18 @@ from typing import Any, Dict, Optional, Union
 import jax
 import jax.numpy as jp
 from ml_collections import config_dict
+import mujoco
 from mujoco import mjx
-from mujoco.mjx._src import math
 import numpy as np
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
 from mujoco_playground._src.manipulation.tesollo_hand import base_wrist as tesollo_hand_base
-from mujoco_playground._src.manipulation.tesollo_hand import (
-    tesollo_hand_wrist_constants as consts,
-)
 
-# Wrist (3) + thumb/dg_1 (4) + index/dg_2 (4) = 11 controlled DOFs.
-# Middle/ring/pinky are held at their keyframe defaults.
-_N_ACTIVE = 11
+# Thumb (dg_1, 4) + index (dg_2, 4) = 8 controlled DOFs.
+# Wrist, middle, ring, pinky and cube are frozen by the scene builder.
+_N_ACTIVE = 8
+_ACTIVE_JOINT_NAMES = [f"rj_dg_{f}_{i}" for f in (1, 2) for i in range(1, 5)]
 
 
 def default_config() -> config_dict.ConfigDict:
@@ -64,14 +62,9 @@ def default_config() -> config_dict.ConfigDict:
                 fingertip_reach=2.0,
                 fingertip_height=2.0,
                 palm_height=1.5,
-                cube_lin_vel=-0.1,
-                cube_ang_vel=-0.8,
-                hand_pose=-0.1,
-                wrist_pose=-0.05,
                 action_rate=-0.005,
                 joint_vel=-0.01,
                 energy=-1e-3,
-                wrist_vel=-0.1,
                 termination=-100.0,
             ),
             success_reward=10.0,
@@ -83,14 +76,8 @@ def default_config() -> config_dict.ConfigDict:
             pert_duration_steps=[1, 100],
             pert_wait_steps=[60, 150],
         ),
-        # PID gains for all 23 actuators (3 wrist + 5 fingers x 4).
-        # When enable=True these override the XML-baked values at load time.
-        # kp_per_actuator / kv_per_actuator: optional length-23 lists that
-        # override the group defaults on a per-actuator basis.
         pid_gains=config_dict.create(
             enable=False,
-            wrist_kp=[10.0, 75.0, 10.0],
-            wrist_kv=[2.0, 10.0, 2.0],
             finger_kp=3.0,
             finger_kv=0.0,
             kp_per_actuator=[],
@@ -129,23 +116,19 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
 
         home_key = self._mj_model.keyframe("home")
         self._init_q = jp.array(home_key.qpos, dtype=float)
-        # Active: wrist(3) + thumb(4) + index(4). Fixed: middle + ring + pinky.
+        # Thumb (dg_1) + index (dg_2) = 8 active DOFs.
         self._lowers = jp.array(self._mj_model.actuator_ctrlrange[:_N_ACTIVE, 0])
         self._uppers = jp.array(self._mj_model.actuator_ctrlrange[:_N_ACTIVE, 1])
-        self._fixed_ctrl_vals = jp.array(home_key.ctrl[_N_ACTIVE:])  # 12-dim
-        self._wrist_qids = mjx_env.get_qpos_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
-        self._wrist_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
-        self._finger_qids = mjx_env.get_qpos_ids(self.mj_model, consts.FINGER_NAMES)
-        self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
-        self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
-        self._cube_qids = mjx_env.get_qpos_ids(self.mj_model, ["cube_freejoint"])
+        self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, _ACTIVE_JOINT_NAMES)
+        self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, _ACTIVE_JOINT_NAMES)
         self._cube_geom_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
-        self._default_wrist_pose = self._init_q[self._wrist_qids]
-        self._default_pose = self._init_q[self._hand_qids]
-        # Initial cube xy used for drift-based termination.
-        self._init_cube_pos = jp.array(home_key.qpos[self._cube_qids[:3]])
+        self._default_pose = self._init_q  # 8-dim: thumb+index keyframe qpos
+        # Cube freejoint removed; get fixed world position via forward kinematics.
+        _init_data = mujoco.MjData(self._mj_model)
+        mujoco.mj_forward(self._mj_model, _init_data)
+        self._init_cube_pos = jp.array(_init_data.xpos[self._cube_body_id])
 
     def _apply_pid_gains(self) -> None:
         """Override actuator PID gains from config, replacing XML-baked values.
@@ -156,23 +139,17 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
           biasprm[:, 2] = -kv  (velocity error term)
         """
         cfg = self._config.pid_gains
-        nu = self._mjx_model.nu  # 23
+        nu = self._mjx_model.nu  # 8
 
         if cfg.kp_per_actuator:
             kp = jp.array(cfg.kp_per_actuator, dtype=float)
         else:
-            kp = jp.concatenate([
-                jp.array(cfg.wrist_kp, dtype=float),      # (3,)
-                jp.full((nu - 3,), cfg.finger_kp),        # (20,)
-            ])
+            kp = jp.full((nu,), cfg.finger_kp)
 
         if cfg.kv_per_actuator:
             kv = jp.array(cfg.kv_per_actuator, dtype=float)
         else:
-            kv = jp.concatenate([
-                jp.array(cfg.wrist_kv, dtype=float),      # (3,)
-                jp.full((nu - 3,), cfg.finger_kv),        # (20,)
-            ])
+            kv = jp.full((nu,), cfg.finger_kv)
 
         gainprm = self._mjx_model.actuator_gainprm.at[:, 0].set(kp)
         biasprm = (
@@ -265,10 +242,10 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         ])
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Ground-truth privileged critic state (81-dim), no noise.
+        """Ground-truth privileged critic state (48-dim), no noise.
 
-        q(23) + q_dot(23) + cube_pos(3) + cube_linvel(3) + cube_angvel(3)
-        + fingertips_palm(15) + ctrl_targets(11) = 81
+        q(8) + q_dot(8) + cube_pos(3) + cube_linvel(3) + cube_angvel(3)
+        + fingertips_palm(15) + ctrl_targets(8) = 48
         """
         return jp.concatenate([
             data.qpos[self._hand_qids],
@@ -287,19 +264,14 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng, pos_rng, pert1, pert2, pert3 = jax.random.split(rng, 5)
 
-        # Randomise only the 11 active joints; fixed joints stay at keyframe.
-        q_active = jp.clip(
-            self._default_pose[:_N_ACTIVE] + 0.05 * jax.random.normal(pos_rng, (_N_ACTIVE,)),
+        # Randomise all 8 active joints (thumb + index); cube is fixed.
+        qpos = jp.clip(
+            self._default_pose + 0.05 * jax.random.normal(pos_rng, (_N_ACTIVE,)),
             self._lowers,
             self._uppers,
         )
-        q_hand = jp.concatenate([q_active, self._default_pose[_N_ACTIVE:]])
-        # Cube starts at keyframe position (on floor).
-        q_cube = self._init_q[self._cube_qids]
-        qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.zeros(self._mj_model.nv)
-        # Full ctrl: active joints + fixed joints locked at keyframe values.
-        ctrl = jp.concatenate([q_active, self._fixed_ctrl_vals])
+        ctrl = qpos
 
         data = mjx_env.make_data(
             self._mj_model,
@@ -370,18 +342,14 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         if self._config.pert_config.enable:
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
-        # action is _N_ACTIVE-dim; expand to full 23-dim ctrl.
         delta = action * self._config.action_scale
         active_ctrl = jp.clip(
             state.data.ctrl[:_N_ACTIVE] + delta, self._lowers, self._uppers
         )
-        full_ctrl = jp.concatenate([active_ctrl, self._fixed_ctrl_vals])
         motor_targets = (
-            self._config.ema_alpha * full_ctrl
+            self._config.ema_alpha * active_ctrl
             + (1 - self._config.ema_alpha) * state.info["motor_targets"]
         )
-        # Fixed joints must not drift under EMA.
-        motor_targets = jp.concatenate([motor_targets[:_N_ACTIVE], self._fixed_ctrl_vals])
 
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
@@ -414,13 +382,13 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         state.metrics["success_count"] = state.info["success_count"]
         state.metrics["consecutive_success_steps"] = consecutive
 
-        done, term_reasons = self._get_termination(data, state.info)
+        done, term_reasons = self._get_termination(data)
         state.metrics["termination/drift"] = term_reasons["drift"].astype(float)
         state.metrics["termination/nan"] = term_reasons["nan"].astype(float)
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
         obs = self._get_obs(data, state.info)
         rewards = self._get_reward(
-            data, action, state.info, state.metrics, done,
+            data, action, state.info, done,
             f_thumb=f_thumb, f_index=f_index, opposing=opposing,
         )
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
@@ -441,9 +409,8 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
     def _get_termination(
-        self, data: mjx.Data, info: dict[str, Any]
+        self, data: mjx.Data
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
-        del info
         cube_xy = self.get_cube_position(data)[:2]
         drift = jp.linalg.norm(cube_xy - self._init_cube_pos[:2]) > 0.15
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
@@ -485,22 +452,16 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         opposing = jp.clip(-jp.dot(d_thumb, d_index), 0.0, 1.0)
         return f_thumb, f_index, opposing
 
-    def _pinch_force(self, data: mjx.Data) -> jax.Array:
-        f_thumb, f_index, opposing = self._pinch_components(data)
-        return jp.minimum(f_thumb, f_index) * opposing
-
     def _get_reward(
         self,
         data: mjx.Data,
         action: jax.Array,
         info: dict[str, Any],
-        metrics: dict[str, Any],
         done: jax.Array,
         f_thumb: jax.Array,
         f_index: jax.Array,
         opposing: jax.Array,
     ) -> dict[str, jax.Array]:
-        del metrics
 
         # Primary: tolerance reward peaked at force_target (10 N) using the
         # opposing-side pinch force between thumb and index. Fires only when the
@@ -537,22 +498,11 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             "fingertip_reach": fingertip_reach,
             "fingertip_height": fingertip_height,
             "palm_height": palm_height,
-            "cube_lin_vel": self._cube_lin_velocity(data),
-            "cube_ang_vel": self._cube_ang_velocity(data),
-            "hand_pose": jp.sum(jp.square(data.qpos[self._finger_qids] - self._default_pose[3:])),
-            "wrist_pose": jp.sum(jp.square(data.qpos[self._wrist_qids] - self._default_wrist_pose)),
             "action_rate": self._cost_action_rate(action, info["last_act"], info["last_last_act"]),
             "joint_vel": self._cost_joint_vel(data),
-            "wrist_vel": jp.sum(jp.square(data.qvel[self._wrist_dqids])),
             "energy": self._cost_energy(data.qvel[self._hand_dqids], data.actuator_force),
             "termination": done,
         }
-
-    def _cube_lin_velocity(self, data: mjx.Data) -> jax.Array:
-        return math.norm(self.get_cube_linvel(data))
-
-    def _cube_ang_velocity(self, data: mjx.Data) -> jax.Array:
-        return math.norm(self.get_cube_angvel(data))
 
     def _cost_energy(self, qvel: jax.Array, qfrc_actuator: jax.Array) -> jax.Array:
         return jp.sum(jp.abs(qvel) * jp.abs(qfrc_actuator))
@@ -606,13 +556,11 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     from mujoco_playground._src.manipulation.tesollo_hand.pinch import CubePinchProprio
     mj_model = CubePinchProprio().mj_model
     cube_body_id = mj_model.body("cube").id
-    hand_qids = mjx_env.get_qpos_ids(mj_model, consts.JOINT_NAMES)
+    hand_qids = mjx_env.get_qpos_ids(mj_model, _ACTIVE_JOINT_NAMES)
+    n_hand = len(hand_qids)
     hand_body_names = [
         "rl_dg_1_1", "rl_dg_1_2", "rl_dg_1_3", "rl_dg_1_4",
         "rl_dg_2_1", "rl_dg_2_2", "rl_dg_2_3", "rl_dg_2_4",
-        "rl_dg_3_1", "rl_dg_3_2", "rl_dg_3_3", "rl_dg_3_4",
-        "rl_dg_4_1", "rl_dg_4_2", "rl_dg_4_3", "rl_dg_4_4",
-        "rl_dg_5_1", "rl_dg_5_2", "rl_dg_5_3", "rl_dg_5_4",
     ]
     hand_body_ids = np.array([mj_model.body(n).id for n in hand_body_names])
     silicone_geom_ids = [
@@ -640,18 +588,18 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         rng, key = jax.random.split(rng)
         qpos0 = model.qpos0.at[hand_qids].set(
             model.qpos0[hand_qids]
-            + jax.random.uniform(key, shape=(23,), minval=-0.05, maxval=0.05)
+            + jax.random.uniform(key, shape=(n_hand,), minval=-0.05, maxval=0.05)
         )
 
         rng, key = jax.random.split(rng)
         frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-            key, shape=(23,), minval=0.5, maxval=2.0
+            key, shape=(n_hand,), minval=0.5, maxval=2.0
         )
         dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
 
         rng, key = jax.random.split(rng)
         armature = model.dof_armature[hand_qids] * jax.random.uniform(
-            key, shape=(23,), minval=1.0, maxval=1.05
+            key, shape=(n_hand,), minval=1.0, maxval=1.05
         )
         dof_armature = model.dof_armature.at[hand_qids].set(armature)
 
@@ -670,7 +618,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
         rng, key = jax.random.split(rng)
         kd = model.dof_damping[hand_qids] * jax.random.uniform(
-            key, (23,), minval=0.8, maxval=1.2
+            key, (n_hand,), minval=0.8, maxval=1.2
         )
         dof_damping = model.dof_damping.at[hand_qids].set(kd)
 

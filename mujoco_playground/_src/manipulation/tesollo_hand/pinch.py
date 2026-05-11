@@ -16,17 +16,16 @@
 
 from typing import Any, Dict, Optional, Union
 
-import jax
 import jax.numpy as jp
 from ml_collections import config_dict
 
-from mujoco_playground._src.manipulation.tesollo_hand import (
-    tesollo_hand_wrist_constants as consts,
-)
-from mujoco_playground._src.manipulation.tesollo_hand.pinch_base import (
+from mujoco_playground._src.manipulation.tesollo_hand.base_pinch import (
     CubePinchBase,
     _N_ACTIVE,
     default_config,
+)
+from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.static_grasp import (
+    build_static_grasp_scene,
 )
 from mujoco_playground._src import mjx_env
 
@@ -36,10 +35,7 @@ __all__ = [
     "CubePinchForce",
     "CubePinchProprio",
     "CubePinchBaseline",
-    "CubePinch",
 ]
-
-_PINCH_XML = consts.ROOT_PATH / "xmls" / "scene_mjx_cube_pinch.xml"
 
 
 class CubePinchForce(CubePinchBase):
@@ -52,7 +48,7 @@ class CubePinchForce(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(_PINCH_XML.as_posix(), config, config_overrides)
+        super().__init__(build_static_grasp_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:
@@ -79,7 +75,7 @@ class CubePinchProprio(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(_PINCH_XML.as_posix(), config, config_overrides)
+        super().__init__(build_static_grasp_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:
@@ -110,7 +106,7 @@ class CubePinchBaseline(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(_PINCH_XML.as_posix(), config, config_overrides)
+        super().__init__(build_static_grasp_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:
@@ -123,7 +119,3 @@ class CubePinchBaseline(CubePinchBase):
             self._obs_object(data, info),             # 7
         ])  # total = 53
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
-
-
-# Alias: existing training scripts that import CubePinch get CubePinchProprio.
-CubePinch = CubePinchProprio

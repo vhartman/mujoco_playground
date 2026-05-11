@@ -2,7 +2,6 @@
   <body name="cube">
     <freejoint name="cube_freejoint"/>
 
-    <!-- collision geom — named "cube" so contact force sensors work -->
     <geom name="cube" type="box" size=".03 .03 .03" mass=".108"
           friction=".3 0.05" solimp="0.95 0.99 0.0001" conaffinity="1" condim="3" group="3"/>
 
