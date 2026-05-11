@@ -62,11 +62,13 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 cube_force=5.0,
-                fingertip_reach=0.5,
+                fingertip_reach=2.0,
+                fingertip_height=2.0,
+                palm_height=1.5,
                 cube_lin_vel=-0.1,
                 cube_ang_vel=-0.8,
-                hand_pose=-0.2,
-                wrist_pose=-0.5,
+                hand_pose=-0.1,
+                wrist_pose=-0.05,
                 action_rate=-0.005,
                 joint_vel=-0.01,
                 energy=-1e-3,
@@ -319,7 +321,10 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         state.metrics["termination/nan"] = term_reasons["nan"].astype(float)
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
         obs = self._get_obs(data, state.info)
-        rewards = self._get_reward(data, action, state.info, state.metrics, done)
+        rewards = self._get_reward(
+            data, action, state.info, state.metrics, done,
+            f_thumb=f_thumb, f_index=f_index, opposing=opposing,
+        )
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
         rew = sum(rewards.values()) * self.dt
         rew += success * self._config.reward_config.success_reward
@@ -406,8 +411,8 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
 
     def _pinch_components(
         self, data: mjx.Data
-    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-        """Return (pinch_force, f_thumb, f_index, opposing) for logging and reward."""
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Return (f_thumb, f_index, opposing) for logging and reward."""
         f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
         f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
 
@@ -422,7 +427,8 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         return f_thumb, f_index, opposing
 
     def _pinch_force(self, data: mjx.Data) -> jax.Array:
-        return jp.minimum(*self._pinch_components(data)[:2]) * self._pinch_components(data)[2]
+        f_thumb, f_index, opposing = self._pinch_components(data)
+        return jp.minimum(f_thumb, f_index) * opposing
 
     def _get_reward(
         self,
@@ -431,13 +437,16 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
         info: dict[str, Any],
         metrics: dict[str, Any],
         done: jax.Array,
+        f_thumb: jax.Array,
+        f_index: jax.Array,
+        opposing: jax.Array,
     ) -> dict[str, jax.Array]:
         del metrics
 
         # Primary: tolerance reward peaked at force_target (10 N) using the
         # opposing-side pinch force between thumb and index. Fires only when the
         # two fingers contact the cube on opposite sides.
-        total_force = self._pinch_force(data)
+        total_force = jp.minimum(f_thumb, f_index) * opposing
         force_reward = reward.tolerance(
             total_force,
             bounds=(self._config.force_target, self._config.force_target),
@@ -452,12 +461,26 @@ class CubePinch(tesollo_hand_base.TesolloHandWristEnv):
             reward.tolerance(reach_dists, bounds=(0, 0.035), margin=0.1, sigmoid="reciprocal")
         )
 
+        # Dense gradient before the hard ground-termination cliff.
+        min_tip_z = jp.min(tips[:2, 2])
+        fingertip_height = reward.tolerance(
+            min_tip_z, bounds=(0.025, jp.inf), margin=0.025, sigmoid="linear"
+        )
+
+        # Reward keeping the palm up; directly counteracts gravity-induced drooping.
+        palm_z = self.get_palm_position(data)[2]
+        palm_height = reward.tolerance(
+            palm_z, bounds=(0.04, jp.inf), margin=0.04, sigmoid="linear"
+        )
+
         return {
             "cube_force": force_reward,
             "fingertip_reach": fingertip_reach,
+            "fingertip_height": fingertip_height,
+            "palm_height": palm_height,
             "cube_lin_vel": self._cube_lin_velocity(data),
             "cube_ang_vel": self._cube_ang_velocity(data),
-            "hand_pose": jp.sum(jp.square(data.qpos[self._hand_qids] - self._default_pose)),
+            "hand_pose": jp.sum(jp.square(data.qpos[self._finger_qids] - self._default_pose[3:])),
             "wrist_pose": jp.sum(jp.square(data.qpos[self._wrist_qids] - self._default_wrist_pose)),
             "action_rate": self._cost_action_rate(action, info["last_act"], info["last_last_act"]),
             "joint_vel": self._cost_joint_vel(data),

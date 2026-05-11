@@ -6,6 +6,7 @@ from mujoco_playground._src.manipulation.tesollo_hand.pinch import CubePinch
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", choices=["xml", "rl_env"], default="xml")
+parser.add_argument("--mode", default="active", choices=["passive", "active"])
 args = parser.parse_args()
 source = args.source
 
@@ -44,8 +45,10 @@ def print_qpos(keycode):
             qi += nq
         print()
 
-mujoco.viewer.launch(m, data)
-# with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos) as v:
-#     while v.is_running():
-#         mujoco.mj_forward(m, data)
-#         v.sync()
+if args.mode == "active":
+    mujoco.viewer.launch(m, data)
+elif args.mode == "passive":
+    with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos) as v:
+        while v.is_running():
+            mujoco.mj_forward(m, data)
+            v.sync()
