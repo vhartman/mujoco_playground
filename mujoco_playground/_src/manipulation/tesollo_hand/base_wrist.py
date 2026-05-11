@@ -44,14 +44,20 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
 
   def __init__(
       self,
-      xml_path: str,
+      xml_source: str | function,
       config: config_dict.ConfigDict,
       config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
   ) -> None:
     super().__init__(config, config_overrides)
     self._model_assets = get_assets()
+
+    if callable(xml_source):
+      xml_string = xml_source()
+    else:
+      xml_string = epath.Path(xml_source).read_text()
+
     self._mj_model = mujoco.MjModel.from_xml_string(
-        epath.Path(xml_path).read_text(), assets=self._model_assets
+        xml_string, assets=self._model_assets
     )
     self._mj_model.opt.timestep = self._config.sim_dt
 
@@ -59,7 +65,7 @@ class TesolloHandWristEnv(mjx_env.MjxEnv):
     self._mj_model.vis.global_.offheight = 2160
 
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
-    self._xml_path = xml_path
+    self._xml_path = xml_source
     
     # self._mjx_model.opt._impl.contact_sensor_maxmatch = 128
     # print(self._mjx_model.opt)
