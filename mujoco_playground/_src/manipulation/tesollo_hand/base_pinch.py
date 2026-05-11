@@ -329,7 +329,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         metrics["success_count"] = 0
         metrics["f_thumb"] = jp.zeros(())
         metrics["f_index"] = jp.zeros(())
-        metrics["opposing"] = jp.zeros(())
+        metrics["effective_force"] = jp.zeros(())
         metrics["termination/drift"] = jp.zeros(())
         metrics["termination/nan"] = jp.zeros(())
         metrics["termination/tip_on_ground"] = jp.zeros(())
@@ -355,13 +355,15 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         state.info["motor_targets"] = motor_targets
 
         # Success: pinch force held within ±force_tolerance N of target for
-        # success_hold_time seconds. Pinch force only fires when thumb and index
-        # touch opposing sides of the cube.
-        f_thumb, f_index, opposing = self._pinch_components(data)
-        total_force = jp.minimum(f_thumb, f_index) * opposing
+        # success_hold_time seconds.  effective_force fires only when both
+        # thumb and index are in contact (contact_gate → 1).
+        f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
+        f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
+        contact_gate = jp.clip(jp.minimum(f_thumb, f_index) / 0.5, 0.0, 1.0)
+        effective_force = self._total_contact_force(data) * contact_gate
         in_tolerance = (
-            (total_force >= self._config.force_target - self._config.force_tolerance)
-            & (total_force <= self._config.force_target + self._config.force_tolerance)
+            (effective_force >= self._config.force_target - self._config.force_tolerance)
+            & (effective_force <= self._config.force_target + self._config.force_tolerance)
         )
         hold_steps_required = jp.round(self._config.success_hold_time / self._config.ctrl_dt)
         consecutive = jp.where(
@@ -388,8 +390,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
         obs = self._get_obs(data, state.info)
         rewards = self._get_reward(
-            data, action, state.info, done,
-            f_thumb=f_thumb, f_index=f_index, opposing=opposing,
+            data, action, state.info, done, effective_force,
         )
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
         rew = sum(rewards.values()) * self.dt
@@ -403,7 +404,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             state.metrics[f"reward/{k}"] = v
         state.metrics["f_thumb"] = f_thumb
         state.metrics["f_index"] = f_index
-        state.metrics["opposing"] = opposing
+        state.metrics["effective_force"] = effective_force
 
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
@@ -435,40 +436,20 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         f = mjx_env.get_sensor_data(self.mj_model, data, sensor_name).reshape(-1, 3)
         return jp.sum(jp.linalg.norm(f, axis=1))
 
-    def _pinch_components(
-        self, data: mjx.Data
-    ) -> tuple[jax.Array, jax.Array, jax.Array]:
-        """Return (f_thumb, f_index, opposing) for logging and reward."""
-        f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
-        f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
-
-        cube_pos = self.get_cube_position(data)
-        tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
-        d_thumb = tips[0] - cube_pos
-        d_index = tips[1] - cube_pos
-        d_thumb = d_thumb / (jp.linalg.norm(d_thumb) + 1e-6)
-        d_index = d_index / (jp.linalg.norm(d_index) + 1e-6)
-
-        opposing = jp.clip(-jp.dot(d_thumb, d_index), 0.0, 1.0)
-        return f_thumb, f_index, opposing
-
     def _get_reward(
         self,
         data: mjx.Data,
         action: jax.Array,
         info: dict[str, Any],
         done: jax.Array,
-        f_thumb: jax.Array,
-        f_index: jax.Array,
-        opposing: jax.Array,
+        effective_force: jax.Array,
     ) -> dict[str, jax.Array]:
 
-        # Primary: tolerance reward peaked at force_target (10 N) using the
-        # opposing-side pinch force between thumb and index. Fires only when the
-        # two fingers contact the cube on opposite sides.
-        total_force = jp.minimum(f_thumb, f_index) * opposing
+        # Primary: tolerance reward peaked at force_target (10 N).
+        # effective_force = total_contact_force * contact_gate, so it fires
+        # only when both thumb and index are pressing the cube.
         force_reward = reward.tolerance(
-            total_force,
+            effective_force,
             bounds=(self._config.force_target, self._config.force_target),
             margin=self._config.force_target,
             sigmoid="gaussian",
