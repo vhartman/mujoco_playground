@@ -15,16 +15,16 @@ from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.static_gras
 _XML_ENVS = {"pinch_full", "pinch_restricted"}
 
 _RL_ENVS = {
-    "cube_pinch_force": CubePinchForce,
-    "cube_pinch_proprio": CubePinchProprio,
-    "cube_pinch_baseline": CubePinchBaseline,
+    "force": CubePinchForce,
+    "proprio": CubePinchProprio,
+    "baseline": CubePinchBaseline,
 }
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--env",
     choices=[*_XML_ENVS, *_RL_ENVS],
-    default="cube_pinch_proprio",
+    default="proprio",
 )
 parser.add_argument("--mode", default="active", choices=["passive", "active"])
 args = parser.parse_args()

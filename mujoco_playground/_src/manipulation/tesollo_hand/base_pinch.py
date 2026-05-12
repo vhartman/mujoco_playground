@@ -181,7 +181,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
     # ------------------------------------------------------------------
 
     def _obs_joint_angles(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Noisy joint angles (23-dim)."""
+        """Noisy joint angles (8-dim)."""
         joint_angles = data.qpos[self._hand_qids]
         info["rng"], key = jax.random.split(info["rng"])
         noise = (
@@ -190,7 +190,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         return joint_angles + noise
 
     def _obs_joint_velocities(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Noisy joint velocities (23-dim)."""
+        """Noisy joint velocities (8-dim)."""
         joint_vel = data.qvel[self._hand_dqids]
         info["rng"], key = jax.random.split(info["rng"])
         noise = (
@@ -218,12 +218,12 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         return noisy_quat / (jp.linalg.norm(noisy_quat) + 1e-6)
 
     def _obs_motor_targets(self, info: dict[str, Any]) -> jax.Array:
-        """Active motor targets (11-dim), no noise."""
-        return info["motor_targets"][:_N_ACTIVE]
+        """Active motor targets (8-dim), no noise."""
+        return info["motor_targets"]
 
     def _obs_ctrl_delta(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Position error of active joints to their targets (11-dim), no noise."""
-        return info["motor_targets"][:_N_ACTIVE] - data.qpos[self._hand_qids[:_N_ACTIVE]]
+        """Position error of active joints to their targets (8-dim), no noise."""
+        return info["motor_targets"] - data.qpos[self._hand_qids]
 
     def _obs_force(self, data: mjx.Data) -> jax.Array:
         """Pinch force terms: [f_thumb, f_index, total_force] / (2*force_target) (3-dim), no noise.
@@ -263,7 +263,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             self.get_cube_linvel(data),
             self.get_cube_angvel(data),
             self.get_fingertip_positions(data),
-            info["motor_targets"][:_N_ACTIVE],
+            info["motor_targets"],
         ])
 
     # ------------------------------------------------------------------
@@ -321,7 +321,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             "consecutive_success_steps": jp.zeros(()),
             "last_act": jp.zeros(_N_ACTIVE),
             "last_last_act": jp.zeros(_N_ACTIVE),
-            "motor_targets": data.ctrl,  # full 23-dim
+            "motor_targets": data.ctrl,
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
@@ -353,7 +353,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
 
         delta = action * self._config.action_scale
         active_ctrl = jp.clip(
-            state.data.ctrl[:_N_ACTIVE] + delta, self._lowers, self._uppers
+            state.data.ctrl + delta, self._lowers, self._uppers
         )
         motor_targets = (
             self._config.ema_alpha * active_ctrl
