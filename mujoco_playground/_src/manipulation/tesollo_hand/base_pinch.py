@@ -60,14 +60,16 @@ def default_config() -> config_dict.ConfigDict:
             scales=config_dict.create(
                 cube_force=5.0,
                 fingertip_reach=2.0,
-                fingertip_height=2.0,
-                palm_height=1.5,
                 pinch_alignment=2.0,
                 action_rate=-0.005,
                 joint_vel=-0.01,
                 energy=-1e-3,
                 termination=-100.0,
             ),
+            # Multiplicative shaping: scale * rf * rr * ra, each term floored to
+            # [shaping_floor, 1.0] so the product is always > 0 with nonzero gradient.
+            shaping_scale=9.0,
+            shaping_floor=0.5,
             success_reward=10.0,
         ),
         pert_config=config_dict.create(
@@ -401,16 +403,40 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         rewards = self._get_reward(
             data, action, state.info, done, effective_force,
         )
-        rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
-        rew = sum(rewards.values()) * self.dt
+
+        # Multiplicative shaping: product of three floored terms, each in
+        # [shaping_floor, 1.0], so the product is always > 0 and gradients
+        # never vanish. fingertip_reach and pinch_alignment are sums over 2
+        # tips (range [0, 2]), so divide by 2 to normalise to [0, 1] first.
+        a = self._config.reward_config.shaping_floor
+        rf = a + (1.0 - a) * rewards["cube_force"]
+        rr = a + (1.0 - a) * rewards["fingertip_reach"] / 2.0
+        ra = a + (1.0 - a) * rewards["pinch_alignment"] / 2.0
+        shaping = self._config.reward_config.shaping_scale * rf * rr * ra
+
+        sc = self._config.reward_config.scales
+        penalties = (
+            sc.action_rate * rewards["action_rate"]
+            + sc.joint_vel * rewards["joint_vel"]
+            + sc.energy * rewards["energy"]
+            + sc.termination * rewards["termination"]
+        )
+
+        rew = (shaping + penalties) * self.dt
         rew += success * self._config.reward_config.success_reward
 
         state.info["step"] += 1
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
         state.metrics["reward/success"] = success.astype(float)
-        for k, v in rewards.items():
-            state.metrics[f"reward/{k}"] = v
+        # Store raw [0,1] values for multiplicative terms; scaled values for penalties.
+        state.metrics["reward/cube_force"] = rewards["cube_force"]
+        state.metrics["reward/fingertip_reach"] = rewards["fingertip_reach"]
+        state.metrics["reward/pinch_alignment"] = rewards["pinch_alignment"]
+        state.metrics["reward/action_rate"] = sc.action_rate * rewards["action_rate"]
+        state.metrics["reward/joint_vel"] = sc.joint_vel * rewards["joint_vel"]
+        state.metrics["reward/energy"] = sc.energy * rewards["energy"]
+        state.metrics["reward/termination"] = sc.termination * rewards["termination"]
         state.metrics["f_thumb"] = f_thumb
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
@@ -474,18 +500,6 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             reward.tolerance(reach_dists, bounds=(0, 0.035), margin=0.1, sigmoid="reciprocal")
         )
 
-        # Dense gradient before the hard ground-termination cliff.
-        min_tip_z = jp.min(tips[:2, 2])
-        fingertip_height = reward.tolerance(
-            min_tip_z, bounds=(0.025, jp.inf), margin=0.025, sigmoid="linear"
-        )
-
-        # Reward keeping the palm up; directly counteracts gravity-induced drooping.
-        palm_z = self.get_palm_position(data)[2]
-        palm_height = reward.tolerance(
-            palm_z, bounds=(0.04, jp.inf), margin=0.04, sigmoid="linear"
-        )
-
         # Pull thumb to the white face (+y) and index to the yellow face (-y).
         white_pos = data.site_xpos[self._site_cube_white_id]
         yellow_pos = data.site_xpos[self._site_cube_yellow_id]
@@ -503,8 +517,6 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         return {
             "cube_force": force_reward,
             "fingertip_reach": fingertip_reach,
-            "fingertip_height": fingertip_height,
-            "palm_height": palm_height,
             "pinch_alignment": pinch_alignment,
             "action_rate": self._cost_action_rate(action, info["last_act"], info["last_last_act"]),
             "joint_vel": self._cost_joint_vel(data),
