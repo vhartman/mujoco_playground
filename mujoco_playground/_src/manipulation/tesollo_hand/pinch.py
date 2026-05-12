@@ -39,7 +39,7 @@ __all__ = [
 
 
 class CubePinchForce(CubePinchBase):
-    """Pinch variant: q + qdot + ctrl_targets + force(3) + object = 67-dim state."""
+    """Pinch variant: q + qdot + ctrl_targets + force(3) + object = 34-dim state."""
 
     def __init__(
         self,
@@ -56,17 +56,17 @@ class CubePinchForce(CubePinchBase):
 
     def _get_obs(self, data, info) -> mjx_env.Observation:
         state = jp.concatenate([
-            self._obs_joint_angles(data, info),      # 23
-            self._obs_joint_velocities(data, info),  # 23
-            self._obs_motor_targets(info),            # 11
+            self._obs_joint_angles(data, info),      # 8
+            self._obs_joint_velocities(data, info),  # 8
+            self._obs_motor_targets(info),            # 8
             self._obs_force(data),                    # 3
             self._obs_object(data, info),             # 7
-        ])  # total = 67
+        ])  # total = 34
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 
 class CubePinchProprio(CubePinchBase):
-    """Pinch variant: q + qdot + ctrl_targets_or_delta + object = 64-dim state."""
+    """Pinch variant: q + qdot + ctrl_targets_or_delta + object = 31-dim state."""
 
     def __init__(
         self,
@@ -88,16 +88,16 @@ class CubePinchProprio(CubePinchBase):
             else self._obs_motor_targets(info)
         )
         state = jp.concatenate([
-            self._obs_joint_angles(data, info),      # 23
-            self._obs_joint_velocities(data, info),  # 23
-            ctrl_obs,                                 # 11
+            self._obs_joint_angles(data, info),      # 8
+            self._obs_joint_velocities(data, info),  # 8
+            ctrl_obs,                                 # 8
             self._obs_object(data, info),             # 7
-        ])  # total = 64
+        ])  # total = 31
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 
 class CubePinchBaseline(CubePinchBase):
-    """Pinch variant: q + qdot + object = 53-dim state (no ctrl info)."""
+    """Pinch variant: q + qdot + object = 23-dim state (no ctrl info)."""
 
     def __init__(
         self,
@@ -114,8 +114,8 @@ class CubePinchBaseline(CubePinchBase):
 
     def _get_obs(self, data, info) -> mjx_env.Observation:
         state = jp.concatenate([
-            self._obs_joint_angles(data, info),      # 23
-            self._obs_joint_velocities(data, info),  # 23
+            self._obs_joint_angles(data, info),      # 8
+            self._obs_joint_velocities(data, info),  # 8
             self._obs_object(data, info),             # 7
-        ])  # total = 53
+        ])  # total = 23
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
