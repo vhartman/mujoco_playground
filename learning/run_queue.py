@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import datetime
+import itertools
 import json
 import pathlib
 import re
@@ -36,6 +37,77 @@ def _flatten(d, prefix=""):
     return out
 
 
+def _linspace(lo, hi, n):
+    if n == 1:
+        return [lo]
+    return [lo + (hi - lo) * i / (n - 1) for i in range(n)]
+
+
+def _expand_param(spec):
+    """Expand a single param spec to a list of values."""
+    if "values" in spec:
+        return list(spec["values"])
+    if "range" in spec:
+        lo, hi = spec["range"]
+        return _linspace(lo, hi, spec.get("steps", 2))
+    raise ValueError(f"Param spec must have 'values' or 'range': {spec}")
+
+
+def _param_label(key, value):
+    """Short label fragment for a param, e.g. 'pid_gains.finger_kp', 3.0 -> 'kp3'."""
+    short = key.split(".")[-1].replace("finger_", "")
+    return f"{short}{value:g}"
+
+
+def _env_prefix(env_name):
+    """'TesolloPinchForce' -> 'force'."""
+    for marker in ("TesolloPinch", "Tesollo"):
+        if env_name.startswith(marker):
+            return env_name[len(marker):].lower()
+    return env_name.lower()
+
+
+def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
+    """Expand a sweep block into a flat list of run specs.
+
+    sweep:
+      env_names: [TesolloPinchForce, ...]
+      params:
+        pid_gains.finger_kp:
+          range: [1.5, 8.0]
+          steps: 3          # → linspace [1.5, 4.75, 8.0]
+        pid_gains.finger_kv:
+          values: [0.0, 1.0]
+    """
+    env_names = sweep["env_names"]
+    default_flags = defaults.get("flags", {})
+    default_overrides = defaults.get("env_overrides", {})
+    default_script = defaults.get("script", "learning/train_jax_ppo.py")
+
+    params = sweep.get("params", {})
+    param_keys = list(params.keys())
+    param_value_lists = [_expand_param(params[k]) for k in param_keys]
+    combos = [dict(zip(param_keys, combo)) for combo in itertools.product(*param_value_lists)]
+
+    runs = []
+    idx = start_idx
+    for env_name in env_names:
+        prefix = _env_prefix(env_name)
+        for param_dict in combos:
+            param_suffix = "_".join(_param_label(k, v) for k, v in param_dict.items())
+            suffix = f"{prefix}_{param_suffix}"
+            flags = {**default_flags, "env_name": env_name, "suffix": suffix}
+            env_overrides = {**default_overrides, **param_dict}
+            runs.append({
+                "idx": idx,
+                "script": default_script,
+                "flags": flags,
+                "env_overrides": env_overrides,
+            })
+            idx += 1
+    return runs
+
+
 def parse_queue(path: pathlib.Path) -> list[dict]:
     """Load queue YAML and return a list of fully-resolved run specs."""
     with open(path) as f:
@@ -54,6 +126,9 @@ def parse_queue(path: pathlib.Path) -> list[dict]:
         if "env_name" not in flags:
             raise ValueError(f"Run {i} is missing required 'env_name' flag.")
         runs.append({"idx": i, "script": script, "flags": flags, "env_overrides": env_overrides})
+
+    if "sweep" in raw:
+        runs.extend(_expand_sweep(raw["sweep"], defaults, start_idx=len(runs)))
 
     if not runs:
         raise ValueError("Queue file has no runs.")

@@ -62,6 +62,7 @@ def default_config() -> config_dict.ConfigDict:
                 fingertip_reach=2.0,
                 fingertip_height=2.0,
                 palm_height=1.5,
+                pinch_alignment=2.0,
                 action_rate=-0.005,
                 joint_vel=-0.01,
                 energy=-1e-3,
@@ -129,6 +130,8 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         _init_data = mujoco.MjData(self._mj_model)
         mujoco.mj_forward(self._mj_model, _init_data)
         self._init_cube_pos = jp.array(_init_data.xpos[self._cube_body_id])
+        self._site_cube_white_id = self._mj_model.site("cube_white").id
+        self._site_cube_yellow_id = self._mj_model.site("cube_yellow").id
 
     def _apply_pid_gains(self) -> None:
         """Override actuator PID gains from config, replacing XML-baked values.
@@ -223,12 +226,18 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         return info["motor_targets"][:_N_ACTIVE] - data.qpos[self._hand_qids[:_N_ACTIVE]]
 
     def _obs_force(self, data: mjx.Data) -> jax.Array:
-        """Pinch force terms: [f_thumb, f_index, total_force_gated] (3-dim), no noise."""
+        """Pinch force terms: [f_thumb, f_index, total_force] / (2*force_target) (3-dim), no noise.
+
+        Normalized so that the target force maps to ~0.5, keeping inputs in a
+        consistent [0, 1] range regardless of force_target.  Raw total contact
+        force (no contact gate) is used so the obs remains informative even
+        when only one finger is touching.
+        """
+        norm = self._config.force_target * 2.0
         f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
         f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
-        contact_gate = jp.clip(jp.minimum(f_thumb, f_index) / 0.5, 0.0, 1.0)
-        total_force_gated = self._total_contact_force(data) * contact_gate
-        return jp.array([f_thumb, f_index, total_force_gated])
+        total_force = self._total_contact_force(data)
+        return jp.array([f_thumb, f_index, total_force]) / norm
 
     def _obs_object(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         """Default object observation: cube_pos(3) + cube_quat(4) = 7-dim.
@@ -406,6 +415,9 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
 
+        # Terminate on success — done is ORed after reward so the termination
+        # penalty only fires for bad endings, not for a successful hold.
+        done = done | success
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
@@ -474,11 +486,26 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
             palm_z, bounds=(0.04, jp.inf), margin=0.04, sigmoid="linear"
         )
 
+        # Pull thumb to the white face (+y) and index to the yellow face (-y).
+        white_pos = data.site_xpos[self._site_cube_white_id]
+        yellow_pos = data.site_xpos[self._site_cube_yellow_id]
+        thumb_dist = jp.linalg.norm(tips[0] - white_pos)
+        index_dist = jp.linalg.norm(tips[1] - yellow_pos)
+        pinch_alignment = jp.sum(
+            reward.tolerance(
+                jp.array([thumb_dist, index_dist]),
+                bounds=(0, 0.01),
+                margin=0.08,
+                sigmoid="reciprocal",
+            )
+        )
+
         return {
             "cube_force": force_reward,
             "fingertip_reach": fingertip_reach,
             "fingertip_height": fingertip_height,
             "palm_height": palm_height,
+            "pinch_alignment": pinch_alignment,
             "action_rate": self._cost_action_rate(action, info["last_act"], info["last_last_act"]),
             "joint_vel": self._cost_joint_vel(data),
             "energy": self._cost_energy(data.qvel[self._hand_dqids], data.actuator_force),
