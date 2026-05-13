@@ -41,12 +41,12 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.5,
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=1000,
+        episode_length=400,
         # Target total contact force from hand on cube sides, in Newtons.
         force_target=10.0,
         # Force must stay within ±force_tolerance N of target for success_hold_time seconds.
-        force_tolerance=0.5,
-        success_hold_time=3.0,
+        force_tolerance=2.0,
+        success_hold_time=1.0,
         obs_noise=config_dict.create(
             level=0.0,
             scales=config_dict.create(
@@ -412,7 +412,8 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         rf = a + (1.0 - a) * rewards["cube_force"]
         rr = a + (1.0 - a) * rewards["fingertip_reach"] / 2.0
         ra = a + (1.0 - a) * rewards["pinch_alignment"] / 2.0
-        shaping = self._config.reward_config.shaping_scale * rf * rr * ra
+        # shaping = self._config.reward_config.shaping_scale * rf * rr * ra
+        shaping = self._config.reward_config.shaping_scale * rf * rr
 
         sc = self._config.reward_config.scales
         penalties = (
@@ -423,7 +424,7 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         )
 
         rew = (shaping + penalties) * self.dt
-        rew += success * self._config.reward_config.success_reward
+        rew += in_tolerance * self._config.reward_config.success_reward
 
         state.info["step"] += 1
         state.info["last_last_act"] = state.info["last_act"]
@@ -441,9 +442,6 @@ class CubePinchBase(tesollo_hand_base.TesolloHandWristEnv, abc.ABC):
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
 
-        # Terminate on success — done is ORed after reward so the termination
-        # penalty only fires for bad endings, not for a successful hold.
-        done = done | success
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 

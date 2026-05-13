@@ -12,3 +12,4 @@ wandb/
 learning/queues/
 *.mp4
 .claude/worktrees/
+*.png
