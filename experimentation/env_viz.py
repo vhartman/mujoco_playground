@@ -32,6 +32,7 @@ _PRESET_RL = {
     "baseline": CubePinchBaseline,
 }
 
+_RL_ENV_MODULE_ROOT = "mujoco_playground._src.manipulation.tesollo_hand"
 
 def load_model(env_arg: str) -> mujoco.MjModel:
     if env_arg in _PRESET_RL:
@@ -49,6 +50,8 @@ def load_model(env_arg: str) -> mujoco.MjModel:
     module_path, _, class_name = env_arg.rpartition(".")
     if not module_path:
         raise ValueError(f"Cannot interpret env argument: {env_arg!r}")
+    if _RL_ENV_MODULE_ROOT not in module_path:
+        module_path = f"{_RL_ENV_MODULE_ROOT}.{module_path}"
     cls = getattr(importlib.import_module(module_path), class_name)
     return cls().mj_model
 
@@ -71,31 +74,31 @@ def print_qpos(m, data):
         print()
     return _cb
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--env",
+        default="proprio",
+        help=(
+            "Preset name %(choices)s, path to an .xml file, "
+            "or dotted Python class path (e.g. my.module.MyEnv)"
+        ),
+        metavar="ENV",
+    )
+    parser.add_argument("--mode", default="active", choices=["passive", "active"])
+    args = parser.parse_args()
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument(
-    "--env",
-    default="proprio",
-    help=(
-        "Preset name %(choices)s, path to an .xml file, "
-        "or dotted Python class path (e.g. my.module.MyEnv)"
-    ),
-    metavar="ENV",
-)
-parser.add_argument("--mode", default="active", choices=["passive", "active"])
-args = parser.parse_args()
+    m = load_model(args.env)
+    data = mujoco.MjData(m)
 
-m = load_model(args.env)
-data = mujoco.MjData(m)
+    key_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "home")
+    if key_id >= 0:
+        mujoco.mj_resetDataKeyframe(m, data, key_id)
 
-key_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "home")
-if key_id >= 0:
-    mujoco.mj_resetDataKeyframe(m, data, key_id)
-
-if args.mode == "active":
-    mujoco.viewer.launch(m, data)
-else:
-    with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos(m, data)) as v:
-        while v.is_running():
-            mujoco.mj_forward(m, data)
-            v.sync()
+    if args.mode == "active":
+        mujoco.viewer.launch(m, data)
+    else:
+        with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos(m, data)) as v:
+            while v.is_running():
+                mujoco.mj_forward(m, data)
+                v.sync()
