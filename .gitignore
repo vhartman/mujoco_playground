@@ -13,3 +13,4 @@ learning/queues/
 *.mp4
 .claude/worktrees/
 *.png
+.vscode/*
