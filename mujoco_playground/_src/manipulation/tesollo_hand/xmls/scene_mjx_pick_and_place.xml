@@ -1,0 +1,112 @@
+<mujoco model="tesollo_pick_and_place">
+  <include file="scene_base.xml"/>
+
+  <asset>
+    <material name="table" rgba="0.82 0.71 0.55 1"/>
+  </asset>
+
+  <default>
+    <default class="cube">
+      <geom friction=".3 0.05" conaffinity="2" condim="3"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <frame pos="-0.05 0 0.28" quat="-1 0 -1 0">
+      <include file="tesollo_wrist_xyz_clean.xml"/>
+    </frame>
+
+    <body name="table" pos="0.32 0.15 0.0375">
+      <geom name="table_top" type="box" size="0.15 0.15 0.0375" material="table" contype="1" conaffinity="1"/>
+    </body>
+
+    <body name="goal" mocap="true" pos="0.325 0.17 0.11">
+      <geom type="box" size=".035 .035 .035" mass=".108" group="2" contype="0" conaffinity="0"/>
+    </body>
+
+    <body name="cube" pos="0.0 0.0 0.04" quat="1 0 0 0" childclass="cube">
+      <freejoint name="cube_freejoint"/>
+      <geom name="cube" type="box" size=".035 .035 .035" mass=".0508" group="2"/>
+      <site name="cube_center" pos="0 0 0" group="4"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position kp="400" kv="100" name="rj_wrist_0_1_a" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="rj_wrist_0_2_a" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="rj_wrist_0_3_a" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+
+    <position kp="5"  kv="1" name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="rj_wrist_1_2_a" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
+
+    <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
+  </actuator>
+
+  <sensor>
+    <!-- cube. -->
+    <framepos name="cube_position" objtype="body" objname="cube"/>
+    <framequat name="cube_orientation" objtype="body" objname="cube"/>
+    <framelinvel name="cube_linvel" objtype="body" objname="cube"/>
+    <frameangvel name="cube_angvel" objtype="body" objname="cube"/>
+    <frameangacc name="cube_angacc" objtype="body" objname="cube"/>
+    <framezaxis name="cube_upvector" objtype="body" objname="cube"/>
+
+    <!-- hand. -->
+    <framepos name="palm_position" objtype="site" objname="grasp_site"/>
+    <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c"/>
+    <framepos name="rl_dg_2_tip_c_position" objtype="site" objname="rl_dg_2_tip_c"/>
+    <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c"/>
+    <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c"/>
+    <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c"/>
+
+    <!-- goal. -->
+    <framequat name="cube_goal_orientation" objtype="body" objname="goal"/>
+    <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
+  </sensor>
+
+  <keyframe>
+    <key name="home"
+      qpos="
+      0.05 0 -0.07 0 0.38 0
+      0.06 -1.56 0.0 0.0
+      -0.1 0.67 0.5 0.5
+      0. 0.68 0.62 0.56
+      0.1 0.6 0.46 0.6
+      0.1 0.47 1.1 0.5
+
+      0.0 0.0 0.05 1 0 0 0"
+      ctrl="
+      0.05 0 0.03 0 0.38 0
+      0.06 -1.56 0.6 0.6
+      -0.1 0.67 0.5 0.5
+      0. 0.68 0.62 0.56
+      0.1 0.6 0.46 0.6
+      0.1 0.47 1.1 0.5"
+      mpos="0.325 0.17 0.11"
+      mquat="1 0 0 0"/>
+  </keyframe>
+</mujoco>
