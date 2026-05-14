@@ -24,8 +24,8 @@ from mujoco_playground._src.manipulation.tesollo_hand.base_pinch import (
     _N_ACTIVE,
     default_config,
 )
-from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.static_grasp import (
-    build_static_grasp_scene,
+from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.pinch_scene_reduced import (
+    build_reduced_pinch_scene,
 )
 from mujoco_playground._src import mjx_env
 
@@ -48,7 +48,7 @@ class CubePinchForce(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(build_static_grasp_scene, config, config_overrides)
+        super().__init__(build_reduced_pinch_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:
@@ -75,7 +75,7 @@ class CubePinchProprio(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(build_static_grasp_scene, config, config_overrides)
+        super().__init__(build_reduced_pinch_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:
@@ -106,7 +106,7 @@ class CubePinchBaseline(CubePinchBase):
     ):
         if config is None:
             config = default_config()
-        super().__init__(build_static_grasp_scene, config, config_overrides)
+        super().__init__(build_reduced_pinch_scene, config, config_overrides)
 
     @property
     def action_size(self) -> int:

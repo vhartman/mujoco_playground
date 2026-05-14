@@ -70,7 +70,7 @@ def _rh_pose_overrides(
     return {"rh": (pos_in_frame, quat_in_frame)}
 
 
-def build_static_grasp_scene(keyframe_name: str = "home") -> str:
+def build_reduced_pinch_scene(keyframe_name: str = "home") -> str:
     """Return an XML string for the static-grasp scene."""
     return SceneBuilder(_XML_PATH).build(
         keyframe_name=keyframe_name,

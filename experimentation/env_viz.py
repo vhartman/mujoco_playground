@@ -11,8 +11,8 @@ from mujoco_playground._src.manipulation.tesollo_hand.pinch import (
     CubePinchBaseline,
 )
 from mujoco_playground._src.manipulation.tesollo_hand.base_wrist import get_assets
-from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.static_grasp import (
-    build_static_grasp_scene,
+from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.pinch_scene_reduced import (
+    build_reduced_pinch_scene,
 )
 
 _ROOT = pathlib.Path(__file__).parent.parent
@@ -22,7 +22,7 @@ _PRESET_XML = {
         str(_ROOT / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/scene_mjx_cube_pinch.xml")
     ),
     "pinch_restricted": lambda: mujoco.MjModel.from_xml_string(
-        build_static_grasp_scene(), assets=get_assets()
+        build_reduced_pinch_scene(), assets=get_assets()
     ),
 }
 
