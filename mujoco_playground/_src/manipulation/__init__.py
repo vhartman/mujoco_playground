@@ -37,6 +37,7 @@ from mujoco_playground._src.manipulation.tesollo_hand import pinch as tesollo_pi
 from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
 
 from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
+from mujoco_playground._src.manipulation.tesollo_hand import pick_and_place as tesollo_pick_and_place
 
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
@@ -65,6 +66,8 @@ _envs = {
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 
     "TesolloGrasp": tesollo_grasp.Grasp,
+    "TesolloPickAndPlaceProprio": tesollo_pick_and_place.PickAndPlaceProprio,
+    "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.PickAndPlaceBaseline,
     "TesolloPinchForce": tesollo_pinch.CubePinchForce,
     "TesolloPinchProprio": tesollo_pinch.CubePinchProprio,
     "TesolloPinchBaseline": tesollo_pinch.CubePinchBaseline,
@@ -95,6 +98,8 @@ _cfgs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "TesolloGrasp": tesollo_grasp.default_config,
+    "TesolloPickAndPlaceProprio": tesollo_pick_and_place.default_config,
+    "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.default_config,
     "TesolloPinchForce": tesollo_pinch.default_config,
     "TesolloPinchProprio": tesollo_pinch.default_config,
     "TesolloPinchBaseline": tesollo_pinch.default_config,
@@ -118,6 +123,8 @@ _randomizer = {
     "TesolloCubeRotateZAxis": tesollo_rotate_z.domain_randomize,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.domain_randomize,
     "TesolloGrasp": tesollo_grasp.domain_randomize,
+    "TesolloPickAndPlaceProprio": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 

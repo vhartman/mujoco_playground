@@ -60,8 +60,8 @@ def _param_label(key, value):
 
 
 def _env_prefix(env_name):
-    """'TesolloPinchForce' -> 'force'."""
-    for marker in ("TesolloPinch", "Tesollo"):
+    """'TesolloPinchForce' -> 'pinchforce', 'TesolloPickAndPlaceProprio' -> 'pickandplaceproprio'."""
+    for marker in ("Tesollo",):
         if env_name.startswith(marker):
             return env_name[len(marker):].lower()
     return env_name.lower()
