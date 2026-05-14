@@ -65,25 +65,6 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
 
-    # d = mujoco.MjData(self._mj_model)
-    
-    # with mujoco.viewer.launch_passive(self._mj_model, d) as viewer:
-    #   # Close the viewer automatically after 30 wall-seconds.
-    #   while viewer.is_running():
-    #     # mj_step can be replaced with code that also evaluates
-    #     # a policy and applies a control signal before stepping the physics.
-    #     mujoco.mj_step(self._mj_model, d)
-
-    #     # Example modification of a viewer option: toggle contact points every two seconds.
-    #     with viewer.lock():
-    #       viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(d.time % 2)
-
-    #     # Pick up changes to the physics state, apply perturbations, update options from GUI.
-    #     viewer.sync()
-
-    #     # Rudimentary time keeping, will drift relative to wall clock.
-    #     time.sleep(0.01)
-
   # Sensor readings.
   def get_cube_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "cube_position")
