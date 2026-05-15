@@ -67,6 +67,9 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jp
+import mujoco
+from mujoco import mjx
+from mujoco.mjx.warp.types import GraphMode
 import numpy as np
 import pandas as pd
 
@@ -123,6 +126,17 @@ def _get_base_env() -> CubePinchProprio:
     # _rollout_jit means mjx.put_model is called only once — no new CUDA graphs.
     _BASE_ENV = CubePinchProprio(config=cfg)
 
+    # Zero passive damping and rebuild the MJX model with GraphMode.NONE.
+    # In the default WARP graph mode, the CUDA graph captures GPU buffer
+    # pointers on first call — later model changes are ignored. NONE disables
+    # graph capture so model fields are read dynamically each kernel launch.
+    _BASE_ENV.mj_model.dof_damping[:] = 0.0
+    _BASE_ENV.mj_model.dof_frictionloss[:] = 0.0
+    _BASE_ENV.mj_model.dof_dampingpoly[:] = 0.0
+    _BASE_ENV._mjx_model = mjx.put_model(
+        _BASE_ENV.mj_model, impl=cfg.impl, graph_mode=GraphMode.NONE
+    )
+
     home_key = _BASE_ENV.mj_model.keyframe("home")
     _INIT_QPOS   = jp.array(home_key.qpos)
     _TARGET_CTRL = jp.clip(_INIT_QPOS + STEP_SIZE, _BASE_ENV._lowers, _BASE_ENV._uppers)
@@ -138,7 +152,7 @@ def _get_base_env() -> CubePinchProprio:
 
 
 def _apply_gains(model, kp: float, kd: float):
-    """Return a new MJX model with all actuator gains overwritten."""
+    """Return a new MJX model with all actuator gains overwritten and joint damping zeroed."""
     kp_arr = jp.full((model.nu,), float(kp))
     kd_arr = jp.full((model.nu,), float(kd))
     gainprm = model.actuator_gainprm.at[:, 0].set(kp_arr)
