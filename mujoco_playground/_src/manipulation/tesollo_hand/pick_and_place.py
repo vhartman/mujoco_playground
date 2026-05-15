@@ -35,12 +35,13 @@ __all__ = [
     "default_config",
     "PickAndPlaceProprio",
     "PickAndPlaceBaseline",
+    "PickAndPlaceForce",
     "domain_randomize",
 ]
 
 
 class PickAndPlaceProprio(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + cube_to_goal(3) = 84."""
+    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) = 87."""
 
     def __init__(
         self,
@@ -50,23 +51,25 @@ class PickAndPlaceProprio(PickAndPlaceBase):
         super().__init__(config, config_overrides)
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
-        joint_angles = self._obs_joint_angles(data, info)    # 26
-        joint_vel = self._obs_joint_velocities(data, info)   # 26
-        motor_targets = self._obs_motor_targets(info)         # 26
-        cube_pos = self._obs_cube_pos(data, info)             # 3
-        cube_to_goal = self._obs_cube_to_goal(cube_pos, info) # 3
+        joint_angles, joint_vel, cube_pos = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
         state = jp.concatenate([
-            joint_angles,
-            joint_vel,
-            motor_targets,
-            cube_pos,
-            cube_to_goal,
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            self._obs_motor_targets(info),              # 26
+            cube_pos,                                   # 3
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 
 class PickAndPlaceBaseline(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + cube_to_goal(3) = 58."""
+    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) = 61."""
 
     def __init__(
         self,
@@ -76,15 +79,48 @@ class PickAndPlaceBaseline(PickAndPlaceBase):
         super().__init__(config, config_overrides)
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
-        joint_angles = self._obs_joint_angles(data, info)    # 26
-        joint_vel = self._obs_joint_velocities(data, info)   # 26
-        cube_pos = self._obs_cube_pos(data, info)             # 3
-        cube_to_goal = self._obs_cube_to_goal(cube_pos, info) # 3
+        joint_angles, joint_vel, cube_pos = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
         state = jp.concatenate([
-            joint_angles,
-            joint_vel,
-            cube_pos,
-            cube_to_goal,
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            cube_pos,                                   # 3
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
+        ])
+        return {"state": state, "privileged_state": self._obs_privileged(data, info)}
+
+
+class PickAndPlaceForce(PickAndPlaceBase):
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + fingertip_forces(5) + total_force(1) = 93."""
+
+    def __init__(
+        self,
+        config: config_dict.ConfigDict = None,
+        config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
+    ):
+        super().__init__(config, config_overrides)
+
+    def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
+        joint_angles, joint_vel, cube_pos = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
+        state = jp.concatenate([
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            self._obs_motor_targets(info),              # 26
+            cube_pos,                                   # 3
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
+            self._obs_fingertip_forces(data),           # 5
+            self._obs_total_contact_force(data),        # 1
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 

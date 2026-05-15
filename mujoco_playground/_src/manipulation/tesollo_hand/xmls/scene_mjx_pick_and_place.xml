@@ -86,6 +86,14 @@
     <!-- goal. -->
     <framequat name="cube_goal_orientation" objtype="body" objname="goal"/>
     <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
+
+    <!-- contact forces: full hand vs cube, then per fingertip vs cube. -->
+    <contact name="cube_force" geom1="cube" subtree2="rh" num="32" data="force"/>
+    <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_3_tip_cube_force" geom1="rl_dg_3_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_4_tip_cube_force" geom1="rl_dg_4_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_5_tip_cube_force" geom1="rl_dg_5_tip" geom2="cube" num="4" data="force"/>
   </sensor>
 
   <keyframe>

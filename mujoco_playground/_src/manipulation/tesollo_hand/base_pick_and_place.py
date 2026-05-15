@@ -28,7 +28,7 @@ from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
 from mujoco_playground._src.manipulation.tesollo_hand import base_grasp as tesollo_hand_base
 from mujoco_playground._src.manipulation.tesollo_hand import (
-    tesollo_hand_grasp_constants as consts,
+    tesollo_hand_pick_and_place_constants as consts,
 )
 
 
@@ -43,14 +43,6 @@ def default_config() -> config_dict.ConfigDict:
         success_threshold=0.05,
         vel_threshold=0.1,
         ang_vel_threshold=0.5,
-        goal_pos_range=config_dict.create(
-            x_min=-0.15,
-            x_max=0.15,
-            y_min=-0.15,
-            y_max=0.15,
-            z_min=0.05,
-            z_max=0.20,
-        ),
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -126,6 +118,13 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         self._cube_geom_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
+        non_hand_bodies = {"world", "cube", "table", "goal"}
+        self._hand_geom_ids = jp.array([
+            g for g in range(self._mj_model.ngeom)
+            if self._mj_model.geom(g).contype != 0
+            and self._mj_model.body(self._mj_model.geom_bodyid[g]).name not in non_hand_bodies
+            and g != self._floor_geom_id
+        ])
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
@@ -151,17 +150,19 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         v_hand = jp.zeros(consts.NV)
 
         rng, p_rng = jax.random.split(rng)
-        start_pos = jp.array([0.0, 0.0, -0.2]) + jax.random.uniform(
+        start_pos = self._cube_init[:3] + jax.random.uniform(
             p_rng, (3,), minval=-0.01, maxval=0.01
         )
         q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
         v_cube = jp.zeros(6)
 
         rng, goal_rng = jax.random.split(rng)
-        cfg = self._config.goal_pos_range
-        lo = jp.array([cfg.x_min, cfg.y_min, cfg.z_min])
-        hi = jp.array([cfg.x_max, cfg.y_max, cfg.z_max])
-        goal_pos = jax.random.uniform(goal_rng, (3,), minval=lo, maxval=hi)
+        goal_xy = jax.random.uniform(
+            goal_rng, (2,),
+            minval=jp.array([consts.GOAL_X_MIN, consts.GOAL_Y_MIN]),
+            maxval=jp.array([consts.GOAL_X_MAX, consts.GOAL_Y_MAX]),
+        )
+        goal_pos = jp.array([goal_xy[0], goal_xy[1], consts.GOAL_Z])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
@@ -209,6 +210,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             "last_last_act": jp.zeros(self.mjx_model.nu),
             "motor_targets": data.ctrl,
             "goal_pos": goal_pos,
+            "last_ground_cube_pos": start_pos,
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
@@ -244,6 +246,11 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         cube_pos = self.get_cube_position(data)
         goal_pos = state.info["goal_pos"]
         cube_goal_error = jp.linalg.norm(cube_pos - goal_pos)
+
+        cube_on_ground = self._cube_in_contact_with_floor(data)
+        state.info["last_ground_cube_pos"] = jp.where(
+            cube_on_ground, cube_pos, state.info["last_ground_cube_pos"]
+        )
         cube_lin_vel = self._cube_lin_velocity(data)
         cube_ang_vel = self._cube_ang_velocity(data)
 
@@ -251,6 +258,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             (cube_goal_error < self._config.success_threshold)
             & (cube_lin_vel < self._config.vel_threshold)
             & (cube_ang_vel < self._config.ang_vel_threshold)
+            & ~self._hand_in_contact_with_cube(data)
         )
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -332,36 +340,72 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     # Observation helpers
     # ------------------------------------------------------------------
 
-    def _obs_joint_angles(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        joint_angles = data.qpos[self._hand_qids]
-        info["rng"], key = jax.random.split(info["rng"])
-        noise = (
-            2 * jax.random.uniform(key, shape=joint_angles.shape) - 1
-        ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_pos
-        return joint_angles + noise
+    def _maybe_apply_obs_noise(
+        self,
+        joint_angles: jax.Array,
+        joint_vel: jax.Array,
+        cube_pos: jax.Array,
+        info: dict[str, Any],
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        level = self._config.obs_noise.level
+        scales = self._config.obs_noise.scales
+        info["rng"], k1, k2, k3 = jax.random.split(info["rng"], 4)
 
-    def _obs_joint_velocities(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        joint_vel = data.qvel[self._hand_dqids]
-        info["rng"], key = jax.random.split(info["rng"])
-        noise = (
-            2 * jax.random.uniform(key, shape=joint_vel.shape) - 1
-        ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_vel
-        return joint_vel + noise
+        def add_noise(arr, key, scale):
+            return arr + (2 * jax.random.uniform(key, arr.shape) - 1) * level * scale
+
+        return (
+            add_noise(joint_angles, k1, scales.joint_pos),
+            add_noise(joint_vel, k2, scales.joint_vel),
+            add_noise(cube_pos, k3, scales.cube_pos),
+        )
+
+    def _obs_joint_angles(self, data: mjx.Data) -> jax.Array:
+        return data.qpos[self._hand_qids]
+
+    def _obs_joint_velocities(self, data: mjx.Data) -> jax.Array:
+        return data.qvel[self._hand_dqids]
 
     def _obs_motor_targets(self, info: dict[str, Any]) -> jax.Array:
         return info["motor_targets"]
 
-    def _obs_cube_pos(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        cube_pos = self.get_cube_position(data)
-        info["rng"], key = jax.random.split(info["rng"])
-        noise = (
-            2 * jax.random.uniform(key, shape=cube_pos.shape) - 1
-        ) * self._config.obs_noise.level * self._config.obs_noise.scales.cube_pos
-        return cube_pos + noise
+    def _obs_cube_pos(self, data: mjx.Data) -> jax.Array:
+        return self.get_cube_position(data)
 
-    def _obs_cube_to_goal(self, noisy_cube_pos: jax.Array, info: dict[str, Any]) -> jax.Array:
-        """Displacement from cube to goal (call after _obs_cube_pos to reuse noise)."""
-        return info["goal_pos"] - noisy_cube_pos
+    def _obs_cube_to_goal(self, cube_pos: jax.Array, info: dict[str, Any]) -> jax.Array:
+        return info["goal_pos"] - cube_pos
+
+    def _obs_goal_pos(self, info: dict[str, Any]) -> jax.Array:
+        return info["goal_pos"]
+
+    def _obs_last_ground_cube_pos(self, info: dict[str, Any]) -> jax.Array:
+        """Last observed cube position while it was resting on the floor."""
+        return info["last_ground_cube_pos"]
+
+    def _obs_fingertip_forces(self, data: mjx.Data) -> jax.Array:
+        """Per-fingertip contact force magnitude vs cube, normalized by 10 N. Shape: (5,)."""
+        tip_sensors = [
+            "rl_dg_1_tip_cube_force",
+            "rl_dg_2_tip_cube_force",
+            "rl_dg_3_tip_cube_force",
+            "rl_dg_4_tip_cube_force",
+            "rl_dg_5_tip_cube_force",
+        ]
+        forces = jp.array([
+            jp.sum(jp.linalg.norm(
+                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+                axis=1,
+            ))
+            for name in tip_sensors
+        ])
+        return forces / 10.0
+
+    def _obs_total_contact_force(self, data: mjx.Data) -> jax.Array:
+        """Sum of all hand-cube contact force magnitudes, normalized by 10 N. Shape: (1,)."""
+        forces = mjx_env.get_sensor_data(
+            self.mj_model, data, "cube_force"
+        ).reshape(-1, 3)
+        return jp.sum(jp.linalg.norm(forces, axis=1), keepdims=True) / 10.0
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         return jp.concatenate([
@@ -379,6 +423,31 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     # ------------------------------------------------------------------
     # Cost and utility methods
     # ------------------------------------------------------------------
+
+    def _contact_geoms(self, data: mjx.Data) -> tuple[jax.Array, jax.Array]:
+        """Returns (geom1_ids, geom2_ids) arrays for all contact slots."""
+        impl = data._impl
+        if hasattr(impl, 'contact'):          # JAX backend
+            return impl.contact.geom1, impl.contact.geom2
+        else:                                  # Warp backend
+            g = impl.contact__geom            # (nconmax, 2)  vec2i → int32
+            return g[:, 0], g[:, 1]
+
+    def _hand_in_contact_with_cube(self, data: mjx.Data) -> jax.Array:
+        g1, g2 = self._contact_geoms(data)
+        cube_id = self._cube_geom_id
+        is_cube = (g1 == cube_id) | (g2 == cube_id)
+        other = jp.where(g1 == cube_id, g2, g1)
+        is_hand = jp.any(other[:, None] == self._hand_geom_ids[None, :], axis=1)
+        return jp.any(is_cube & is_hand)
+
+    def _cube_in_contact_with_floor(self, data: mjx.Data) -> jax.Array:
+        g1, g2 = self._contact_geoms(data)
+        floor_id, cube_id = self._floor_geom_id, self._cube_geom_id
+        return jp.any(
+            ((g1 == floor_id) & (g2 == cube_id))
+            | ((g1 == cube_id) & (g2 == floor_id))
+        )
 
     def _cube_lin_velocity(self, data: mjx.Data) -> jax.Array:
         return math.norm(self.get_cube_linvel(data))

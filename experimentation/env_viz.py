@@ -34,9 +34,9 @@ _PRESET_RL = {
 
 _RL_ENV_MODULE_ROOT = "mujoco_playground._src.manipulation.tesollo_hand"
 
-def load_model(env_arg: str) -> mujoco.MjModel:
+def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
     if env_arg in _PRESET_RL:
-        return _PRESET_RL[env_arg]().mj_model
+        return _PRESET_RL[env_arg](config_overrides={"impl": impl}).mj_model
 
     if env_arg in _PRESET_XML:
         return _PRESET_XML[env_arg]()
@@ -53,7 +53,7 @@ def load_model(env_arg: str) -> mujoco.MjModel:
     if _RL_ENV_MODULE_ROOT not in module_path:
         module_path = f"{_RL_ENV_MODULE_ROOT}.{module_path}"
     cls = getattr(importlib.import_module(module_path), class_name)
-    return cls().mj_model
+    return cls(config_overrides={"impl": impl}).mj_model
 
 
 def print_qpos(m, data):
@@ -74,6 +74,30 @@ def print_qpos(m, data):
         print()
     return _cb
 
+
+def render_video(
+    m: mujoco.MjModel,
+    data: mujoco.MjData,
+    path: str,
+    steps: int = 600,
+    fps: float = 30.0,
+    height: int = 480,
+    width: int = 640,
+) -> None:
+    """Simulate `steps` steps and write a video to `path` at `fps` frames per second."""
+    import mediapy as media
+    renderer = mujoco.Renderer(m, height=height, width=width)
+    render_every = max(1, round(1.0 / (fps * m.opt.timestep)))
+    frames = []
+    for i in range(steps):
+        mujoco.mj_step(m, data)
+        if i % render_every == 0:
+            renderer.update_scene(data)
+            frames.append(renderer.render())
+    media.write_video(path, frames, fps=fps)
+    print(f"Video saved to {path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -85,17 +109,31 @@ if __name__ == "__main__":
         ),
         metavar="ENV",
     )
-    parser.add_argument("--mode", default="active", choices=["passive", "active"])
+    parser.add_argument("--output", default="viewer", choices=["viewer", "video"],
+                        help="Output mode: launch interactive viewer or render to video file (default: viewer)")
+    parser.add_argument("--mode", default="active", choices=["passive", "active"],
+                        help="Viewer mode, ignored when --output video (default: active)")
+    parser.add_argument("--impl", default="warp", choices=["jax", "warp"],
+                        help="MJX backend for RL envs (default: warp)")
+    parser.add_argument("--steps", type=int, default=600,
+                        help="Number of simulation steps for video output (default: 600)")
+    parser.add_argument("--fps", type=float, default=30.0,
+                        help="Frames per second for video output (default: 30)")
+    parser.add_argument("--video-path", default=None,
+                        help="Output path for video (default: <env>.mp4)")
     args = parser.parse_args()
 
-    m = load_model(args.env)
+    m = load_model(args.env, impl=args.impl)
     data = mujoco.MjData(m)
 
     key_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "home")
     if key_id >= 0:
         mujoco.mj_resetDataKeyframe(m, data, key_id)
 
-    if args.mode == "active":
+    if args.output == "video":
+        video_path = args.video_path or f"{args.env}.mp4"
+        render_video(m, data, path=video_path, steps=args.steps, fps=args.fps)
+    elif args.mode == "active":
         mujoco.viewer.launch(m, data)
     else:
         with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos(m, data)) as v:

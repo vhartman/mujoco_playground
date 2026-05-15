@@ -86,7 +86,7 @@
           <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_2_tip_c" material="white"/>
           <site name="rl_dg_2_tip_c" pos="0 0 0.0255" group="4"/>
           <geom name="rl_dg_2_tip" class="tip" type="sphere" size="0.01" pos="0.0007 0.000 0.0335"/>
-          <geom name="rl_dg_2_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.005 0.00 0.0255"/>
+          <geom name="rl_dg_2_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.000 0.00 0.0255"/>
         </body>
       </body>
     </body>
@@ -119,7 +119,7 @@
           <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_3_tip_c" material="white"/>
           <site name="rl_dg_3_tip_c" pos="0 0 0.0255" group="4"/>
           <geom name="rl_dg_3_tip" class="tip" type="sphere" size="0.01" pos="0.0007 0.000 0.0335"/>
-          <geom name="rl_dg_3_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.005 0.00 0.0255"/>
+          <geom name="rl_dg_3_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.000 0.00 0.0255"/>
         </body>
       </body>
     </body>
@@ -152,7 +152,7 @@
           <geom class="visual" pos="0 0 0.0255" quat="1 0 0 0" type="mesh" mesh="rl_dg_4_tip_c" material="white"/>
           <site name="rl_dg_4_tip_c" pos="0 0 0.0255" group="4"/>
           <geom name="rl_dg_4_tip" class="tip" type="sphere" size="0.01" pos="0.0007 0.000 0.0335"/>
-          <geom name="rl_dg_4_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.005 0.00 0.0255"/>
+          <geom name="rl_dg_4_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.000 0.00 0.0255"/>
         </body>
       </body>
     </body>
@@ -186,7 +186,7 @@
           <geom class="visual" pos="0 0 0.0363" quat="1 0 0 0" type="mesh" mesh="rl_dg_5_tip_c" material="white"/>
           <site name="rl_dg_5_tip_c" pos="0 0 0.0363" group="4"/>
           <geom name="rl_dg_5_tip" class="tip" type="sphere" size="0.01" pos="0.0007 0.000 0.044"/>
-          <geom name="rl_dg_5_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.005 0.00 0.0363"/>
+          <geom name="rl_dg_5_tip_2" class="tip" size="0.004 0.006 0.009" pos="0.000 0.00 0.0363"/>
         </body>
       </body>
     </body>
