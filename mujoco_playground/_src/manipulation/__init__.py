@@ -68,6 +68,7 @@ _envs = {
     "TesolloGrasp": tesollo_grasp.Grasp,
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.PickAndPlaceProprio,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.PickAndPlaceBaseline,
+    "TesolloPickAndPlaceForce": tesollo_pick_and_place.PickAndPlaceForce,
     "TesolloPinchForce": tesollo_pinch.CubePinchForce,
     "TesolloPinchProprio": tesollo_pinch.CubePinchProprio,
     "TesolloPinchBaseline": tesollo_pinch.CubePinchBaseline,
@@ -100,6 +101,7 @@ _cfgs = {
     "TesolloGrasp": tesollo_grasp.default_config,
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.default_config,
+    "TesolloPickAndPlaceForce": tesollo_pick_and_place.default_config,
     "TesolloPinchForce": tesollo_pinch.default_config,
     "TesolloPinchProprio": tesollo_pinch.default_config,
     "TesolloPinchBaseline": tesollo_pinch.default_config,
@@ -125,6 +127,7 @@ _randomizer = {
     "TesolloGrasp": tesollo_grasp.domain_randomize,
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceForce": tesollo_pick_and_place.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 

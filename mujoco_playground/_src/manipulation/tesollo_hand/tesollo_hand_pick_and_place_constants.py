@@ -17,7 +17,7 @@
 from mujoco_playground._src import mjx_env
 
 ROOT_PATH = mjx_env.ROOT_PATH / "manipulation" / "tesollo_hand"
-SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_grasping.xml"
+SCENE_XML = ROOT_PATH / "xmls" / "scene_mjx_pick_and_place.xml"
 
 NQ = 26
 NV = 26
@@ -104,6 +104,23 @@ ACTUATOR_NAMES = [
     "rj_dg_5_3_a",
     "rj_dg_5_4_a",
 ]
+
+# Table geometry (matches scene_mjx_pick_and_place.xml)
+# Body pos="0.32 0.15 0.0375", geom size="0.15 0.15 0.0375"
+TABLE_CENTER_X = 0.32
+TABLE_CENTER_Y = 0.15
+TABLE_HALF_X = 0.15
+TABLE_HALF_Y = 0.15
+TABLE_SURFACE_Z = 0.075   # body_z + half_z = 0.0375 + 0.0375
+
+CUBE_HALF_SIZE = 0.035
+GOAL_Z = TABLE_SURFACE_Z + CUBE_HALF_SIZE  # cube center resting on table = 0.11
+
+# x/y bounds for goal: keep cube fully on table
+GOAL_X_MIN = TABLE_CENTER_X - TABLE_HALF_X + CUBE_HALF_SIZE
+GOAL_X_MAX = TABLE_CENTER_X + TABLE_HALF_X - CUBE_HALF_SIZE
+GOAL_Y_MIN = TABLE_CENTER_Y - TABLE_HALF_Y + CUBE_HALF_SIZE
+GOAL_Y_MAX = TABLE_CENTER_Y + TABLE_HALF_Y - CUBE_HALF_SIZE
 
 FINGERTIP_NAMES = [
     "rl_dg_1_tip_c",

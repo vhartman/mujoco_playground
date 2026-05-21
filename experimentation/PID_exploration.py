@@ -1,16 +1,23 @@
 """PID_exploration.py
 
 Evaluates PD controller quality across a grid of (kp, kd) gain values using
-step-response tests on the Tesollo hand pinch joints (thumb + index, 8 DOFs).
+step-response tests on the Tesollo hand index finger (dg_2 — 4 DOFs).
+
+The scene contains the hand only (no cube, no floor contacts), built in Python
+by wrapping `tesollo_wrist_dof_clean.xml` in a minimal MJCF and adding
+position actuators + a home keyframe.  Gravity is disabled so unactuated
+fingers and the wrist do not drift while we measure the response.
 
 Protocol
 --------
 For each (kp, kd) pair we:
-  1. Build CubePinchProprio with those gains applied via _apply_pid_gains.
+  1. Build the hand model with those gains applied to the active actuators.
   2. Start from the home keyframe position.
-  3. Command a fixed step target = home + 0.4 rad (clamped to joint limits).
+  3. Command a fixed step target = home + 0.4 rad (clamped to joint limits) on
+     the index-finger actuators only; the rest stay at their home ctrl.
   4. Hold that target for N_STEPS control steps (JAX jit + lax.scan).
-  5. Record joint positions, velocities, and actuator forces.
+  5. Record joint positions, velocities, and actuator forces for the active
+     8 joints only.
   6. Compute the statistics below from the trajectory.
 
 Statistics
@@ -62,9 +69,15 @@ Usage
 
 import argparse
 import sys
+import tempfile
 import time
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import jax
 import jax.numpy as jp
 import mujoco
@@ -77,11 +90,105 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.manipulation.tesollo_hand.base_pinch import (
-    _N_ACTIVE,
-    default_config,
+
+# ---------------------------------------------------------------------------
+# Scene paths
+# ---------------------------------------------------------------------------
+_XML_DIR = (
+    PROJECT_ROOT
+    / "mujoco_playground"
+    / "_src"
+    / "manipulation"
+    / "tesollo_hand"
+    / "xmls"
 )
-from mujoco_playground._src.manipulation.tesollo_hand.pinch import CubePinchProprio
+
+# Hand-only MJCF — wraps tesollo_wrist_dof_clean.xml (a bare <frame> fragment)
+# in a complete model.  Actuators and keyframe values mirror those in
+# scene_mjx_cube_pinch.xml, just without the cube.
+_HAND_ONLY_XML = """<mujoco model="tesollo_hand_only">
+  <include file="scene_base.xml"/>
+
+  <worldbody>
+    <frame pos="-0.18 0.04 0.084" quat="-1 1 -1 1">
+      <include file="tesollo_wrist_dof_clean.xml"/>
+    </frame>
+  </worldbody>
+
+  <actuator>
+    <position kp="10" kv="2"  name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-0.3 0.3"/>
+    <position kp="75" kv="10" name="rj_wrist_1_2_a" joint="rj_wrist_1_2" ctrlrange="-0.3 0.3"/>
+    <position kp="10" kv="2"  name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-0.3 0.3"/>
+
+    <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home"
+      qpos="
+      0.072 0.036 0.3
+      -0.167 -1.69 0.254 0.775
+      -0.172 0.29 0.819 0.45
+      -0.104 1.08 1.49 1.5
+      0.000154 1.21 1.43 1.33
+      0.00107 0.256 1.23 1.5"
+      ctrl="
+      0.072 0.036 0.3
+      -0.167 -1.69 0.254 0.775
+      -0.172 0.29 0.819 0.45
+      -0.104 1.08 1.49 1.5
+      0.000154 1.21 1.43 1.33
+      0.00107 0.256 1.23 1.5"/>
+  </keyframe>
+</mujoco>
+"""
+
+# Active joints under PD test = index finger only (dg_2).  The thumb and other
+# fingers stay at their home ctrl with nominal gains so they don't interfere.
+_ACTIVE_JOINT_NAMES = [f"rj_dg_2_{i}" for i in range(1, 5)]
+_N_ACTIVE = len(_ACTIVE_JOINT_NAMES)
+
+
+def _build_hand_only_model() -> mujoco.MjModel:
+    """Compile the hand-only MjModel.
+
+    The XML is written to a temp file inside the xmls/ directory so the
+    <include> directives for scene_base.xml and tesollo_wrist_dof_clean.xml
+    resolve against the real assets (meshes etc.).
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".xml", dir=str(_XML_DIR), delete=False
+    ) as f:
+        f.write(_HAND_ONLY_XML)
+        tmp_path = f.name
+    try:
+        return mujoco.MjModel.from_xml_path(tmp_path)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
 
 # ---------------------------------------------------------------------------
 # Gain grid
@@ -97,71 +204,94 @@ STEP_SIZE = 0.4
 
 CSV_PATH = Path(__file__).parent / "PID_test_results.csv"
 
-# Number of physics substeps per control step (ctrl_dt=0.05 / sim_dt=0.01).
+# Physics substeps per control step (ctrl_dt = sim_dt * _N_SUBSTEPS).
 _N_SUBSTEPS = 5
-
+_CTRL_DT = 0.01 * _N_SUBSTEPS  # 0.05 s
 
 # ---------------------------------------------------------------------------
-# Singleton env + single JIT-compiled rollout
+# Singleton model + JIT-compiled rollout
 # ---------------------------------------------------------------------------
-# Build the env once (XML parsing + model upload is expensive).  For each
-# (kp, kd) pair we cheaply replace gainprm/biasprm on the already-uploaded
-# MJX model rather than reconstructing everything from scratch.  The rollout
-# is compiled once as a module-level JIT; subsequent calls with different
-# model weights reuse the same XLA computation — no new CUDA graph per step.
-
-_BASE_ENV: CubePinchProprio | None = None
-_INIT_QPOS = None
-_TARGET_CTRL = None
+_MJ_MODEL: mujoco.MjModel | None = None
+_MJX_MODEL = None
 _INIT_DATA = None
+_INIT_QPOS = None          # full qpos at home
+_TARGET_CTRL = None        # full ctrl with STEP_SIZE only on active actuators
+_ACTIVE_DOF_IDS = None     # jp.ndarray of length 8 — indices into qpos/qvel
+_ACTIVE_ACT_IDS = None     # jp.ndarray of length 8 — indices into ctrl
 
 
-def _get_base_env() -> CubePinchProprio:
-    global _BASE_ENV, _INIT_QPOS, _TARGET_CTRL, _INIT_DATA
-    if _BASE_ENV is not None:
-        return _BASE_ENV
+def _get_base_model():
+    """Build/cache the hand-only model and resolve active joint/actuator IDs."""
+    global _MJ_MODEL, _MJX_MODEL, _INIT_DATA, _INIT_QPOS, _TARGET_CTRL
+    global _ACTIVE_DOF_IDS, _ACTIVE_ACT_IDS
+    if _MJX_MODEL is not None:
+        return _MJX_MODEL
 
-    cfg = default_config()
-    # Keep warp impl (jax doesn't support contact sensors).  The module-level
-    # _rollout_jit means mjx.put_model is called only once — no new CUDA graphs.
-    _BASE_ENV = CubePinchProprio(config=cfg)
+    m = _build_hand_only_model()
 
-    # Zero passive damping and rebuild the MJX model with GraphMode.NONE.
-    # In the default WARP graph mode, the CUDA graph captures GPU buffer
-    # pointers on first call — later model changes are ignored. NONE disables
-    # graph capture so model fields are read dynamically each kernel launch.
-    _BASE_ENV.mj_model.dof_damping[:] = 0.0
-    _BASE_ENV.mj_model.dof_frictionloss[:] = 0.0
-    _BASE_ENV.mj_model.dof_dampingpoly[:] = 0.0
-    _BASE_ENV._mjx_model = mjx.put_model(
-        _BASE_ENV.mj_model, impl=cfg.impl, graph_mode=GraphMode.NONE
-    )
+    # No cube to push against — disable gravity so unactuated bodies stay put.
+    m.opt.gravity[:] = 0.0
 
-    home_key = _BASE_ENV.mj_model.keyframe("home")
-    _INIT_QPOS   = jp.array(home_key.qpos)
-    _TARGET_CTRL = jp.clip(_INIT_QPOS + STEP_SIZE, _BASE_ENV._lowers, _BASE_ENV._uppers)
-    _INIT_DATA   = mjx_env.make_data(
-        _BASE_ENV.mj_model,
+    # Zero passive joint dissipation so the response is pure PD.
+    m.dof_damping[:] = 0.0
+    m.dof_frictionloss[:] = 0.0
+    m.dof_dampingpoly[:] = 0.0
+
+    # Resolve active joint → dof index and active actuator index.
+    active_dof = []
+    active_act = []
+    for jname in _ACTIVE_JOINT_NAMES:
+        jid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, jname)
+        active_dof.append(int(m.jnt_dofadr[jid]))
+        aid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, jname + "_a")
+        active_act.append(int(aid))
+    _ACTIVE_DOF_IDS = jp.array(active_dof)
+    _ACTIVE_ACT_IDS = jp.array(active_act)
+
+    # GraphMode.NONE so model edits (gainprm/biasprm) take effect each step.
+    _MJ_MODEL = m
+    _MJX_MODEL = mjx.put_model(m, impl="warp", graph_mode=GraphMode.NONE)
+
+    home_key = m.keyframe("home")
+    _INIT_QPOS = jp.array(home_key.qpos)
+    home_ctrl = jp.array(home_key.ctrl)
+
+    # Clamp ctrl ranges only on the active actuators (others stay at home).
+    ctrlrange = jp.array(m.actuator_ctrlrange)  # (nu, 2)
+    lo = ctrlrange[_ACTIVE_ACT_IDS, 0]
+    hi = ctrlrange[_ACTIVE_ACT_IDS, 1]
+    stepped = jp.clip(home_ctrl[_ACTIVE_ACT_IDS] + STEP_SIZE, lo, hi)
+    _TARGET_CTRL = home_ctrl.at[_ACTIVE_ACT_IDS].set(stepped)
+
+    _INIT_DATA = mjx_env.make_data(
+        m,
         qpos=_INIT_QPOS,
-        ctrl=jp.array(home_key.ctrl),
+        ctrl=home_ctrl,
         impl="warp",
         nconmax=256,
         njmax=128,
     )
-    return _BASE_ENV
+    return _MJX_MODEL
 
 
 def _apply_gains(model, kp: float, kd: float):
-    """Return a new MJX model with all actuator gains overwritten and joint damping zeroed."""
-    kp_arr = jp.full((model.nu,), float(kp))
-    kd_arr = jp.full((model.nu,), float(kd))
-    gainprm = model.actuator_gainprm.at[:, 0].set(kp_arr)
+    """Return a new MJX model with kp/kd applied to the active actuators only.
+
+    Non-active actuators (wrist + dg_3/4/5) keep their nominal kp/kv so the
+    rest of the hand stays put while we excite thumb + index.
+    """
+    kp_arr = jp.full((_N_ACTIVE,), float(kp))
+    kd_arr = jp.full((_N_ACTIVE,), float(kd))
+    gainprm = model.actuator_gainprm.at[_ACTIVE_ACT_IDS, 0].set(kp_arr)
     biasprm = (
         model.actuator_biasprm
-        .at[:, 1].set(-kp_arr)
-        .at[:, 2].set(-kd_arr)
+        .at[_ACTIVE_ACT_IDS, 1].set(-kp_arr)
+        .at[_ACTIVE_ACT_IDS, 2].set(-kd_arr)
     )
-    return model.tree_replace({"actuator_gainprm": gainprm, "actuator_biasprm": biasprm})
+    return model.tree_replace({
+        "actuator_gainprm": gainprm,
+        "actuator_biasprm": biasprm,
+    })
 
 
 @jax.jit
@@ -175,17 +305,20 @@ def _rollout_jit(model, data, target_ctrl):
 
 
 def run_step_response(kp: float, kd: float) -> dict:
-    """Run a step-response rollout for the given gains and return trajectories."""
-    env = _get_base_env()
-    model = _apply_gains(env.mjx_model, kp, kd)
+    """Run a step-response rollout for the given gains and return trajectories
+    sliced to the 8 active joints."""
+    base = _get_base_model()
+    model = _apply_gains(base, kp, kd)
     qpos_t, qvel_t, force_t = _rollout_jit(model, _INIT_DATA, _TARGET_CTRL)
+    dof = np.array(_ACTIVE_DOF_IDS)
+    act = np.array(_ACTIVE_ACT_IDS)
     return {
-        "qpos":     np.array(qpos_t),
-        "qvel":     np.array(qvel_t),
-        "force":    np.array(force_t),
-        "init_pos": np.array(_INIT_QPOS),
-        "target":   np.array(_TARGET_CTRL),
-        "ctrl_dt":  env.dt,
+        "qpos":     np.array(qpos_t)[:, dof],
+        "qvel":     np.array(qvel_t)[:, dof],
+        "force":    np.array(force_t)[:, act],
+        "init_pos": np.array(_INIT_QPOS)[dof],
+        "target":   np.array(_TARGET_CTRL)[act],
+        "ctrl_dt":  _CTRL_DT,
     }
 
 
@@ -324,10 +457,7 @@ CURVE_CONFIGS = [
 
 
 def visualize(df: pd.DataFrame) -> None:
-    """Produce all visualisation panels and display them."""
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
-    from matplotlib.gridspec import GridSpec
+    """Produce all visualisation panels and save them to PNG."""
 
     kp_vals = sorted(df["kp"].unique())
     kd_vals = sorted(df["kd"].unique())
@@ -374,6 +504,7 @@ def visualize(df: pd.DataFrame) -> None:
 
     fig1.suptitle("PD Gain Sweep — Statistics Heatmaps", fontsize=14, y=1.01)
     fig1.tight_layout()
+    plt.savefig(Path(__file__).parent / "PID_gain_sweep_heatmaps.png", dpi=300, bbox_inches="tight")
 
     # -----------------------------------------------------------------------
     # Figure 2: step-response curves for selected configurations
@@ -382,8 +513,7 @@ def visualize(df: pd.DataFrame) -> None:
         (kp, kd) for kp, kd in CURVE_CONFIGS
         if kp in kp_vals and kd in kd_vals
     ]
-    n_joints = _N_ACTIVE
-    joint_idx = 1  # representative joint (dg_1_2 — largest range, most informative)
+    joint_idx = 1  # representative joint (dg_2_2 — largest range, most informative)
 
     fig2, axes2 = plt.subplots(
         len(valid_curves), 1, figsize=(10, 3 * len(valid_curves)), sharex=True
@@ -413,10 +543,10 @@ def visualize(df: pd.DataFrame) -> None:
 
     axes2[-1].set_xlabel("Time (s)")
     fig2.suptitle(
-        f"Step-Response Curves — joint {joint_idx} (dg_1_2)", fontsize=13
+        f"Step-Response Curves — joint {joint_idx} (dg_2_2)", fontsize=13
     )
     fig2.tight_layout()
-
+    plt.savefig(Path(__file__).parent / "PID_gain_sweep_step_responses.png", dpi=300, bbox_inches="tight")
     # -----------------------------------------------------------------------
     # Figure 3: composite scatter — rise time vs. overshoot, sized by energy
     # -----------------------------------------------------------------------
@@ -453,6 +583,7 @@ def visualize(df: pd.DataFrame) -> None:
     ax3.grid(alpha=0.3)
     fig3.tight_layout()
 
+    plt.savefig(Path(__file__).parent / "PID_gain_sweep_scatter.png", dpi=300, bbox_inches="tight")
     plt.show()
 
 
@@ -472,7 +603,7 @@ def main():
     if not args.no_sweep:
         print(f"Running PD gain sweep: {len(KP_VALUES)} kp × {len(KD_VALUES)} kd "
               f"= {len(KP_VALUES)*len(KD_VALUES)} configurations")
-        print(f"Each rollout: {N_STEPS} steps × ctrl_dt=0.05 s = {N_STEPS*0.05:.1f} s sim\n")
+        print(f"Each rollout: {N_STEPS} steps × ctrl_dt={_CTRL_DT} s = {N_STEPS*_CTRL_DT:.1f} s sim\n")
         df = run_sweep()
         df.to_csv(CSV_PATH, index=False)
         print(f"\nResults saved to {CSV_PATH}")

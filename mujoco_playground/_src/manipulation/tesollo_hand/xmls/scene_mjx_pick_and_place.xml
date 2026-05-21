@@ -1,6 +1,10 @@
 <mujoco model="tesollo_pick_and_place">
   <include file="scene_base.xml"/>
 
+  <custom>
+    <numeric name="contact_sensor_maxmatch" data="100"/>
+  </custom>
+
   <asset>
     <material name="table" rgba="0.82 0.71 0.55 1"/>
   </asset>
@@ -88,7 +92,7 @@
     <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
 
     <!-- contact forces: full hand vs cube, then per fingertip vs cube. -->
-    <contact name="cube_force" geom1="cube" subtree2="rh" num="32" data="force"/>
+    <contact name="cube_force" geom1="cube" subtree2="rh" num="70" data="force"/>
     <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
     <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
     <contact name="rl_dg_3_tip_cube_force" geom1="rl_dg_3_tip" geom2="cube" num="4" data="force"/>

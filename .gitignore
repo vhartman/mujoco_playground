@@ -14,3 +14,5 @@ learning/queues/
 .claude/worktrees/
 *.png
 .vscode/*
+experimentation/*.csv
+experimentation/*.ipynb
