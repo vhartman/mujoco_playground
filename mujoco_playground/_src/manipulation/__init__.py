@@ -33,7 +33,6 @@ from mujoco_playground._src.manipulation.aero_hand import rotate_z as aero_hand_
 from mujoco_playground._src.manipulation.tesollo_hand import reorient as tesollo_cube_reorient
 from mujoco_playground._src.manipulation.tesollo_hand import rotate_z as tesollo_rotate_z
 from mujoco_playground._src.manipulation.tesollo_hand import reorient_wrist as tesollo_wrist_cube_reorient
-from mujoco_playground._src.manipulation.tesollo_hand import pinch as tesollo_pinch
 from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
 
 from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
@@ -69,9 +68,6 @@ _envs = {
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.PickAndPlaceProprio,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.PickAndPlaceBaseline,
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.PickAndPlaceForce,
-    "TesolloPinchForce": tesollo_pinch.CubePinchForce,
-    "TesolloPinchProprio": tesollo_pinch.CubePinchProprio,
-    "TesolloPinchBaseline": tesollo_pinch.CubePinchBaseline,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -102,9 +98,6 @@ _cfgs = {
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.default_config,
-    "TesolloPinchForce": tesollo_pinch.default_config,
-    "TesolloPinchProprio": tesollo_pinch.default_config,
-    "TesolloPinchBaseline": tesollo_pinch.default_config,
 
 
     "MasspointReach": masspoint_reach.default_config,

@@ -103,3 +103,38 @@ class SceneBuilder:
         spec.add_key(name=keyframe_name, qpos=new_qpos, ctrl=new_ctrl)
 
         return spec.to_xml()
+
+def _rh_pose_overrides(
+    spec: mujoco.MjSpec,
+    data: mujoco.MjData,
+    model: mujoco.MjModel,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Compute rh pose relative to its wrapping <frame> (not the worldbody).
+
+    The rh body lives inside a <frame> in the XML, so spec rh.pos/quat are
+    expressed relative to that frame — not relative to the worldbody.  Using
+    the worldbody as parent would double-count the frame offset.
+    """
+    rh_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "rh")
+    xpos_rh = data.xpos[rh_id]
+    xquat_rh = data.xquat[rh_id]
+
+    frame = spec.worldbody.frames[0]
+    frame_quat = np.array(frame.quat, dtype=float)
+    frame_quat /= np.linalg.norm(frame_quat)
+    frame_pos = np.array(frame.pos, dtype=float)
+
+    w, x, y, z = frame_quat
+    frame_mat = np.array([
+        [1 - 2*(y*y + z*z),     2*(x*y - w*z),     2*(x*z + w*y)],
+        [    2*(x*y + w*z), 1 - 2*(x*x + z*z),     2*(y*z - w*x)],
+        [    2*(x*z - w*y),     2*(y*z + w*x), 1 - 2*(x*x + y*y)],
+    ])
+
+    pos_in_frame = frame_mat.T @ (xpos_rh - frame_pos)
+
+    frame_quat_inv = np.array([frame_quat[0], -frame_quat[1], -frame_quat[2], -frame_quat[3]])
+    quat_in_frame = np.zeros(4)
+    mujoco.mju_mulQuat(quat_in_frame, frame_quat_inv, xquat_rh)
+
+    return {"rh": (pos_in_frame, quat_in_frame)}
