@@ -53,7 +53,8 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 fingertip_pos=0.2,
-                cube_at_goal=5.0,
+                cube_pos=4.0,
+                cube_ori=1.0,
                 joint_vel=-0.01,
                 wrist_vel=-0.01,
             ),
@@ -67,7 +68,7 @@ def default_config() -> config_dict.ConfigDict:
             pert_wait_steps=[60, 150],
         ),
         impl="warp",
-        nconmax=200 * 4192,
+        nconmax=200 * 8192,
         njmax=2200,
     )
 
@@ -286,11 +287,11 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
     @staticmethod
     def r_cube_pos(cube_target_error: jax.Array, target_radius: float) -> jax.Array:
-        # margin=0.032: calibrated so the nearest possible start (~0.285 m away)
-        # yields reward ≈ 0.10 via reciprocal: 1/(1 + d/margin).
+        # margin=0.032, value_at_margin=0.5: yields reward ≈ 0.10 at the nearest
+        # possible start (~0.285 m away) via 1/(1 + d/margin).
         return reward.tolerance(
             cube_target_error, (0, target_radius), margin=0.032,
-            sigmoid="reciprocal",
+            sigmoid="reciprocal", value_at_margin=0.5,
         )
 
     @staticmethod
@@ -347,13 +348,11 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         )
 
         fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances))
-        cube_orientation_reward = self.r_cube_orientation(cube_ori_error)
-        cube_pos_reward = self.r_cube_pos(cube_pos_error, self._config.target_radius)
-        cube_pose_reward = cube_pos_reward * cube_orientation_reward
 
         return {
             "fingertip_pos": fingertip_reward,
-            "cube_at_goal": cube_pose_reward,
+            "cube_pos": self.r_cube_pos(cube_pos_error, self._config.target_radius),
+            "cube_ori": self.r_cube_orientation(cube_ori_error),
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
         }

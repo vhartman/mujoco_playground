@@ -33,6 +33,7 @@ from etils import epath
 import jax
 import jax.numpy as jp
 import mediapy as media
+import numpy as np
 from ml_collections import config_dict
 import mujoco
 import mujoco_playground
@@ -82,6 +83,12 @@ _USE_WANDB = flags.DEFINE_boolean(
     "use_wandb",
     False,
     "Use Weights & Biases for logging (ignored in play-only mode)",
+)
+_LOG_VIDEO_TO_WANDB = flags.DEFINE_boolean(
+    "log_video_to_wandb",
+    False,
+    "Upload rollout videos to Weights & Biases after training. Requires"
+    " --use_wandb.",
 )
 _USE_TB = flags.DEFINE_boolean(
     "use_tb", False, "Use TensorBoard for logging (ignored in play-only mode)"
@@ -204,6 +211,61 @@ def rscope_fn(full_states, obs, rew, done):
       "Collected rscope rollouts with reward"
       f" {episode_rewards.mean():.3f} +- {episode_rewards.std():.3f}"
   )
+
+
+def make_eval_video_logger(env, episode_length: int, seed: int, render_every: int = 2):
+  """Returns a policy_params_fn callback that logs a rollout video to W&B on every eval."""
+  fps = 1.0 / env.dt / render_every
+  scene_option = mujoco.MjvOption()
+  scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False
+  scene_option.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = False
+  scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
+  rng = jax.random.PRNGKey(seed)
+
+  def log_video(current_step: int, make_policy, params) -> None:
+    nonlocal rng
+    rng, rollout_rng = jax.random.split(rng)
+    reset_rng, step_rng = jax.random.split(rollout_rng)
+
+    inference_fn = make_policy(params, deterministic=True)
+    jit_inference_fn = jax.jit(inference_fn)
+
+    state = jax.jit(env.reset)(reset_rng)
+    empty_data = state.data.__class__(
+        **{k: None for k in state.data.__annotations__}
+    )
+    empty_traj = state.__class__(**{k: None for k in state.__annotations__})
+    empty_traj = empty_traj.replace(data=empty_data)
+
+    def step_fn(carry, _):
+      state, key = carry
+      key, act_key = jax.random.split(key)
+      act = jit_inference_fn(state.obs, act_key)[0]
+      state = env.step(state, act)
+      traj_data = empty_traj.tree_replace({
+          "data.qpos": state.data.qpos,
+          "data.qvel": state.data.qvel,
+          "data.time": state.data.time,
+          "data.ctrl": state.data.ctrl,
+          "data.mocap_pos": state.data.mocap_pos,
+          "data.mocap_quat": state.data.mocap_quat,
+          "data.xfrc_applied": state.data.xfrc_applied,
+      })
+      return (state, key), traj_data
+
+    _, traj = jax.lax.scan(step_fn, (state, step_rng), None, length=episode_length)
+    traj_list = [
+        jax.tree.map(lambda x, j=j: x[j], traj) for j in range(episode_length)
+    ]
+    frames = env.render(
+        traj_list[::render_every], height=480, width=640, scene_option=scene_option
+    )
+    wandb.log(
+        {"eval/rollout": wandb.Video(np.array(frames), fps=fps, format="mp4")},
+        step=current_step,
+    )
+
+  return log_video
 
 
 def main(argv):
@@ -448,6 +510,17 @@ def main(argv):
     def policy_params_fn(current_step, make_policy, params):  # pylint: disable=unused-argument
       rscope_handle.set_make_policy(make_policy)
       rscope_handle.dump_rollout(params)
+
+  if _LOG_VIDEO_TO_WANDB.value and _USE_WANDB.value and not _PLAY_ONLY.value and not _VISION.value:
+    _video_logger = make_eval_video_logger(
+        eval_env,
+        episode_length=ppo_params.episode_length,
+        seed=_SEED.value,
+    )
+    _base_policy_params_fn = policy_params_fn
+    def policy_params_fn(current_step, make_policy, params):  # pylint: disable=function-redefined
+      _base_policy_params_fn(current_step, make_policy, params)
+      _video_logger(current_step, make_policy, params)
 
   # Train or load the model
   make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
