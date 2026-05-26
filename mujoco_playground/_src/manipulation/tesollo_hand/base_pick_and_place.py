@@ -54,7 +54,8 @@ def default_config() -> config_dict.ConfigDict:
             scales=config_dict.create(
                 fingertip_pos=0.2,
                 cube_pos=4.0,
-                cube_ori=1.0,
+                cube_ori=0.5,
+                cube_height=1.0,
                 joint_vel=-0.01,
                 wrist_vel=-0.01,
             ),
@@ -108,6 +109,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         self._hand_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.JOINT_NAMES)
         self._cube_qids = mjx_env.get_qpos_ids(self.mj_model, ["cube_freejoint"])
         self._floor_geom_id = self._mj_model.geom("floor").id
+        self._table_geom_id = self._mj_model.geom("table_top").id
         self._cube_geom_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
@@ -121,6 +123,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
+        self._cube_init_z = float(self._cube_init[2])
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
 
     # ------------------------------------------------------------------
@@ -333,7 +336,13 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         # tolerance band: ≤5° (0.087 rad); gaussian gives steep decay beyond it.
         # margin=1.0 rad (≈57°): reward ≈ 0.1 at 62° total error.
         return reward.tolerance(ori_error, (0, 0.087), margin=1.0, sigmoid="gaussian")
-    
+
+    @staticmethod
+    def r_cube_height(cube_z: jax.Array, init_z: float, goal_z: float) -> jax.Array:
+        """1 at goal_z, linear ramp from 0 at init_z, hard-zero above goal_z."""
+        ramp = jp.clip((cube_z - init_z) / (goal_z - init_z), 0.0, 1.0)
+        return jp.where(cube_z > goal_z, 0.0, ramp)
+
     def _get_reward(
         self,
         data: mjx.Data,
@@ -353,6 +362,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             "fingertip_pos": fingertip_reward,
             "cube_pos": self.r_cube_pos(cube_pos_error, self._config.target_radius),
             "cube_ori": self.r_cube_orientation(cube_ori_error),
+            "cube_height": self.r_cube_height(cube_pos[2], self._cube_init_z, self._geom.goal_z),
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
         }

@@ -18,6 +18,7 @@ import datetime
 import functools
 import json
 import os
+import tempfile
 import time
 import warnings
 import yaml
@@ -260,10 +261,16 @@ def make_eval_video_logger(env, episode_length: int, seed: int, render_every: in
     frames = env.render(
         traj_list[::render_every], height=480, width=640, scene_option=scene_option
     )
-    wandb.log(
-        {"eval/rollout": wandb.Video(np.array(frames), fps=fps, format="mp4")},
-        step=current_step,
-    )
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+      tmp_path = f.name
+    try:
+      media.write_video(tmp_path, np.array(frames), fps=fps)
+      wandb.log(
+          {"eval/rollout": wandb.Video(tmp_path, fps=fps, format="mp4")},
+          step=current_step,
+      )
+    finally:
+      os.unlink(tmp_path)
 
   return log_video
 
