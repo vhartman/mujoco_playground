@@ -140,7 +140,7 @@ def parse_queue(path: pathlib.Path) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _build_argv(script: str, flags: dict, overrides_file=None) -> list[str]:
-    argv = [sys.executable, script]
+    argv = [sys.executable, "-u", script]
     for k, v in flags.items():
         if isinstance(v, bool):
             argv.append(f"--{k}" if v else f"--no{k}")

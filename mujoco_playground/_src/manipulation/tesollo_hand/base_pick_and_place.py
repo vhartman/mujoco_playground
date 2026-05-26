@@ -39,10 +39,9 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.5,
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=500,
-        success_threshold=0.05,
-        vel_threshold=0.1,
-        ang_vel_threshold=0.5,
+        episode_length=180,
+        target_hold_time=1.5,
+        target_radius=0.008,
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -54,14 +53,11 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 fingertip_pos=0.2,
-                lift=3.0,
-                cube_target_pos=5.0,
-                cube_still_at_goal=5.0,
-                release_at_goal=2.0,
+                cube_at_goal=5.0,
                 joint_vel=-0.01,
                 wrist_vel=-0.01,
             ),
-            success_reward=30.0,
+            success_reward=10.0,
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -124,6 +120,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
+        self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
 
     # ------------------------------------------------------------------
     # Abstract interface
@@ -155,10 +152,10 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         rng, goal_rng = jax.random.split(rng)
         goal_xy = jax.random.uniform(
             goal_rng, (2,),
-            minval=jp.array([consts.GOAL_X_MIN, consts.GOAL_Y_MIN]),
-            maxval=jp.array([consts.GOAL_X_MAX, consts.GOAL_Y_MAX]),
+            minval=jp.array([self._geom.goal_x_min, self._geom.goal_y_min]),
+            maxval=jp.array([self._geom.goal_x_max, self._geom.goal_y_max]),
         )
-        goal_pos = jp.array([goal_xy[0], goal_xy[1], consts.GOAL_Z])
+        goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
@@ -202,6 +199,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             "step": 0,
             "steps_since_last_success": 0,
             "success_count": 0,
+            "at_target_step_counter": jp.zeros((), dtype=jp.int32),
             "motor_targets": data.ctrl,
             "goal_pos": goal_pos,
             "last_ground_cube_pos": start_pos,
@@ -237,22 +235,29 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         state.info["motor_targets"] = motor_targets
 
         cube_pos = self.get_cube_position(data)
-        goal_pos = state.info["goal_pos"]
-        cube_goal_error = jp.linalg.norm(cube_pos - goal_pos)
-
         cube_on_ground = self._cube_in_contact_with_floor(data)
         state.info["last_ground_cube_pos"] = jp.where(
             cube_on_ground, cube_pos, state.info["last_ground_cube_pos"]
         )
-        cube_lin_vel = self._cube_lin_velocity(data)
-        cube_ang_vel = self._cube_ang_velocity(data)
+ 
 
-        success = (
-            (cube_goal_error < self._config.success_threshold)
-            & (cube_lin_vel < self._config.vel_threshold)
-            & (cube_ang_vel < self._config.ang_vel_threshold)
-            # & ~self._hand_in_contact_with_cube(data)
+        done = self._get_termination(data)
+        obs = self._get_obs(data, state.info)
+        rewards = self._get_reward(data, state.info)
+        rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
+
+        at_goal = jp.linalg.norm(cube_pos - state.info["goal_pos"]) < self._config.target_radius
+        state.info["at_target_step_counter"] = jp.where(
+            at_goal,
+            state.info["at_target_step_counter"] + 1,
+            jp.zeros((), dtype=jp.int32),
         )
+        hold_steps = jp.asarray(self._config.target_hold_time / self.dt, dtype=jp.int32)
+        success = state.info["at_target_step_counter"] > hold_steps
+
+        rew = sum(rewards.values()) * self.dt
+        # rew += success * self._config.reward_config.success_reward
+
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
         )
@@ -260,14 +265,6 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             success, state.info["success_count"] + 1, state.info["success_count"]
         )
         state.metrics["success_count"] = state.info["success_count"]
-
-        done = self._get_termination(data)
-        obs = self._get_obs(data, state.info)
-        rewards = self._get_reward(data, state.info)
-        rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
-        rew = sum(rewards.values()) * self.dt
-        rew += success * self._config.reward_config.success_reward
-
         state.info["step"] += 1
         state.metrics["reward/success"] = success.astype(float)
         for k, v in rewards.items():
@@ -288,16 +285,12 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def r_at_goal_factor(cube_target_error: jax.Array) -> jax.Array:
+    def r_cube_pos(cube_target_error: jax.Array, target_radius: float) -> jax.Array:
+        # margin=0.032: calibrated so the nearest possible start (~0.285 m away)
+        # yields reward ≈ 0.10 via reciprocal: 1/(1 + d/margin).
         return reward.tolerance(
-            cube_target_error, (0, 0.01), margin=0.3, sigmoid="linear"
-        )
-
-    @staticmethod
-    def r_cube_target_pos(cube_target_error: jax.Array) -> jax.Array:
-        return reward.tolerance(
-            cube_target_error, (0, 0.008), margin=0.2,
-            sigmoid="linear", value_at_margin=0.1,
+            cube_target_error, (0, target_radius), margin=0.032,
+            sigmoid="reciprocal",
         )
 
     @staticmethod
@@ -311,12 +304,10 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         cls,
         cube_target_error: jax.Array,
         cube_lin_vel: jax.Array,
-        hand_open: jax.Array,
     ) -> jax.Array:
         return (
             cls.r_at_goal_factor(cube_target_error)
-            * jp.exp(-cube_lin_vel * 10.0)
-            * hand_open
+            * jp.exp(-cube_lin_vel * 12.0)
         )
 
     @staticmethod
@@ -336,6 +327,12 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     def r_wrist_vel(wrist_qvel: jax.Array) -> jax.Array:
         return jp.sum(jp.square(wrist_qvel))
 
+    @staticmethod
+    def r_cube_orientation(ori_error: jax.Array) -> jax.Array:
+        # tolerance band: ≤5° (0.087 rad); gaussian gives steep decay beyond it.
+        # margin=1.0 rad (≈57°): reward ≈ 0.1 at 62° total error.
+        return reward.tolerance(ori_error, (0, 0.087), margin=1.0, sigmoid="gaussian")
+    
     def _get_reward(
         self,
         data: mjx.Data,
@@ -343,26 +340,20 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     ) -> dict[str, jax.Array]:
         cube_pos = self.get_cube_position(data)
         goal_pos = info["goal_pos"]
-        cube_target_error = jp.linalg.norm(cube_pos - goal_pos)
-
+        cube_pos_error = jp.linalg.norm(cube_pos - goal_pos)
+        cube_ori_error = self._cube_orientation_error(data)
         fingertip_distances = jp.linalg.norm(
             self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos, axis=1
         )
-        cube_lin_vel = self._cube_lin_velocity(data)
-        # hand_open = (~self._hand_in_contact_with_cube(data)).astype(float)
-        hand_open = True
 
-        fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances)) * (
-            1.0 - self.r_at_goal_factor(cube_target_error)
-        )
+        fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances))
+        cube_orientation_reward = self.r_cube_orientation(cube_ori_error)
+        cube_pos_reward = self.r_cube_pos(cube_pos_error, self._config.target_radius)
+        cube_pose_reward = cube_pos_reward * cube_orientation_reward
 
         return {
             "fingertip_pos": fingertip_reward,
-            "cube_target_pos": self.r_cube_target_pos(cube_target_error),
-            "cube_still_at_goal": self.r_cube_still_at_goal(
-                cube_target_error, cube_lin_vel, hand_open
-            ),
-            # "release_at_goal": self.r_release_at_goal(cube_target_error, hand_open),
+            "cube_at_goal": cube_pose_reward,
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
         }
@@ -405,6 +396,13 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
     def _obs_cube_to_goal(self, cube_pos: jax.Array, info: dict[str, Any]) -> jax.Array:
         return info["goal_pos"] - cube_pos
+
+    def _cube_orientation_error(self, data: mjx.Data):
+        cube_ori = self.get_cube_orientation(data)
+        cube_goal_ori = self.get_cube_goal_orientation(data)
+        quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
+        quat_diff = math.normalize(quat_diff)
+        return 2.0 * jp.asin(jp.clip(jp.linalg.norm(quat_diff[1:]), max=1.0))
 
     def _obs_goal_pos(self, info: dict[str, Any]) -> jax.Array:
         return info["goal_pos"]
@@ -464,13 +462,13 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             g = impl.contact__geom            # (nconmax, 2)  vec2i → int32
             return g[:, 0], g[:, 1]
 
-    # def _hand_in_contact_with_cube(self, data: mjx.Data) -> jax.Array:
-    #     g1, g2 = self._contact_geoms(data)
-    #     cube_id = self._cube_geom_id
-    #     is_cube = (g1 == cube_id) | (g2 == cube_id)
-    #     other = jp.where(g1 == cube_id, g2, g1)
-    #     is_hand = jp.any(other[:, None] == self._hand_geom_ids[None, :], axis=1)
-    #     return jp.any(is_cube & is_hand)
+    def _hand_in_contact_with_cube(self, data: mjx.Data) -> jax.Array:
+        g1, g2 = self._contact_geoms(data)
+        cube_id = self._cube_geom_id
+        is_cube = (g1 == cube_id) | (g2 == cube_id)
+        other = jp.where(g1 == cube_id, g2, g1)
+        is_hand = jp.any(other[:, None] == self._hand_geom_ids[None, :], axis=1)
+        return jp.any(is_cube & is_hand)
 
     def _cube_in_contact_with_floor(self, data: mjx.Data) -> jax.Array:
         g1, g2 = self._contact_geoms(data)

@@ -14,6 +14,10 @@
 # ==============================================================================
 """Constants for leap hand."""
 
+import dataclasses
+
+import mujoco
+
 from mujoco_playground._src import mjx_env
 
 ROOT_PATH = mjx_env.ROOT_PATH / "manipulation" / "tesollo_hand"
@@ -105,23 +109,6 @@ ACTUATOR_NAMES = [
     "rj_dg_5_4_a",
 ]
 
-# Table geometry (matches scene_mjx_pick_and_place.xml)
-# Body pos="0.32 0.15 0.0375", geom size="0.15 0.15 0.0375"
-TABLE_CENTER_X = 0.32
-TABLE_CENTER_Y = 0.15
-TABLE_HALF_X = 0.15
-TABLE_HALF_Y = 0.15
-TABLE_SURFACE_Z = 0.075   # body_z + half_z = 0.0375 + 0.0375
-
-CUBE_HALF_SIZE = 0.035
-GOAL_Z = TABLE_SURFACE_Z + CUBE_HALF_SIZE  # cube center resting on table = 0.11
-
-# x/y bounds for goal: keep cube fully on table
-GOAL_X_MIN = TABLE_CENTER_X - TABLE_HALF_X + CUBE_HALF_SIZE
-GOAL_X_MAX = TABLE_CENTER_X + TABLE_HALF_X - CUBE_HALF_SIZE
-GOAL_Y_MIN = TABLE_CENTER_Y - TABLE_HALF_Y + CUBE_HALF_SIZE
-GOAL_Y_MAX = TABLE_CENTER_Y + TABLE_HALF_Y - CUBE_HALF_SIZE
-
 FINGERTIP_NAMES = [
     "rl_dg_1_tip_c",
     "rl_dg_2_tip_c",
@@ -129,3 +116,53 @@ FINGERTIP_NAMES = [
     "rl_dg_4_tip_c",
     "rl_dg_5_tip_c",
 ]
+
+
+@dataclasses.dataclass(frozen=True)
+class SceneGeometry:
+    """Table and cube geometry read directly from the MuJoCo model.
+
+    The XML is the single source of truth; this dataclass derives everything
+    from it so that Python and XML can never disagree.
+    """
+
+    table_center_x: float
+    table_center_y: float
+    table_half_x: float
+    table_half_y: float
+    table_surface_z: float
+    cube_half_size: float
+
+    @property
+    def goal_z(self) -> float:
+        return self.table_surface_z + self.cube_half_size
+
+    @property
+    def goal_x_min(self) -> float:
+        return self.table_center_x - self.table_half_x + self.cube_half_size
+
+    @property
+    def goal_x_max(self) -> float:
+        return self.table_center_x + self.table_half_x - self.cube_half_size
+
+    @property
+    def goal_y_min(self) -> float:
+        return self.table_center_y - self.table_half_y + self.cube_half_size
+
+    @property
+    def goal_y_max(self) -> float:
+        return self.table_center_y + self.table_half_y - self.cube_half_size
+
+    @classmethod
+    def from_mj_model(cls, mj_model: mujoco.MjModel) -> "SceneGeometry":
+        table_pos  = mj_model.body("table").pos
+        table_size = mj_model.geom("table_top").size
+        cube_size  = mj_model.geom("cube").size
+        return cls(
+            table_center_x  = float(table_pos[0]),
+            table_center_y  = float(table_pos[1]),
+            table_half_x    = float(table_size[0]),
+            table_half_y    = float(table_size[1]),
+            table_surface_z = float(table_pos[2] + table_size[2]),
+            cube_half_size  = float(cube_size[0]),
+        )

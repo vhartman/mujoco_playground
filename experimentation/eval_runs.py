@@ -151,13 +151,10 @@ def eval_run(log_dir: Path, output_path: Path) -> bool:
     episode_length = ppo_params.episode_length
 
     rng = jax.random.PRNGKey(1)
-    reset_state = jax.jit(eval_env.reset)(rng)
+    sample_state = jax.jit(eval_env.reset)(rng)
 
-    step_fn = functools.partial(_rollout_step, _make_empty_traj(reset_state), jit_inference_fn, eval_env)
-    do_rollout = functools.partial(_do_rollout, step_fn, episode_length)
-
-    traj_stacked, metrics = jax.jit(do_rollout)(rng, reset_state)
-    rollout = [jax.tree.map(lambda x, j=j: x[j], traj_stacked) for j in range(episode_length)]
+    step_fn = functools.partial(_rollout_step, _make_empty_traj(sample_state), jit_inference_fn, eval_env)
+    do_rollout = jax.jit(functools.partial(_do_rollout, step_fn, episode_length))
 
     render_every = 2
     fps = 1.0 / eval_env.dt / render_every
@@ -167,20 +164,29 @@ def eval_run(log_dir: Path, output_path: Path) -> bool:
     scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    frames = eval_env.render(rollout[::render_every], height=480, width=640, scene_option=scene_option)
-    media.write_video(output_path, frames, fps=fps)
-    print(f"Video saved: {output_path}")
-
+    num_rollouts = 5
+    rngs = jax.random.split(rng, num_rollouts)
     force_keys = {"effective_force", "f_thumb", "f_index"}
-    if force_keys.issubset(metrics.keys()):
-        _save_force_plot(
-            path=output_path.with_suffix(".png"),
-            metrics=metrics,
-            ctrl_dt=env_cfg.ctrl_dt,
-            force_target=env_cfg.get("force_target", None),
-            force_tolerance=env_cfg.get("force_tolerance", None),
-            title=log_dir.name,
-        )
+
+    for i, rollout_rng in enumerate(rngs):
+        reset_state = jax.jit(eval_env.reset)(rollout_rng)
+        traj_stacked, metrics = do_rollout(rollout_rng, reset_state)
+        rollout = [jax.tree.map(lambda x, j=j: x[j], traj_stacked) for j in range(episode_length)]
+
+        video_path = output_path.with_name(f"{output_path.stem}_{i}.mp4")
+        frames = eval_env.render(rollout[::render_every], height=480, width=640, scene_option=scene_option)
+        media.write_video(video_path, frames, fps=fps)
+        print(f"Video saved: {video_path}")
+
+        if force_keys.issubset(metrics.keys()):
+            _save_force_plot(
+                path=video_path.with_suffix(".png"),
+                metrics=metrics,
+                ctrl_dt=env_cfg.ctrl_dt,
+                force_target=env_cfg.get("force_target", None),
+                force_tolerance=env_cfg.get("force_tolerance", None),
+                title=log_dir.name,
+            )
 
     return True
 
@@ -242,16 +248,17 @@ def main():
     for run in runs:
         suffix = extract_suffix(run.name)
         output = PROJECT_ROOT / "videos" / f"{suffix}.mp4"
-        print(f"\n=== {run.name} -> {output.name} ===", flush=True)
+        print(f"\n=== {run.name} -> {suffix}_{{0..4}}.mp4 ===", flush=True)
         ok = eval_run(run, output)
-        results.append((run.name, suffix, output.name, ok))
+        results.append((run.name, suffix, ok))
 
     print("\n=== Summary ===")
-    print(f"{'Run':<55} {'Video':<25} {'Status'}")
-    print("-" * 90)
-    for run_name, suffix, video, ok in results:
+    print(f"{'Run':<55} {'Videos':<35} {'Status'}")
+    print("-" * 100)
+    for run_name, suffix, ok in results:
         status = "OK" if ok else "FAILED"
-        print(f"{run_name:<55} {video:<25} {status}")
+        videos = f"{suffix}_{{0..4}}.mp4"
+        print(f"{run_name:<55} {videos:<35} {status}")
 
 
 if __name__ == "__main__":
