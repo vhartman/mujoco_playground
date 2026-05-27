@@ -58,6 +58,7 @@ def default_config() -> config_dict.ConfigDict:
                 cube_height=1.0,
                 joint_vel=-0.01,
                 wrist_vel=-0.01,
+                cube_dropped=0.0,
             ),
             success_reward=10.0,
         ),
@@ -68,6 +69,7 @@ def default_config() -> config_dict.ConfigDict:
             pert_duration_steps=[1, 100],
             pert_wait_steps=[60, 150],
         ),
+        kp_scale=1.0,
         impl="warp",
         nconmax=200 * 8192,
         njmax=2200,
@@ -94,6 +96,12 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             config=config,
             config_overrides=config_overrides,
         )
+        if self._config.kp_scale != 1.0:
+            s = self._config.kp_scale
+            self._mj_model.actuator_gainprm[:, 0] *= s
+            self._mj_model.actuator_biasprm[:, 1] *= s
+            self._mj_model.actuator_biasprm[:, 2] *= s
+            self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
 
     def _post_init(self) -> None:
@@ -139,11 +147,12 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng, pos_rng, vel_rng = jax.random.split(rng, 3)
-        q_hand = jp.clip(
-            self._default_pose + 0.1 * jax.random.normal(pos_rng, (consts.NQ,)),
-            self._lowers,
-            self._uppers,
-        )
+        # q_hand = jp.clip(
+        #     self._default_pose + 0.1 * jax.random.normal(pos_rng, (consts.NQ,)),
+        #     self._lowers,
+        #     self._uppers,
+        # )
+        q_hand = self._default_pose
         v_hand = jp.zeros(consts.NV)
 
         rng, p_rng = jax.random.split(rng)
@@ -153,13 +162,16 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
         v_cube = jp.zeros(6)
 
-        rng, goal_rng = jax.random.split(rng)
+        rng, goal_rng, goal_rot_rng = jax.random.split(rng, 3)
         goal_xy = jax.random.uniform(
             goal_rng, (2,),
             minval=jp.array([self._geom.goal_x_min, self._geom.goal_y_min]),
             maxval=jp.array([self._geom.goal_x_max, self._geom.goal_y_max]),
         )
         goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
+
+        goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
+        goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
@@ -169,8 +181,8 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             qpos=qpos,
             ctrl=q_hand,
             qvel=qvel,
-            mocap_pos=self._init_mpos,
-            mocap_quat=self._init_mquat,
+            mocap_pos=goal_pos,
+            mocap_quat=goal_quat,
             impl=self._mjx_model.impl.value,
             nconmax=self._config.nconmax,
             njmax=self._config.njmax,
@@ -206,7 +218,9 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             "at_target_step_counter": jp.zeros((), dtype=jp.int32),
             "motor_targets": data.ctrl,
             "goal_pos": goal_pos,
+            "goal_quat": goal_quat,
             "last_ground_cube_pos": start_pos,
+            "cube_left_floor": jp.zeros((), dtype=bool),
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
@@ -218,7 +232,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         for k in self._config.reward_config.scales.keys():
             metrics[f"reward/{k}"] = jp.zeros(())
         metrics["reward/success"] = jp.zeros((), dtype=float)
-        metrics["success_count"] = 0
+        metrics["success_count"] = jp.zeros((), dtype=float)
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -243,6 +257,7 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         state.info["last_ground_cube_pos"] = jp.where(
             cube_on_ground, cube_pos, state.info["last_ground_cube_pos"]
         )
+        state.info["cube_left_floor"] = state.info["cube_left_floor"] | ~cube_on_ground
  
 
         done = self._get_termination(data)
@@ -266,9 +281,11 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             success, 0, state.info["steps_since_last_success"] + 1
         )
         state.info["success_count"] = jp.where(
-            success, state.info["success_count"] + 1, state.info["success_count"]
+            done,
+            jp.zeros((), dtype=jp.int32),
+            jp.where(success, state.info["success_count"] + 1, state.info["success_count"]),
         )
-        state.metrics["success_count"] = state.info["success_count"]
+        state.metrics["success_count"] = success.astype(float)
         state.info["step"] += 1
         state.metrics["reward/success"] = success.astype(float)
         for k, v in rewards.items():
@@ -343,6 +360,10 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         ramp = jp.clip((cube_z - init_z) / (goal_z - init_z), 0.0, 1.0)
         return jp.where(cube_z > goal_z, 0.0, ramp)
 
+    @staticmethod
+    def r_cube_dropped(cube_on_floor: jax.Array) -> jax.Array:
+        return cube_on_floor.astype(float)
+
     def _get_reward(
         self,
         data: mjx.Data,
@@ -365,6 +386,9 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             "cube_height": self.r_cube_height(cube_pos[2], self._cube_init_z, self._geom.goal_z),
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
+            "cube_dropped": self.r_cube_dropped(
+                self._cube_in_contact_with_floor(data) & info["cube_left_floor"]
+            )
         }
 
     # ------------------------------------------------------------------
@@ -416,6 +440,9 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     def _obs_goal_pos(self, info: dict[str, Any]) -> jax.Array:
         return info["goal_pos"]
 
+    def _obs_goal_quat(self, info: dict[str, Any]) -> jax.Array:
+        return info["goal_quat"]
+
     def _obs_last_ground_cube_pos(self, info: dict[str, Any]) -> jax.Array:
         """Last observed cube position while it was resting on the floor."""
         return info["last_ground_cube_pos"]
@@ -456,7 +483,8 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             self.get_palm_position(data),      # 3:  palm position
             info["motor_targets"],             # 26: motor targets
             info["goal_pos"],                  # 3:  goal position
-        ])  # total: 108
+            info["goal_quat"],                 # 4:  goal orientation
+        ])  # total: 112
 
     # ------------------------------------------------------------------
     # Cost and utility methods

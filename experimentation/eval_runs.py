@@ -1,11 +1,15 @@
 """Evaluate one or more training checkpoints and save videos named by run suffix."""
 
-import functools
-import json
 import os
-import re
 import sys
 from pathlib import Path
+
+os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+import functools
+import json
+import re
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "learning"))
 import brax_compat  # noqa: F401  -- must precede brax imports
@@ -26,9 +30,6 @@ from mujoco_playground.config import (
     locomotion_params,
     manipulation_params,
 )
-
-os.environ.setdefault("MUJOCO_GL", "egl")
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
