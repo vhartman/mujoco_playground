@@ -41,7 +41,7 @@ __all__ = [
 
 
 class PickAndPlaceProprio(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) = 87."""
+    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 91."""
 
     def __init__(
         self,
@@ -64,12 +64,13 @@ class PickAndPlaceProprio(PickAndPlaceBase):
             cube_pos,                                   # 3
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 
 class PickAndPlaceBaseline(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) = 61."""
+    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
 
     def __init__(
         self,
@@ -91,12 +92,13 @@ class PickAndPlaceBaseline(PickAndPlaceBase):
             cube_pos,                                   # 3
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 
 class PickAndPlaceForce(PickAndPlaceBase):
-    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + fingertip_forces(5) + total_force(1) = 93."""
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
 
     def __init__(
         self,
@@ -119,6 +121,7 @@ class PickAndPlaceForce(PickAndPlaceBase):
             cube_pos,                                   # 3
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
             self._obs_fingertip_forces(data),           # 5
             self._obs_total_contact_force(data),        # 1
         ])
