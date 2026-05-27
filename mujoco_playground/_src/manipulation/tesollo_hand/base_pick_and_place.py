@@ -423,6 +423,9 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
     def _obs_motor_targets(self, info: dict[str, Any]) -> jax.Array:
         return info["motor_targets"]
+    
+    def _obs_motor_deltas(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+        return info["motor_targets"] - data.qpos[self._hand_qids]
 
     def _obs_cube_pos(self, data: mjx.Data) -> jax.Array:
         return self.get_cube_position(data)

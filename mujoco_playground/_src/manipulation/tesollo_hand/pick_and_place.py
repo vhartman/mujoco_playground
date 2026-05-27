@@ -39,6 +39,31 @@ __all__ = [
     "domain_randomize",
 ]
 
+class PickAndPlaceBaseline(PickAndPlaceBase):
+    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
+
+    def __init__(
+        self,
+        config: config_dict.ConfigDict = None,
+        config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
+    ):
+        super().__init__(config, config_overrides)
+
+    def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
+        joint_angles, joint_vel, cube_pos = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
+        state = jp.concatenate([
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
+        ])
+        return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceProprio(PickAndPlaceBase):
     """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 91."""
@@ -61,16 +86,14 @@ class PickAndPlaceProprio(PickAndPlaceBase):
             joint_angles,                               # 26
             joint_vel,                                  # 26
             self._obs_motor_targets(info),              # 26
-            cube_pos,                                   # 3
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
             self._obs_goal_quat(info),                  # 4
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
-
-class PickAndPlaceBaseline(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
+class PickAndPlaceProprioDelta(PickAndPlaceBase):
+    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 91."""
 
     def __init__(
         self,
@@ -86,18 +109,45 @@ class PickAndPlaceBaseline(PickAndPlaceBase):
             self._obs_cube_pos(data),
             info,
         )
+
         state = jp.concatenate([
             joint_angles,                               # 26
             joint_vel,                                  # 26
-            cube_pos,                                   # 3
+            self._obs_motor_deltas(data, info),         # 26
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
             self._obs_goal_quat(info),                  # 4
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
-
 class PickAndPlaceForce(PickAndPlaceBase):
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
+
+    def __init__(
+        self,
+        config: config_dict.ConfigDict = None,
+        config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
+    ):
+        super().__init__(config, config_overrides)
+
+    def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
+        joint_angles, joint_vel, _ = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
+        state = jp.concatenate([
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
+            self._obs_fingertip_forces(data),           # 5
+        ])
+        return {"state": state, "privileged_state": self._obs_privileged(data, info)}
+
+class PickAndPlaceForceProprio(PickAndPlaceBase):
     """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
 
     def __init__(
@@ -108,7 +158,7 @@ class PickAndPlaceForce(PickAndPlaceBase):
         super().__init__(config, config_overrides)
 
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
-        joint_angles, joint_vel, cube_pos = self._maybe_apply_obs_noise(
+        joint_angles, joint_vel, _ = self._maybe_apply_obs_noise(
             self._obs_joint_angles(data),
             self._obs_joint_velocities(data),
             self._obs_cube_pos(data),
@@ -118,15 +168,40 @@ class PickAndPlaceForce(PickAndPlaceBase):
             joint_angles,                               # 26
             joint_vel,                                  # 26
             self._obs_motor_targets(info),              # 26
-            cube_pos,                                   # 3
             self._obs_last_ground_cube_pos(info),       # 3
             self._obs_goal_pos(info),                   # 3
             self._obs_goal_quat(info),                  # 4
             self._obs_fingertip_forces(data),           # 5
-            self._obs_total_contact_force(data),        # 1
         ])
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
+class PickAndPlaceForceProprioDelta(PickAndPlaceBase):
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
+
+    def __init__(
+        self,
+        config: config_dict.ConfigDict = None,
+        config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
+    ):
+        super().__init__(config, config_overrides)
+
+    def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
+        joint_angles, joint_vel, _ = self._maybe_apply_obs_noise(
+            self._obs_joint_angles(data),
+            self._obs_joint_velocities(data),
+            self._obs_cube_pos(data),
+            info,
+        )
+        state = jp.concatenate([
+            joint_angles,                               # 26
+            joint_vel,                                  # 26
+            self._obs_motor_deltas(data, info),         # 26
+            self._obs_last_ground_cube_pos(info),       # 3
+            self._obs_goal_pos(info),                   # 3
+            self._obs_goal_quat(info),                  # 4
+            self._obs_fingertip_forces(data),           # 5
+        ])
+        return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):
     mj_model = PickAndPlaceProprio().mj_model

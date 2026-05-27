@@ -6,7 +6,7 @@
   </option>
 
   <custom>
-    <numeric name="contact_sensor_maxmatch" data="100"/>
+    <numeric name="contact_sensor_maxmatch" data="105"/>
   </custom>
 
   <statistic center="0.118 -0.023 0.063" extent="0.4" meansize="0.01"/>

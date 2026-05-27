@@ -66,8 +66,11 @@ _envs = {
 
     "TesolloGrasp": tesollo_grasp.Grasp,
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.PickAndPlaceProprio,
+    "TesolloPickAndPlaceProprioDelta": tesollo_pick_and_place.PickAndPlaceProprioDelta,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.PickAndPlaceBaseline,
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.PickAndPlaceForce,
+    "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.PickAndPlaceForceProprio,
+    "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.PickAndPlaceForceProprioDelta,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -96,9 +99,11 @@ _cfgs = {
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "TesolloGrasp": tesollo_grasp.default_config,
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.default_config,
+    "TesolloPickAndPlaceProprioDelta": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.default_config,
-
+    "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.default_config,
+    "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.default_config,
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
@@ -121,6 +126,9 @@ _randomizer = {
     "TesolloPickAndPlaceProprio": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceBaseline": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceProprioDelta": tesollo_pick_and_place.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 
