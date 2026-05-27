@@ -1,6 +1,4 @@
 <mujoco model="tesollo_scene">
-  <include file="tesollo_wrist_xyz.xml"/>
-
   <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
 
   <visual>
@@ -17,12 +15,12 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
       width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
+    <model name="tesollo_trans3" file="tesollo_trans3_rot3_standalone.xml"/>
   </asset>
 
   <worldbody>
     <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
     <geom name="floor" pos="0 0 -0.25" size="0 0 0.01" type="plane" material="groundplane" contype="2" conaffinity="2"/>
-    <site name="attachment_site" pos="0 0 0" group="4"/>
     
     <body name="goal_1_0" mocap="true" pos="0.2 -0.06 -0.05">
       <geom type="sphere" size=".01" mass=".108" contype="0" conaffinity="0" rgba="1 0 0 0.5"/>
@@ -128,7 +126,43 @@
         <joint name="key_joint_17" pos="0.0 0.0 0.0" axis="0 0 1" type="slide" springref=".5" limited="true" stiffness="0.5" range="-0.024 0.0" damping="1"/>
         <geom pos="0.0 -0.00 0.0" size="0.01 0.01 0.005" type="box"/>
     </body>
+    <attach model="tesollo_trans3" body="rh" prefix=""/>
   </worldbody>
+
+  <actuator>
+    <position kp="400" kv="100" name="rj_wrist_0_1_a" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="rj_wrist_0_2_a" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="rj_wrist_0_3_a" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+
+    <position kp="5"  kv="1" name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-0.3 0.3"/>
+    <position kp="10" kv="1" name="rj_wrist_1_2_a" joint="rj_wrist_1_2" ctrlrange="-0.3 0.3"/>
+    <position kp="10" kv="1" name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-0.3 0.3"/>
+
+    <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
+  </actuator>
 
   <sensor>
     <!-- hand. -->
@@ -200,22 +234,8 @@
 
   <keyframe>
     <key name="home"
-      qpos="
-      0 0 
-      0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 "
-      ctrl="
-      0 0 
-      0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 
-      0 0 0 0 "/>
+      qpos="0 0 0  0 0 0  0 0 0 0  0 0 0 0  0 0 0 0  0 0 0 0  0 0 0 0"
+      ctrl="0 0 0  0 0 0  0 0 0 0  0 0 0 0  0 0 0 0  0 0 0 0  0 0 0 0"/>
   </keyframe>
   <!-- <keyframe>
     <key name="home"

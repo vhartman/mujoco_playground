@@ -5,15 +5,9 @@ import mujoco
 import mujoco.viewer
 import pathlib
 
-from mujoco_playground._src.manipulation.tesollo_hand.pinch import (
-    CubePinchForce,
-    CubePinchProprio,
-    CubePinchBaseline,
-)
+
 from mujoco_playground._src.manipulation.tesollo_hand.base_wrist import get_assets
-from mujoco_playground._src.manipulation.tesollo_hand.scene_builders.pinch_scene_reduced import (
-    build_reduced_pinch_scene,
-)
+
 
 _ROOT = pathlib.Path(__file__).parent.parent
 
@@ -21,22 +15,22 @@ _PRESET_XML = {
     "pinch_full": lambda: mujoco.MjModel.from_xml_path(
         str(_ROOT / "mujoco_playground/_src/manipulation/tesollo_hand/xmls/scene_mjx_cube_pinch.xml")
     ),
-    "pinch_restricted": lambda: mujoco.MjModel.from_xml_string(
-        build_reduced_pinch_scene(), assets=get_assets()
-    ),
+    # "pinch_restricted": lambda: mujoco.MjModel.from_xml_string(
+    #     build_reduced_pinch_scene(), assets=get_assets()
+    # ),
 }
 
-_PRESET_RL = {
-    "force": CubePinchForce,
-    "proprio": CubePinchProprio,
-    "baseline": CubePinchBaseline,
-}
+# _PRESET_RL = {
+#     "force": CubePinchForce,
+#     "proprio": CubePinchProprio,
+#     "baseline": CubePinchBaseline,
+# }
 
 _RL_ENV_MODULE_ROOT = "mujoco_playground._src.manipulation.tesollo_hand"
 
 def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
-    if env_arg in _PRESET_RL:
-        return _PRESET_RL[env_arg](config_overrides={"impl": impl}).mj_model
+    # if env_arg in _PRESET_RL:
+    #     return _PRESET_RL[env_arg](config_overrides={"impl": impl}).mj_model
 
     if env_arg in _PRESET_XML:
         return _PRESET_XML[env_arg]()

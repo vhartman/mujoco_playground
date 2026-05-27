@@ -1,0 +1,128 @@
+<mujoco model="tesollo_rot3">
+  <compiler angle="radian" meshdir="meshes/tesollo"/>
+
+  <default>
+    <joint axis="0 1 0" damping="0.2" armature="0.00149376" actuatorfrcrange="-0.2196 0.2196" frictionloss="0.02"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom group="3" friction="0.2" solref="0.02 1.5" solimp="0.95 0.99 0.001" type="box" mass="0" material="black"/>
+      <default class="palm">
+        <geom condim="3" friction="2 0.5 0.001" rgba=".7 .7 .7 .3"/>
+      </default>
+      <default class="tip">
+        <geom margin="0.001" condim="4" friction="1 0.1 0.0002" rgba=".5 .5 .5 .3" solimp="0.99 0.999 0.0001"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <material name="black" rgba="0.2 0.2 0.2 1"/>
+    <material name="white" rgba="0.9 0.9 0.9 1"/>
+
+    <mesh name="rl_dg_mount_c" content_type="model/stl" file="rl_dg_mount_c_simple.STL"/>
+    <mesh name="rl_dg_base_c" content_type="model/stl" file="rl_dg_base_c_simple.STL"/>
+    <mesh name="rl_dg_palm_c" content_type="model/stl" file="rl_dg_palm_c.STL"/>
+
+    <mesh name="rl_dg_1_1_c" content_type="model/stl" file="rl_dg_1_1_c.STL"/>
+    <mesh name="rl_dg_1_2_c" content_type="model/stl" file="rl_dg_1_2_c.STL"/>
+    <mesh name="rl_dg_1_3_c" content_type="model/stl" file="rl_dg_1_3_c.STL"/>
+    <mesh name="rl_dg_1_4_c" content_type="model/stl" file="rl_dg_1_4_c.STL"/>
+    <mesh name="rl_dg_1_tip_c" content_type="model/stl" file="rl_dg_1_tip_c_simple.STL"/>
+
+    <mesh name="rl_dg_2_1_c" content_type="model/stl" file="rl_dg_2_1_c.STL"/>
+    <mesh name="rl_dg_2_2_c" content_type="model/stl" file="rl_dg_2_2_c.STL"/>
+    <mesh name="rl_dg_2_3_c" content_type="model/stl" file="rl_dg_2_3_c.STL"/>
+    <mesh name="rl_dg_2_4_c" content_type="model/stl" file="rl_dg_2_4_c.STL"/>
+    <mesh name="rl_dg_2_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
+
+    <mesh name="rl_dg_3_1_c" content_type="model/stl" file="rl_dg_3_1_c.STL"/>
+    <mesh name="rl_dg_3_2_c" content_type="model/stl" file="rl_dg_3_2_c.STL"/>
+    <mesh name="rl_dg_3_3_c" content_type="model/stl" file="rl_dg_3_3_c.STL"/>
+    <mesh name="rl_dg_3_4_c" content_type="model/stl" file="rl_dg_3_4_c.STL"/>
+    <mesh name="rl_dg_3_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
+
+    <mesh name="rl_dg_4_1_c" content_type="model/stl" file="rl_dg_4_1_c.STL"/>
+    <mesh name="rl_dg_4_2_c" content_type="model/stl" file="rl_dg_4_2_c.STL"/>
+    <mesh name="rl_dg_4_3_c" content_type="model/stl" file="rl_dg_4_3_c.STL"/>
+    <mesh name="rl_dg_4_4_c" content_type="model/stl" file="rl_dg_4_4_c.STL"/>
+    <mesh name="rl_dg_4_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
+
+    <mesh name="rl_dg_5_1_c" content_type="model/stl" file="rl_dg_5_1_c.STL"/>
+    <mesh name="rl_dg_5_2_c" content_type="model/stl" file="rl_dg_5_2_c.STL"/>
+    <mesh name="rl_dg_5_3_c" content_type="model/stl" file="rl_dg_5_3_c.STL"/>
+    <mesh name="rl_dg_5_4_c" content_type="model/stl" file="rl_dg_5_4_c.STL"/>
+    <mesh name="rl_dg_5_tip_c" content_type="model/stl" file="rl_dg_2_tip_c_simple.STL"/>
+  </asset>
+
+  <worldbody>
+    <include file="tesollo_wrist_rot3.xml"/>
+  </worldbody>
+
+  <contact>
+    <exclude body1="mount" body2="rl_dg_1_1"/>
+    <exclude body1="mount" body2="rl_dg_2_1"/>
+    <exclude body1="mount" body2="rl_dg_3_1"/>
+    <exclude body1="mount" body2="rl_dg_4_1"/>
+    <exclude body1="mount" body2="rl_dg_5_1"/>
+
+    <exclude body1="mount" body2="rl_dg_1_2"/>
+    <exclude body1="mount" body2="rl_dg_2_2"/>
+    <exclude body1="mount" body2="rl_dg_3_2"/>
+    <exclude body1="mount" body2="rl_dg_4_2"/>
+    <exclude body1="mount" body2="rl_dg_5_2"/>
+
+    <exclude body1="mount" body2="rl_dg_1_3"/>
+    <exclude body1="mount" body2="rl_dg_2_3"/>
+    <exclude body1="mount" body2="rl_dg_3_3"/>
+    <exclude body1="mount" body2="rl_dg_4_3"/>
+    <exclude body1="mount" body2="rl_dg_5_3"/>
+
+    <exclude body1="palm_lower" body2="rl_dg_1_1"/>
+    <exclude body1="palm_lower" body2="rl_dg_1_2"/>
+    <exclude body1="palm_lower" body2="rl_dg_1_3"/>
+
+    <exclude body1="rl_dg_1_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_1_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_5_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_2_1"/>
+
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_3"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_4"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_1_4"/>
+
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_3"/>
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_4"/>
+    <exclude body1="rl_dg_2_2" body2="rl_dg_2_4"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_3"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_4"/>
+    <exclude body1="rl_dg_3_2" body2="rl_dg_3_4"/>
+
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_3"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_4"/>
+    <exclude body1="rl_dg_4_2" body2="rl_dg_4_4"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_3"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_4"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_5_4"/>
+  </contact>
+</mujoco>

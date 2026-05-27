@@ -4,7 +4,7 @@ Evaluates PD controller quality across a grid of (kp, kd) gain values using
 step-response tests on the Tesollo hand index finger (dg_2 — 4 DOFs).
 
 The scene contains the hand only (no cube, no floor contacts), built in Python
-by wrapping `tesollo_wrist_dof_clean.xml` in a minimal MJCF and adding
+by wrapping `tesollo_wrist_rot3.xml` in a minimal MJCF and adding
 position actuators + a home keyframe.  Gravity is disabled so unactuated
 fingers and the wrist do not drift while we measure the response.
 
@@ -103,7 +103,7 @@ _XML_DIR = (
     / "xmls"
 )
 
-# Hand-only MJCF — wraps tesollo_wrist_dof_clean.xml (a bare <frame> fragment)
+# Hand-only MJCF — wraps tesollo_wrist_rot3.xml (a bare <frame> fragment)
 # in a complete model.  Actuators and keyframe values mirror those in
 # scene_mjx_cube_pinch.xml, just without the cube.
 _HAND_ONLY_XML = """<mujoco model="tesollo_hand_only">
@@ -111,7 +111,7 @@ _HAND_ONLY_XML = """<mujoco model="tesollo_hand_only">
 
   <worldbody>
     <frame pos="-0.18 0.04 0.084" quat="-1 1 -1 1">
-      <include file="tesollo_wrist_dof_clean.xml"/>
+      <include file="tesollo_wrist_rot3.xml"/>
     </frame>
   </worldbody>
 
@@ -176,7 +176,7 @@ def _build_hand_only_model() -> mujoco.MjModel:
     """Compile the hand-only MjModel.
 
     The XML is written to a temp file inside the xmls/ directory so the
-    <include> directives for scene_base.xml and tesollo_wrist_dof_clean.xml
+    <include> directives for scene_base.xml and tesollo_wrist_rot3.xml
     resolve against the real assets (meshes etc.).
     """
     with tempfile.NamedTemporaryFile(
