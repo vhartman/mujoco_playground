@@ -182,8 +182,6 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
-        print("reset: goal_pos =", goal_pos)
-        print("reset: goal_quat =", goal_quat)
         data = mjx_env.make_data(
             self._mj_model,
             qpos=qpos,
