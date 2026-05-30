@@ -103,15 +103,19 @@ _XML_DIR = (
     / "xmls"
 )
 
-# Hand-only MJCF — wraps tesollo_wrist_rot3.xml (a bare <frame> fragment)
-# in a complete model.  Actuators and keyframe values mirror those in
+# Hand-only MJCF — actuators and keyframe values mirror those in
 # scene_mjx_cube_pinch.xml, just without the cube.
 _HAND_ONLY_XML = """<mujoco model="tesollo_hand_only">
   <include file="scene_base.xml"/>
 
   <worldbody>
     <frame pos="-0.18 0.04 0.084" quat="-1 1 -1 1">
-      <include file="tesollo_wrist_rot3.xml"/>
+      <body name="rh">
+        <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
+        <joint name="rj_wrist_1_2" pos="0 0 0" axis="0 1 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
+        <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
+        <include file="tesollo_hand_body.xml"/>
+      </body>
     </frame>
   </worldbody>
 
@@ -176,7 +180,7 @@ def _build_hand_only_model() -> mujoco.MjModel:
     """Compile the hand-only MjModel.
 
     The XML is written to a temp file inside the xmls/ directory so the
-    <include> directives for scene_base.xml and tesollo_wrist_rot3.xml
+    <include> directives for scene_base.xml and tesollo_hand_body.xml
     resolve against the real assets (meshes etc.).
     """
     with tempfile.NamedTemporaryFile(
