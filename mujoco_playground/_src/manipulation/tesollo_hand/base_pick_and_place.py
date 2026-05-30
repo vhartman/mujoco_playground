@@ -55,7 +55,7 @@ def default_config() -> config_dict.ConfigDict:
                 fingertip_pos=0.2,
                 cube_pos=4.0,
                 cube_ori=0.5,
-                cube_height=1.0,
+                cube_height=0.0,
                 joint_vel=-0.01,
                 wrist_vel=-0.01,
                 cube_dropped=0.0,
@@ -159,7 +159,8 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         start_pos = self._cube_init[:3] + jax.random.uniform(
             p_rng, (3,), minval=-0.01, maxval=0.01
         )
-        q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
+        # q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
+        q_cube = self._cube_init
         v_cube = jp.zeros(6)
 
         rng, goal_rng, goal_rot_rng = jax.random.split(rng, 3)
@@ -168,10 +169,16 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             minval=jp.array([self._geom.goal_x_min, self._geom.goal_y_min]),
             maxval=jp.array([self._geom.goal_x_max, self._geom.goal_y_max]),
         )
-        goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
+        # goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
+        random_z = jax.random.uniform(
+            goal_rng, (), minval=self._geom.goal_z + 0.08, maxval=self._geom.goal_z + 0.15
+        )
+        # goal_pos = jp.array([goal_xy[0], goal_xy[1], random_z])
+        goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.15])
 
         goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
-        goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
+        # goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
+        goal_quat = jp.array([1.0, 0.0, 0.0, 0.0])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
