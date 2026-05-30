@@ -1,10 +1,13 @@
 """Environment visualizer — works with preset names, XML paths, or dotted RL env class paths."""
 import argparse
 import importlib
-import mujoco
-import mujoco.viewer
 import pathlib
 
+import jax
+import mediapy as media
+import mujoco
+import mujoco.viewer
+import numpy as np
 
 from mujoco_playground._src.manipulation.tesollo_hand.base_wrist import get_assets
 
@@ -28,17 +31,15 @@ _PRESET_XML = {
 
 _RL_ENV_MODULE_ROOT = "mujoco_playground._src.manipulation.tesollo_hand"
 
-def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
-    # if env_arg in _PRESET_RL:
-    #     return _PRESET_RL[env_arg](config_overrides={"impl": impl}).mj_model
 
+def load_env(env_arg: str, impl: str = "warp"):
+    """Returns (env_instance | None, mj_model). env is non-None only for dotted Python paths."""
     if env_arg in _PRESET_XML:
-        return _PRESET_XML[env_arg]()
+        return None, _PRESET_XML[env_arg]()
 
-    # XML file path
     p = pathlib.Path(env_arg)
     if p.suffix == ".xml":
-        return mujoco.MjModel.from_xml_path(str(p.resolve()))
+        return None, mujoco.MjModel.from_xml_path(str(p.resolve()))
 
     # Dotted Python path: some.module.ClassName
     module_path, _, class_name = env_arg.rpartition(".")
@@ -47,25 +48,46 @@ def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
     if _RL_ENV_MODULE_ROOT not in module_path:
         module_path = f"{_RL_ENV_MODULE_ROOT}.{module_path}"
     cls = getattr(importlib.import_module(module_path), class_name)
-    return cls(config_overrides={"impl": impl}).mj_model
+    env = cls(config_overrides={"impl": impl})
+    return env, env.mj_model
 
 
-def print_qpos(m, data):
+def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
+    _, m = load_env(env_arg, impl)
+    return m
+
+
+def make_key_callback(m, data, env=None):
+    """P: print qpos. R: call env.reset() and update the viewer (only when env is provided)."""
+    rng = [None]
+    if env is not None:
+        rng[0] = jax.random.PRNGKey(0)
+
     def _cb(keycode):
-        if chr(keycode) != "P":
-            return
-        jnt_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(m.njnt)]
-        print("\n--- current qpos ---")
-        print(" ".join(f"{v:.6f}" for v in data.qpos))
-        print("--- per joint ---")
-        qi = 0
-        for i, name in enumerate(jnt_names):
-            jtype = m.jnt_type[i]
-            nq = 4 if jtype == mujoco.mjtJoint.mjJNT_FREE else (
-                 3 if jtype == mujoco.mjtJoint.mjJNT_BALL else 1)
-            print(f"  {name}: {' '.join(f'{v:.6f}' for v in data.qpos[qi:qi+nq])}")
-            qi += nq
-        print()
+        ch = chr(keycode)
+
+        if ch == "P":
+            jnt_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(m.njnt)]
+            print("\n--- current qpos ---")
+            print(" ".join(f"{v:.6f}" for v in data.qpos))
+            print("--- per joint ---")
+            qi = 0
+            for i, name in enumerate(jnt_names):
+                jtype = m.jnt_type[i]
+                nq = 4 if jtype == mujoco.mjtJoint.mjJNT_FREE else (
+                     3 if jtype == mujoco.mjtJoint.mjJNT_BALL else 1)
+                print(f"  {name}: {' '.join(f'{v:.6f}' for v in data.qpos[qi:qi+nq])}")
+                qi += nq
+            print()
+
+        elif ch == "R" and env is not None:
+            rng[0], key = jax.random.split(rng[0])
+            state = env.reset(key)
+            data.qpos[:] = np.array(state.data.qpos)
+            data.qvel[:] = np.array(state.data.qvel)
+            mujoco.mj_forward(m, data)
+            print("env.reset() applied")
+
     return _cb
 
 
@@ -79,7 +101,6 @@ def render_video(
     width: int = 640,
 ) -> None:
     """Simulate `steps` steps and write a video to `path` at `fps` frames per second."""
-    import mediapy as media
     renderer = mujoco.Renderer(m, height=height, width=width)
     render_every = max(1, round(1.0 / (fps * m.opt.timestep)))
     frames = []
@@ -117,7 +138,7 @@ if __name__ == "__main__":
                         help="Output path for video (default: <env>.mp4)")
     args = parser.parse_args()
 
-    m = load_model(args.env, impl=args.impl)
+    env, m = load_env(args.env, impl=args.impl)
     data = mujoco.MjData(m)
 
     key_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "home")
@@ -130,7 +151,10 @@ if __name__ == "__main__":
     elif args.mode == "active":
         mujoco.viewer.launch(m, data)
     else:
-        with mujoco.viewer.launch_passive(m, data, key_callback=print_qpos(m, data)) as v:
+        cb = make_key_callback(m, data, env=env)
+        if env is not None:
+            print("Press R to call env.reset() and update the viewer.")
+        with mujoco.viewer.launch_passive(m, data, key_callback=cb) as v:
             while v.is_running():
                 mujoco.mj_forward(m, data)
                 v.sync()

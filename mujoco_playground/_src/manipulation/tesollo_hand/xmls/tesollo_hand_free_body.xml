@@ -64,7 +64,7 @@
       <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
       <joint name="rj_wrist_1_2" pos="0 0 0" axis="0 1 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
       <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
-      <include file="tesollo_hand_body.xml"/>
+      <include file="tesollo_hand_geometry.xml"/>
     </body>
   </worldbody>
 

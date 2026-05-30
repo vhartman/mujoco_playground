@@ -40,7 +40,7 @@ __all__ = [
 ]
 
 class PickAndPlaceBaseline(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
+    """Pick-and-place: q(26) + qdot(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
 
     def __init__(
         self,

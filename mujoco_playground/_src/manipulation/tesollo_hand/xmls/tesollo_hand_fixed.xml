@@ -58,7 +58,7 @@
 
   <worldbody>
     <body name="rh">
-      <include file="tesollo_hand_body.xml"/>
+      <include file="tesollo_hand_geometry.xml"/>
     </body>
   </worldbody>
 

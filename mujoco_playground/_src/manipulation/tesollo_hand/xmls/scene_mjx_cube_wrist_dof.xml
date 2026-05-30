@@ -17,7 +17,7 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
       width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
-    <model name="tesollo_rot3" file="tesollo_rot3_standalone.xml"/>
+    <model name="tesollo_rot3" file="tesollo_hand_rot.xml"/>
   </asset>
 
   <worldbody>

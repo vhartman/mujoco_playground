@@ -114,7 +114,7 @@ _HAND_ONLY_XML = """<mujoco model="tesollo_hand_only">
         <joint name="rj_wrist_1_1" pos="0 0 0" axis="1 0 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
         <joint name="rj_wrist_1_2" pos="0 0 0" axis="0 1 0" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
         <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-0.3 0.3" actuatorfrcrange="-10 10" damping="0.1" armature="0.149376" frictionloss="0.2"/>
-        <include file="tesollo_hand_body.xml"/>
+        <include file="tesollo_hand_geometry.xml"/>
       </body>
     </frame>
   </worldbody>
@@ -180,7 +180,7 @@ def _build_hand_only_model() -> mujoco.MjModel:
     """Compile the hand-only MjModel.
 
     The XML is written to a temp file inside the xmls/ directory so the
-    <include> directives for scene_base.xml and tesollo_hand_body.xml
+    <include> directives for scene_base.xml and tesollo_hand_geometry.xml
     resolve against the real assets (meshes etc.).
     """
     with tempfile.NamedTemporaryFile(

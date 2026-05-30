@@ -28,16 +28,15 @@
 
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>
-    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
-      width="300" height="300"/>
-    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.29 0.0 0.51" rgb2="0.9 0.9 1" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="4 4" reflectance="0.2"/>
     <material name="table" rgba="0.82 0.71 0.55 1"/>
-    <model name="tesollo_trans3" file="tesollo_trans3_rot3_standalone.xml"/>
+    <model name="tesollo_trans3" file="tesollo_hand_free_body.xml"/>
   </asset>
 
   <worldbody>
     <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
-    <geom name="floor" pos="0 0 0" size="0 0 0.01" type="plane" material="groundplane" contype="1" conaffinity="1"/>
+    <geom name="floor" pos="0 0 0" size="0 0 0.01" type="plane" material="grid" contype="1" conaffinity="1"/>
 
     <body pos="-0.05 0 0.28" quat="-1 0 -1 0">
       <attach model="tesollo_trans3" body="rh" prefix=""/>
