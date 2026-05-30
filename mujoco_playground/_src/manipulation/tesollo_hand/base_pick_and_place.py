@@ -174,15 +174,16 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             goal_rng, (), minval=self._geom.goal_z + 0.08, maxval=self._geom.goal_z + 0.15
         )
         # goal_pos = jp.array([goal_xy[0], goal_xy[1], random_z])
-        goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.15])
+        goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.35])
 
         goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
-        # goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
-        goal_quat = jp.array([1.0, 0.0, 0.0, 0.0])
+        goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
+        # goal_quat = jp.array([1.0, 0.0, 0.0, 0.0])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
-
+        print("reset: goal_pos =", goal_pos)
+        print("reset: goal_quat =", goal_quat)
         data = mjx_env.make_data(
             self._mj_model,
             qpos=qpos,

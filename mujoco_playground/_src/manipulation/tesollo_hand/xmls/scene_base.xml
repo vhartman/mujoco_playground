@@ -21,8 +21,6 @@
           rgb1="0.29 0.0 0.51"
           rgb2="0.9 0.9 1"/>
     <material name="grid" texture="grid" texrepeat="4 4" reflectance="0.2"/>
-    <material name="black" rgba="0.2 0.2 0.2 1"/>
-    <material name="white" rgba="0.9 0.9 0.9 1"/>
   </asset>
 
   <worldbody>
