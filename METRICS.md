@@ -70,12 +70,8 @@ These describe the shape of the policy's action distribution (Gaussian before ta
 
 | Metric | Example Value | Description |
 |---|---|---|
-| `episode/policy_dist_mean_loc` | `0.092` | Mean of the policy's mean outputs across all actions and envs. Near zero = balanced action distribution. |
-| `episode/policy_dist_mean_std` | `0.354` | Std of the policy's mean outputs. Spread indicates how much actions vary across observations. |
-| `episode/policy_dist_min_loc` | `-3.02` | Minimum mean output in the batch. Near or beyond ±3 suggests the policy is saturating the tanh squash. |
-| `episode/policy_dist_max_loc` | `2.54` | Maximum mean output. Same concern as above for the upper end. |
-| `episode/policy_dist_min_std` | `0.0094` | Minimum action std in the batch. Very small → policy is nearly deterministic on some dimensions; may indicate collapsed exploration. |
-| `episode/policy_dist_max_std` | `2.61` | Maximum action std. Very large → policy is highly uncertain on some dimensions. |
+| `episode/policy_dist_loc/{p25,p50,p75,mean,min,max}` | `-0.1 / 0.1 / 0.3 / 0.1 / -3.0 / 2.7` | Summary of the policy's mean outputs (loc) across batch × action dims. Rendered as a candle plot: p25–p75 band, p50 line, mean dashed line, min/max whiskers. Mean vs. median divergence = skew; whiskers near ±3 = tanh saturation. |
+| `episode/policy_dist_std/{p25,p50,p75,mean,min,max}` | `0.18 / 0.30 / 0.45 / 0.34 / 0.01 / 2.7` | Summary of the policy's per-action std. min ~0 signals collapsed exploration on some dims; high max signals persistent uncertainty. |
 
 ---
 
@@ -147,12 +143,8 @@ Each component also has a corresponding `_std` metric (e.g. `eval/episode_reward
 | `training/kl_mean` | `0.0268` | KL divergence at the checkpoint. |
 | `training/sps` | `81391` | Training steps per second at this checkpoint. Tracks GPU throughput over time. |
 | `training/walltime` | `4977` | Total wall-clock training time in seconds (excludes eval time). |
-| `training/policy_dist_mean_loc` | `0.087` | Mean of policy mean outputs (at checkpoint). |
-| `training/policy_dist_mean_std` | `0.370` | Std of policy mean outputs (at checkpoint). |
-| `training/policy_dist_min_loc` | `-2.72` | Minimum policy mean output (at checkpoint). |
-| `training/policy_dist_max_loc` | `2.80` | Maximum policy mean output (at checkpoint). |
-| `training/policy_dist_min_std` | `0.010` | Minimum action std (at checkpoint). |
-| `training/policy_dist_max_std` | `2.76` | Maximum action std (at checkpoint). |
+| `training/policy_dist_loc/{p25,p50,p75,mean,min,max}` | `-0.1 / 0.1 / 0.3 / 0.1 / -2.7 / 2.8` | Per-update summary of the policy mean (loc), averaged over the SGD scan and pmap devices (mean is exact; quantiles/extrema are mean-of-per-update). Rendered as a candle plot — see `learning/wandb_charts/policy_dist_candle.json`. |
+| `training/policy_dist_std/{p25,p50,p75,mean,min,max}` | `0.20 / 0.32 / 0.48 / 0.37 / 0.01 / 2.76` | Per-update summary of the policy std. Rendered as the second candle plot. |
 
 ---
 
