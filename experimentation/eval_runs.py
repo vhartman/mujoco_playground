@@ -96,7 +96,7 @@ def _get_ppo_params(env_name: str, impl: str):
     raise ValueError(f"Unknown env: {env_name}")
 
 
-def eval_run(log_dir: Path, output_path: Path) -> bool:
+def eval_run(log_dir: Path, output_path: Path, num_videos: int = 4) -> bool:
     env_name = extract_env_name(log_dir.name)
     ckpt_dir = log_dir / "checkpoints"
 
@@ -148,14 +148,22 @@ def eval_run(log_dir: Path, output_path: Path) -> bool:
         eval_env=eval_env,
     )
 
-    jit_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
     episode_length = ppo_params.episode_length
 
     rng = jax.random.PRNGKey(1)
     sample_state = jax.jit(eval_env.reset)(rng)
+    empty_traj = _make_empty_traj(sample_state)
 
-    step_fn = functools.partial(_rollout_step, _make_empty_traj(sample_state), jit_inference_fn, eval_env)
-    do_rollout = jax.jit(functools.partial(_do_rollout, step_fn, episode_length))
+    det_inference_fn = jax.jit(make_inference_fn(params, deterministic=True))
+    sto_inference_fn = jax.jit(make_inference_fn(params, deterministic=False))
+
+    n_det = (num_videos + 1) // 2
+    n_sto = num_videos // 2
+
+    det_step_fn = functools.partial(_rollout_step, empty_traj, det_inference_fn, eval_env)
+    sto_step_fn = functools.partial(_rollout_step, empty_traj, sto_inference_fn, eval_env)
+    do_det_rollout = jax.jit(functools.partial(_do_rollout, det_step_fn, episode_length))
+    do_sto_rollout = jax.jit(functools.partial(_do_rollout, sto_step_fn, episode_length))
 
     render_every = 2
     fps = 1.0 / eval_env.dt / render_every
@@ -165,16 +173,21 @@ def eval_run(log_dir: Path, output_path: Path) -> bool:
     scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    num_rollouts = 5
-    rngs = jax.random.split(rng, num_rollouts)
+    rngs = jax.random.split(rng, num_videos)
     force_keys = {"effective_force", "f_thumb", "f_index"}
 
-    for i, rollout_rng in enumerate(rngs):
+    rollout_specs = (
+        [("det", i, do_det_rollout) for i in range(n_det)]
+        + [("sto", i, do_sto_rollout) for i in range(n_sto)]
+    )
+
+    for tag, i, do_rollout in rollout_specs:
+        rollout_rng = rngs[i]
         reset_state = jax.jit(eval_env.reset)(rollout_rng)
         traj_stacked, metrics = do_rollout(rollout_rng, reset_state)
         rollout = [jax.tree.map(lambda x, j=j: x[j], traj_stacked) for j in range(episode_length)]
 
-        video_path = output_path.with_name(f"{output_path.stem}_{i}.mp4")
+        video_path = output_path.with_name(f"{output_path.stem}_{tag}_{i}.mp4")
         frames = eval_env.render(rollout[::render_every], height=480, width=640, scene_option=scene_option)
         media.write_video(video_path, frames, fps=fps)
         print(f"Video saved: {video_path}")
@@ -238,28 +251,41 @@ def resolve_runs(logs_dir: Path, args: list[str]) -> list[Path]:
 
 def main():
     args = sys.argv[1:]
+
+    num_videos = 4
+    remaining_args = []
+    for arg in args:
+        if arg.startswith("--num_videos="):
+            num_videos = int(arg.split("=", 1)[1])
+        else:
+            remaining_args.append(arg)
+
     logs_dir = PROJECT_ROOT / "logs"
-    runs = resolve_runs(logs_dir, args)
+    runs = resolve_runs(logs_dir, remaining_args)
 
     if not runs:
         print("No matching runs with checkpoints found.")
         sys.exit(1)
 
+    n_det = (num_videos + 1) // 2
+    n_sto = num_videos // 2
+
     results = []
     for run in runs:
         suffix = extract_suffix(run.name)
         output = PROJECT_ROOT / "videos" / f"{suffix}.mp4"
-        print(f"\n=== {run.name} -> {suffix}_{{0..4}}.mp4 ===", flush=True)
-        ok = eval_run(run, output)
+        det_names = ", ".join(f"{suffix}_det_{i}.mp4" for i in range(n_det))
+        sto_names = ", ".join(f"{suffix}_sto_{i}.mp4" for i in range(n_sto))
+        print(f"\n=== {run.name} -> {det_names} | {sto_names} ===", flush=True)
+        ok = eval_run(run, output, num_videos=num_videos)
         results.append((run.name, suffix, ok))
 
     print("\n=== Summary ===")
-    print(f"{'Run':<55} {'Videos':<35} {'Status'}")
-    print("-" * 100)
+    print(f"{'Run':<55} {'det':<4} {'sto':<4} {'Status'}")
+    print("-" * 75)
     for run_name, suffix, ok in results:
         status = "OK" if ok else "FAILED"
-        videos = f"{suffix}_{{0..4}}.mp4"
-        print(f"{run_name:<55} {videos:<35} {status}")
+        print(f"{run_name:<55} {n_det:<4} {n_sto:<4} {status}")
 
 
 if __name__ == "__main__":
