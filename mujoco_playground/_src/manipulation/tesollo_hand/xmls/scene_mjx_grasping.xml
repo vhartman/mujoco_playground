@@ -1,4 +1,6 @@
 <mujoco model="tesollo_scene">
+  <include file="scene_base.xml"/>
+
   <statistic center="0. 0 0" extent="0.4" meansize="0.01"/>
 
   <default>
@@ -7,35 +9,20 @@
     </default>
   </default>
 
-  <visual>
-    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
-    <rgba force="1 0 0 1"/>
-    <global azimuth="120" elevation="-20"/>
-    <map force="0.01" stiffness="500"/>
-    <scale forcewidth="0.1" contactwidth="0.5" contactheight="0.2"/>
-    <quality shadowsize="8192"/>
-  </visual>
-
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>
-    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
-      width="300" height="300"/>
-    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
     <model name="tesollo_trans3" file="tesollo_hand_free_body.xml"/>
   </asset>
 
   <worldbody>
-    <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
-    <geom name="floor" pos="0 0 -0.25" size="0 0 0.01" type="plane" material="groundplane" contype="1" conaffinity="1"/>
-    <body name="goal" mocap="true" pos="0.325 0.17 0.0475">
+    <body name="goal" mocap="true" pos="0.325 0.17 0.2975">
       <geom type="box" size=".035 .035 .035" mass=".108" group="2" contype="0" conaffinity="0"/>
     </body>
-    <body name="cube" pos="0.0 0.0 -0.21" quat="1 0 0 0" childclass="cube">
+    <body name="cube" pos="0.0 0.0 0.04" quat="1 0 0 0" childclass="cube">
       <freejoint name="cube_freejoint"/>
       <geom name="cube" type="box" size=".035 .035 .035" mass=".0508" group="2"/>
       <site name="cube_center" pos="0 0 0" group="4"/>
     </body>
-    <body pos="-0.05 0 0.03" quat="-1 0 -1 0">
+    <body pos="-0.05 0 0.28" quat="-1 0 -1 0">
       <attach model="tesollo_trans3" body="rh" prefix=""/>
     </body>
   </worldbody>
@@ -100,7 +87,7 @@
   <keyframe>
     <key name="home"
       qpos="
-      0.0 0.0 -0.2 1 0 0 0
+      0.0 0.0 0.05 1 0 0 0
       0.05 0 -0.05
       0 0.38 0
       0.06 -1.56 0.0 0.0
@@ -114,7 +101,7 @@
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
-      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0"
+      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0.25"
       mquat="1 0 0 0"/>
   </keyframe>
 </mujoco>

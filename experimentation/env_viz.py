@@ -85,6 +85,8 @@ def make_key_callback(m, data, env=None):
             state = env.reset(key)
             data.qpos[:] = np.array(state.data.qpos)
             data.qvel[:] = np.array(state.data.qvel)
+            data.mocap_pos[:] = np.array(state.data.mocap_pos)
+            data.mocap_quat[:] = np.array(state.data.mocap_quat)
             mujoco.mj_forward(m, data)
             print("env.reset() applied")
 
