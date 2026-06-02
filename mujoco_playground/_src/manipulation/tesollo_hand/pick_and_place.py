@@ -40,7 +40,7 @@ __all__ = [
 ]
 
 class PickAndPlaceBaseline(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 65."""
+    """Pick-and-place: q(26) + qdot(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 62."""
 
     def __init__(
         self,
@@ -66,7 +66,7 @@ class PickAndPlaceBaseline(PickAndPlaceBase):
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceProprio(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 91."""
+    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 88."""
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class PickAndPlaceProprio(PickAndPlaceBase):
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceProprioDelta(PickAndPlaceBase):
-    """Pick-and-place: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 91."""
+    """Pick-and-place: q(26) + qdot(26) + motor_deltas(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) = 88."""
 
     def __init__(
         self,
@@ -121,7 +121,7 @@ class PickAndPlaceProprioDelta(PickAndPlaceBase):
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceForce(PickAndPlaceBase):
-    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) = 67."""
 
     def __init__(
         self,
@@ -148,7 +148,7 @@ class PickAndPlaceForce(PickAndPlaceBase):
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceForceProprio(PickAndPlaceBase):
-    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) = 93."""
 
     def __init__(
         self,
@@ -176,7 +176,7 @@ class PickAndPlaceForceProprio(PickAndPlaceBase):
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
 class PickAndPlaceForceProprioDelta(PickAndPlaceBase):
-    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + ctrl_targets(26) + cube_pos(3) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) + total_force(1) = 97."""
+    """Pick-and-place with ground-truth contact forces: q(26) + qdot(26) + motor_deltas(26) + last_ground_cube_pos(3) + goal_pos(3) + goal_quat(4) + fingertip_forces(5) = 93."""
 
     def __init__(
         self,
