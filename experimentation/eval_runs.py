@@ -10,6 +10,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import functools
 import json
 import re
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "learning"))
 import brax_compat  # noqa: F401  -- must precede brax imports
@@ -270,10 +271,14 @@ def main():
     n_det = (num_videos + 1) // 2
     n_sto = num_videos // 2
 
+    videos_dir = PROJECT_ROOT / "videos" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    videos_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output dir: {videos_dir}")
+
     results = []
     for run in runs:
         suffix = extract_suffix(run.name)
-        output = PROJECT_ROOT / "videos" / f"{suffix}.mp4"
+        output = videos_dir / f"{suffix}.mp4"
         det_names = ", ".join(f"{suffix}_det_{i}.mp4" for i in range(n_det))
         sto_names = ", ".join(f"{suffix}_sto_{i}.mp4" for i in range(n_sto))
         print(f"\n=== {run.name} -> {det_names} | {sto_names} ===", flush=True)
