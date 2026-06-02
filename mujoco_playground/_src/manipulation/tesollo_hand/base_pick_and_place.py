@@ -54,7 +54,7 @@ def default_config() -> config_dict.ConfigDict:
             scales=config_dict.create(
                 fingertip_pos=0.3,
                 cube_pos=4.0,
-                cube_ori=0.0,
+                cube_ori=0.5,
                 cube_height=0.0,
                 joint_vel=-0.002,
                 wrist_vel=-0.02,
