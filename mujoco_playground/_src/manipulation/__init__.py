@@ -71,6 +71,7 @@ _envs = {
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.PickAndPlaceForce,
     "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.PickAndPlaceForceProprio,
     "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.PickAndPlaceForceProprioDelta,
+    "TesolloPickAndPlaceForceVec": tesollo_pick_and_place.PickAndPlaceForceVec,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -104,6 +105,7 @@ _cfgs = {
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.default_config,
     "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.default_config,
+    "TesolloPickAndPlaceForceVec": tesollo_pick_and_place.default_config,
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
@@ -128,6 +130,7 @@ _randomizer = {
     "TesolloPickAndPlaceForce": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceForceProprio": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceForceProprioDelta": tesollo_pick_and_place.domain_randomize,
+    "TesolloPickAndPlaceForceVec": tesollo_pick_and_place.domain_randomize,
     "TesolloPickAndPlaceProprioDelta": tesollo_pick_and_place.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,

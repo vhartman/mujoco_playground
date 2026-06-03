@@ -20,7 +20,6 @@ DT = cfg.ctrl_dt
 r_cube_pos       = jax.vmap(lambda d: PickAndPlaceBase.r_cube_pos(d, TARGET_RADIUS))
 r_fingertip_tip  = jax.vmap(PickAndPlaceBase.r_fingertip_pos_per_tip)
 r_cube_ori       = jax.vmap(PickAndPlaceBase.r_cube_orientation)
-r_cube_height    = jax.vmap(lambda z: PickAndPlaceBase.r_cube_height(z, INIT_Z, GOAL_Z))
 
 # Velocity functions take an array of DOF velocities and return a sum;
 # wrap so we can sweep a single uniform velocity value
@@ -81,19 +80,6 @@ ax.axvspan(0, np.degrees(0.087), alpha=0.15, color=C_ORI, label="≤5° toleranc
 ax.set_xlabel("Orientation error (°)")
 ax.set_ylabel("Reward per step")
 ax.set_title("cube_ori")
-ax.legend(fontsize=8)
-ax.grid(True, alpha=0.3)
-
-# ── cube_height ───────────────────────────────────────────────────────────────
-ax = fig.add_subplot(gs[1, 0])
-x = jp.linspace(INIT_Z - 0.01, GOAL_Z + 0.02, 500)
-y = weighted(r_cube_height(x), "cube_height")
-ax.plot(np.asarray(x) * 100, y, color=C_HGT, lw=2.5)
-ax.axvline(INIT_Z * 100, color="gray", lw=1.2, ls=":", label="floor z")
-ax.axvline(GOAL_Z * 100, color=C_HGT, lw=1.2, ls="--", label="table z (goal)")
-ax.set_xlabel("Cube centre height (cm)")
-ax.set_ylabel("Reward per step")
-ax.set_title("cube_height")
 ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 

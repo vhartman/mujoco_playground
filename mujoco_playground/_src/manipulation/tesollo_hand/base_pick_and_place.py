@@ -55,7 +55,6 @@ def default_config() -> config_dict.ConfigDict:
                 fingertip_pos=0.3,
                 cube_pos=4.0,
                 cube_ori=0.5,
-                cube_height=0.0,
                 joint_vel=-0.002,
                 wrist_vel=-0.02,
                 action_rate=-0.005,
@@ -157,10 +156,10 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         v_hand = jp.zeros(consts.NV)
 
         rng, p_rng = jax.random.split(rng)
-        # start_pos = self._cube_init[:3] + jax.random.uniform(
-        #     p_rng, (3,), minval=-0.01, maxval=0.01
-        # )
-        start_pos = self._cube_init[:3]
+        start_pos = self._cube_init[:3] + jax.random.uniform(
+            p_rng, (3,), minval=-0.01, maxval=0.01
+        )
+        # start_pos = self._cube_init[:3]
         q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
         v_cube = jp.zeros(6)
 
@@ -170,16 +169,17 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             minval=jp.array([self._geom.goal_x_min, self._geom.goal_y_min]),
             maxval=jp.array([self._geom.goal_x_max, self._geom.goal_y_max]),
         )
-        # goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
+        goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
         random_z = jax.random.uniform(
             goal_rng, (), minval=self._geom.goal_z + 0.08, maxval=self._geom.goal_z + 0.15
         )
         # goal_pos = jp.array([goal_xy[0], goal_xy[1], random_z])
-        goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.35])
+        # goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.35])
 
+        # Random z-axis rotation only — preserves the cube's up face so the
+        # policy never has to flip the cube to match the goal orientation.
         goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
         goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
-        # goal_quat = jp.array([1.0, 0.0, 0.0, 0.0])
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
@@ -364,12 +364,6 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         return reward.tolerance(ori_error, (0, 0.087), margin=1.0, sigmoid="gaussian")
 
     @staticmethod
-    def r_cube_height(cube_z: jax.Array, init_z: float, goal_z: float) -> jax.Array:
-        """1 at goal_z, linear ramp from 0 at init_z, hard-zero above goal_z."""
-        ramp = jp.clip((cube_z - init_z) / (goal_z - init_z), 0.0, 1.0)
-        return jp.where(cube_z > goal_z, 0.0, ramp)
-
-    @staticmethod
     def r_cube_dropped(cube_on_floor: jax.Array) -> jax.Array:
         return cube_on_floor.astype(float)
 
@@ -393,11 +387,17 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
 
         fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances))
 
+        # cube_ori is only payable once the cube is essentially at the target —
+        # prevents the policy from collecting orientation reward by rotating the
+        # cube in place on the table. Threshold 0.85 corresponds to ~2x the
+        # target_radius distance under the cube_pos reciprocal tolerance curve.
+        cube_pos_r = self.r_cube_pos(cube_pos_error, self._config.target_radius)
+        near_goal = (cube_pos_r >= 0.85).astype(cube_pos_r.dtype)
+
         return {
             "fingertip_pos": fingertip_reward,
-            "cube_pos": self.r_cube_pos(cube_pos_error, self._config.target_radius),
-            "cube_ori": self.r_cube_orientation(cube_ori_error),
-            "cube_height": self.r_cube_height(cube_pos[2], self._cube_init_z, self._geom.goal_z),
+            "cube_pos": cube_pos_r,
+            "cube_ori": near_goal * self.r_cube_orientation(cube_ori_error),
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
             "action_rate": self.r_action_rate(action),
@@ -482,6 +482,28 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             for name in tip_sensors
         ])
         return forces / 10.0
+
+    def _obs_fingertip_force_dirs(self, data: mjx.Data) -> jax.Array:
+        """Per-fingertip normalized net force direction vs cube. Shape: (15,).
+
+        Zero vector when no contact force is present to avoid NaN.
+        """
+        tip_sensors = [
+            "rl_dg_1_tip_cube_force",
+            "rl_dg_2_tip_cube_force",
+            "rl_dg_3_tip_cube_force",
+            "rl_dg_4_tip_cube_force",
+            "rl_dg_5_tip_cube_force",
+        ]
+        dirs = []
+        for name in tip_sensors:
+            net = jp.sum(
+                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+                axis=0,
+            )
+            magnitude = jp.linalg.norm(net)
+            dirs.append(jp.where(magnitude > 0.0, net / magnitude, jp.zeros(3)))
+        return jp.concatenate(dirs)
 
     def _obs_total_contact_force(self, data: mjx.Data) -> jax.Array:
         """Sum of all hand-cube contact force magnitudes, normalized by 10 N. Shape: (1,)."""
