@@ -326,18 +326,18 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def r_cube_pos(cube_target_error: jax.Array, target_radius: float) -> jax.Array:
-        # margin=0.032, value_at_margin=0.5: yields reward ≈ 0.10 at the nearest
-        # possible start (~0.285 m away) via 1/(1 + d/margin).
+    def r_cube_pos(cube_target_error: jax.Array, target_radius: float, margin: float) -> jax.Array:
+        # value_at_margin=0.5: yields reward ≈ 0.10 at the nearest possible start
+        # (~0.285 m away) via 1/(1 + d/margin).
         return reward.tolerance(
-            cube_target_error, (0, target_radius), margin=0.032,
+            cube_target_error, (0, target_radius), margin=margin,
             sigmoid="reciprocal", value_at_margin=0.5,
         )
 
     @staticmethod
-    def r_fingertip_pos_per_tip(fingertip_dist: jax.Array) -> jax.Array:
+    def r_fingertip_pos_per_tip(fingertip_dist: jax.Array, cube_half_size: float) -> jax.Array:
         return reward.tolerance(
-            fingertip_dist, (0, 0.035), margin=0.1, sigmoid="reciprocal",
+            fingertip_dist, (0, cube_half_size), margin=0.1, sigmoid="reciprocal",
         )
 
     @staticmethod
@@ -352,10 +352,9 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
         return jp.sum(jp.square(wrist_qvel))
 
     @staticmethod
-    def r_cube_orientation(ori_error: jax.Array) -> jax.Array:
-        # tolerance band: ≤5° (0.087 rad); gaussian gives steep decay beyond it.
+    def r_cube_orientation(ori_error: jax.Array, tolerance_rad: float) -> jax.Array:
         # margin=1.0 rad (≈57°): reward ≈ 0.1 at 62° total error.
-        return reward.tolerance(ori_error, (0, 0.087), margin=1.0, sigmoid="gaussian")
+        return reward.tolerance(ori_error, (0, tolerance_rad), margin=1.0, sigmoid="gaussian")
 
     @staticmethod
     def r_cube_dropped(cube_on_floor: jax.Array) -> jax.Array:
@@ -379,19 +378,19 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
             self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos, axis=1
         )
 
-        fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances))
+        fingertip_reward = jp.sum(self.r_fingertip_pos_per_tip(fingertip_distances, self._geom.cube_half_size))
 
         # cube_ori is only payable once the cube is essentially at the target —
         # prevents the policy from collecting orientation reward by rotating the
         # cube in place on the table. Threshold 0.85 corresponds to ~2x the
         # target_radius distance under the cube_pos reciprocal tolerance curve.
-        cube_pos_r = self.r_cube_pos(cube_pos_error, self._config.target_radius)
-        near_goal = (cube_pos_r >= 0.85).astype(cube_pos_r.dtype)
+        cube_pos_r = self.r_cube_pos(cube_pos_error, self._config.target_radius, self._CUBE_POS_REWARD_MARGIN)
+        near_goal = (cube_pos_r >= self._NEAR_GOAL_REWARD_THRESHOLD).astype(cube_pos_r.dtype)
 
         return {
             "fingertip_pos": fingertip_reward,
             "cube_pos": cube_pos_r,
-            "cube_ori": near_goal * self.r_cube_orientation(cube_ori_error),
+            "cube_ori": near_goal * self.r_cube_orientation(cube_ori_error, self._ORI_TOLERANCE_RAD),
             "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
             "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
             "action_rate": self.r_action_rate(action),
@@ -403,6 +402,22 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
     # Observation helpers — _obs_* methods registered as ObsComponents below
     # ------------------------------------------------------------------
+
+    # Typical peak force (N) at one tip: kp=3 Nm/rad finger joint, ~0.1 rad deflection,
+    # ~3 cm contact arm → ~10 N; summed across up to 4 contact points gives O(10 N).
+    # No sensor cutoff is defined in the XML, so this is a heuristic scale.
+    _TIP_FORCE_SCALE = 10.0
+
+    # Tolerance band half-width for cube_pos reward: slightly tighter than cube_half_size
+    # (~3.5 cm) to keep reward near 1.0 only when the cube is genuinely close.
+    _CUBE_POS_REWARD_MARGIN = 0.032
+
+    # Success gating threshold on the cube_pos reward value.  At 0.85 the cube is
+    # within roughly 2× target_radius under the reciprocal tolerance curve.
+    _NEAR_GOAL_REWARD_THRESHOLD = 0.85
+
+    # Orientation tolerance: 5° expressed in radians.
+    _ORI_TOLERANCE_RAD = 5.0 * jp.pi / 180.0
 
     _TIP_FORCE_SENSORS = [
         "rl_dg_1_tip_cube_force",
@@ -420,7 +435,7 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
             ))
             for name in self._TIP_FORCE_SENSORS
         ])
-        return forces / 10.0
+        return forces / self._TIP_FORCE_SCALE
 
     def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         dirs = []
@@ -430,12 +445,12 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
                 axis=0,
             )
             magnitude = jp.linalg.norm(net)
-            dirs.append(jp.where(magnitude > 0.0, net / magnitude, jp.zeros(3)))
+            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
         return jp.concatenate(dirs)
 
     def _obs_total_contact_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         forces = mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1, 3)
-        return jp.sum(jp.linalg.norm(forces, axis=1), keepdims=True) / 10.0
+        return jp.sum(jp.linalg.norm(forces, axis=1), keepdims=True) / self._TIP_FORCE_SCALE
 
     def _obs_cube_pos(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         return self.get_cube_position(data)
