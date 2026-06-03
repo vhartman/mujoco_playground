@@ -53,9 +53,21 @@ def _expand_param(spec):
     raise ValueError(f"Param spec must have 'values' or 'range': {spec}")
 
 
+_KEY_ALIASES = {
+    "sensor_bundle": "sb",
+}
+
 def _param_label(key, value):
-    """Short label fragment for a param, e.g. 'pid_gains.finger_kp', 3.0 -> 'kp3'."""
-    short = key.split(".")[-1].replace("finger_", "")
+    """Short label fragment for a param.
+
+    Examples:
+        'pid_gains.finger_kp', 3.0   -> 'kp3'
+        'sensor_bundle', 'proprio'   -> 'sb_proprio'
+        'obs_noise.level', 2.0       -> 'level2'
+    """
+    short = _KEY_ALIASES.get(key, key.split(".")[-1].replace("finger_", ""))
+    if isinstance(value, str):
+        return f"{short}_{value}"
     return f"{short}{value:g}"
 
 

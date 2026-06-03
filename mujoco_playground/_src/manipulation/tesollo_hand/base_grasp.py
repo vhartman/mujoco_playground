@@ -15,6 +15,7 @@
 """Base classes for tesollo hand."""
 
 import abc
+import functools
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -29,6 +30,7 @@ from mujoco.mjx._src import math
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
 from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_grasp_constants as consts
+from mujoco_playground._src.manipulation.tesollo_hand import obs as obs_module
 
 import mujoco.viewer
 import time
@@ -69,6 +71,39 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
 
+  def _build_obs(
+      self,
+      sensor_bundle: str,
+      task_keys: tuple[str, ...],
+      data,
+      info: dict,
+  ) -> jax.Array:
+    all_keys = obs_module.SENSOR_BUNDLES[sensor_bundle] + task_keys
+    rng_keys = jax.random.split(info["rng"], len(all_keys) + 1)
+    info["rng"] = rng_keys[0]
+    parts = []
+    for i, key in enumerate(all_keys):
+      component = obs_module.get(key)
+      vec = component.fn(self, data, info)
+      scale = self._config.obs_noise.level * getattr(
+          self._config.obs_noise.scales, key, 0.0
+      )
+      if scale > 0.0:
+        vec = vec + scale * jax.random.normal(rng_keys[i + 1], vec.shape)
+      parts.append(vec)
+    return jp.concatenate(parts)
+
+  @functools.cached_property
+  def obs_size(self) -> int:
+    all_keys = (
+        obs_module.SENSOR_BUNDLES[self._config.sensor_bundle]
+        + self._task_obs_keys()
+    )
+    return sum(obs_module.get(k).size for k in all_keys)
+
+  def _task_obs_keys(self) -> tuple[str, ...]:
+    return ()
+
   # Sensor readings.
   def get_cube_position(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "cube_position")
@@ -107,6 +142,29 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         for name in consts.FINGERTIP_NAMES
     ])
 
+  # ------------------------------------------------------------------
+  # Obs component methods — registered below as ObsComponents so that
+  # _build_obs can call them uniformly via (env, data, info) -> jax.Array.
+  # ------------------------------------------------------------------
+
+  def _obs_joint_pos(self, data, info) -> jax.Array:
+    return data.qpos[self._hand_qids]
+
+  def _obs_joint_vel(self, data, info) -> jax.Array:
+    return data.qvel[self._hand_dqids]
+
+  def _obs_motor_targets(self, data, info) -> jax.Array:
+    return info["motor_targets"]
+
+  def _obs_motor_deltas(self, data, info) -> jax.Array:
+    return info["motor_targets"] - data.qpos[self._hand_qids]
+
+  def _obs_fingertip_pos(self, data, info) -> jax.Array:
+    return self.get_fingertip_positions(data)
+
+  def _obs_palm_pos(self, data, info) -> jax.Array:
+    return self.get_palm_position(data)
+
   # Accessors.
 
   @property
@@ -124,6 +182,16 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
   @property
   def mjx_model(self) -> mjx.Model:
     return self._mjx_model
+
+
+# Register generic hand-sensor obs components using the methods above.
+# fn signature is (env, data, info) which matches an unbound method call.
+obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=26, description="hand joint positions"))
+obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=26, description="hand joint velocities"))
+obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=26, description="current actuator targets"))
+obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=26, description="motor targets minus current qpos"))
+obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=15, description="fingertip positions (world frame)"))
+obs_module.register(obs_module.ObsComponent("palm_pos",     TesolloHandGraspEnv._obs_palm_pos,     size=3,  description="palm/grasp site position"))
 
 
 # ---------------------------------------------------------------------------

@@ -6,8 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from mujoco_playground._src.manipulation.tesollo_hand.base_pick_and_place import (
-    PickAndPlaceBase,
+from mujoco_playground._src.manipulation.tesollo_hand.pick_and_place import (
+    PickAndPlace,
     default_config,
 )
 
@@ -17,14 +17,14 @@ TARGET_RADIUS = cfg.target_radius
 DT = cfg.ctrl_dt
 
 # Vectorise scalar-input static methods over numpy arrays
-r_cube_pos       = jax.vmap(lambda d: PickAndPlaceBase.r_cube_pos(d, TARGET_RADIUS))
-r_fingertip_tip  = jax.vmap(PickAndPlaceBase.r_fingertip_pos_per_tip)
-r_cube_ori       = jax.vmap(PickAndPlaceBase.r_cube_orientation)
+r_cube_pos       = jax.vmap(lambda d: PickAndPlace.r_cube_pos(d, TARGET_RADIUS))
+r_fingertip_tip  = jax.vmap(PickAndPlace.r_fingertip_pos_per_tip)
+r_cube_ori       = jax.vmap(PickAndPlace.r_cube_orientation)
 
 # Velocity functions take an array of DOF velocities and return a sum;
 # wrap so we can sweep a single uniform velocity value
-r_joint_vel  = jax.vmap(lambda v: PickAndPlaceBase.r_joint_vel(jp.array([v])))
-r_wrist_vel  = jax.vmap(lambda v: PickAndPlaceBase.r_wrist_vel(jp.array([v])))
+r_joint_vel  = jax.vmap(lambda v: PickAndPlace.r_joint_vel(jp.array([v])))
+r_wrist_vel  = jax.vmap(lambda v: PickAndPlace.r_wrist_vel(jp.array([v])))
 
 # Geometry from keyframe / XML
 INIT_Z = 0.05   # cube freejoint z in home keyframe

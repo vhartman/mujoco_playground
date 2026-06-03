@@ -311,7 +311,7 @@ def brax_ppo_config(
         value_obs_key="privileged_state",
     )
     rl_config.num_resets_per_eval = 1
-  elif env_name.startswith("TesolloPickAndPlace"):
+  elif env_name == "TesolloPickAndPlace":
     rl_config.num_timesteps = 1_000_000_000
     rl_config.num_evals = 20
     rl_config.num_minibatches = 32
