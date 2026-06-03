@@ -131,7 +131,6 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
-        self._cube_init_z = float(self._cube_init[2])
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
 
     # ------------------------------------------------------------------
@@ -146,22 +145,12 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
     # ------------------------------------------------------------------
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        rng, pos_rng, vel_rng = jax.random.split(rng, 3)
-        # q_hand = jp.clip(
-        #     self._default_pose + 0.1 * jax.random.normal(pos_rng, (consts.NQ,)),
-        #     self._lowers,
-        #     self._uppers,
-        # )
-        q_hand = self._default_pose
-        v_hand = jp.zeros(consts.NV)
-
         rng, p_rng = jax.random.split(rng)
-        start_pos = self._cube_init[:3] + jax.random.uniform(
-            p_rng, (3,), minval=-0.01, maxval=0.01
+        start_pos = self._cube_init[:2] + jax.random.uniform(
+            p_rng, (2,), minval=-0.01, maxval=0.01
         )
-        # start_pos = self._cube_init[:3]
-        q_cube = jp.concatenate([start_pos, self._cube_init[3:]])
-        v_cube = jp.zeros(6)
+        start_pos = jp.array([start_pos[0], start_pos[1], self._cube_init[2]])
+
 
         rng, goal_rng, goal_rot_rng = jax.random.split(rng, 3)
         goal_xy = jax.random.uniform(
@@ -170,23 +159,20 @@ class PickAndPlaceBase(tesollo_hand_base.TesolloHandGraspEnv, abc.ABC):
             maxval=jp.array([self._geom.goal_x_max, self._geom.goal_y_max]),
         )
         goal_pos = jp.array([goal_xy[0], goal_xy[1], self._geom.goal_z])
-        random_z = jax.random.uniform(
-            goal_rng, (), minval=self._geom.goal_z + 0.08, maxval=self._geom.goal_z + 0.15
-        )
-        # goal_pos = jp.array([goal_xy[0], goal_xy[1], random_z])
-        # goal_pos = jp.array([self._cube_init[0], self._cube_init[1], 0.35])
 
         # Random z-axis rotation only — preserves the cube's up face so the
         # policy never has to flip the cube to match the goal orientation.
         goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
         goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
 
-        qpos = jp.concatenate([q_hand, q_cube])
-        qvel = jp.concatenate([v_hand, v_cube])
+        # Build qpos from the keyframe and overwrite only the cube xyz position.
+        # Using named index arrays avoids any assumption about joint ordering in qpos.
+        qpos = self._init_q.at[self._cube_qids[:3]].set(start_pos)
+        qvel = jp.zeros(self.mj_model.nv)
         data = mjx_env.make_data(
             self._mj_model,
             qpos=qpos,
-            ctrl=q_hand,
+            ctrl=self._default_pose,
             qvel=qvel,
             mocap_pos=goal_pos,
             mocap_quat=goal_quat,
