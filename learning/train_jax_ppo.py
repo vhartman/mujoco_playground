@@ -250,23 +250,23 @@ def log_reward_scale_composition(env_cfg) -> None:
   cmap = plt.get_cmap("tab20")
   colors = [cmap(i % 20) for i in range(len(terms))]
 
-  fig, ax = plt.subplots(figsize=(6, 6))
+  fig, ax = plt.subplots(figsize=(6, 4))
   pos_base, neg_base = 0.0, 0.0
   for term, color in zip(terms, colors):
-    height = scales[term]
-    base = pos_base if height >= 0 else neg_base
-    ax.bar(0, height, bottom=base, width=0.6, color=color,
-           label=f"{term} ({height:+g})")
-    if height >= 0:
-      pos_base += height
+    width = scales[term]
+    base = pos_base if width >= 0 else neg_base
+    ax.barh(0, width, left=base, height=0.6, color=color,
+            label=f"{term} ({width:+g})")
+    if width >= 0:
+      pos_base += width
     else:
-      neg_base += height
+      neg_base += width
 
-  ax.axhline(0, color="black", linewidth=0.8)
-  ax.set_xticks([])
-  ax.set_ylabel("reward scale")
+  ax.axvline(0, color="black", linewidth=0.8)
+  ax.set_yticks([])
+  ax.set_xlabel("reward scale")
   ax.set_title("Reward-term scale composition")
-  ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize="small")
+  ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), fontsize="small", ncol=2)
   fig.tight_layout()
 
   wandb.log({"reward_scales/composition": wandb.Image(fig)}, step=0)
@@ -435,11 +435,6 @@ def main(argv):
     # Static, one-shot reward-budget overview (not updated during the run).
     log_reward_scale_composition(env_cfg)
 
-  # Theoretical (unattainable) per-episode reward ceilings, owned by the env.
-  # Replayed each step in `progress` as a horizontal reference line on the
-  # corresponding per-term reward plot.
-  theoretical_reward_maxes = env.unwrapped.theoretical_reward_maxes
-
   # Initialize TensorBoard if required
   if _USE_TB.value and not _PLAY_ONLY.value:
     writer = tensorboardX.SummaryWriter(logdir)
@@ -524,29 +519,97 @@ def main(argv):
 
   times = [time.monotonic()]
 
-  # Progress function for logging
-  def reward_max_reference_lines(metrics):
-    """Constant `<key>__max` series for each per-term reward metric.
+  # Per-term reward histories for multi-line ceiling charts and stacked area.
+  # Structure: {metric_key: {"steps": [...], "value": [...]}}.
+  _reward_histories: dict[str, dict] = {}
+  reward_scales = _reward_scales(env_cfg)
+  episode_length = int(env_cfg.get("episode_length", 1))
 
-    Matches any logged metric whose final path segment is a known reward term
-    (e.g. `eval/episode_reward/cube_pos`, `episode/reward/cube_pos`) and emits
-    its theoretical ceiling under the same key. Replayed every step so it
-    renders as a horizontal reference line; `_std` variants don't match a term
-    and are left untouched.
+  def _build_reward_charts(num_steps, metrics):
+    """Build wandb charts for reward terms and return them as a dict.
+
+    - `reward_normalized/<term>`: line_series with two lines — the term's
+      contribution normalized to [0, 1] (divided by its theoretical max) and a
+      constant ceiling at 1.0.  Only for terms with a positive theoretical max.
+    - `reward_contribution/stacked`: matplotlib stacked-area image showing how
+      much each term contributed to the total reward over training.
     """
-    lines = {}
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    # Accumulate history for every reward term present in metrics.
     for key in metrics:
       term = key.rsplit("/", 1)[-1]
-      if term in theoretical_reward_maxes:
-        lines[f"{key}__max"] = theoretical_reward_maxes[term]
-    return lines
+      if term not in reward_scales:
+        continue
+      hist = _reward_histories.setdefault(key, {"steps": [], "value": []})
+      hist["steps"].append(num_steps)
+      hist["value"].append(float(metrics[key]))
+
+    charts = {}
+
+    # Normalized ceiling charts (one per positive-scale term).
+    for key, hist in _reward_histories.items():
+      term = key.rsplit("/", 1)[-1]
+      scale = reward_scales.get(term, 0.0)
+      if scale <= 0:
+        continue
+      ceiling = scale * episode_length  # theoretical max for this term
+      normalized = [v / ceiling for v in hist["value"]]
+      n = len(hist["steps"])
+      charts[f"reward_normalized/{term}"] = wandb.plot.line_series(
+          xs=[hist["steps"], hist["steps"]],
+          ys=[normalized, [1.0] * n],
+          keys=["reward", "ceiling"],
+          title=term,
+          xname="step",
+      )
+
+    # Stacked area chart: actual (scaled) contribution per term over training.
+    if _reward_histories:
+      steps = next(iter(_reward_histories.values()))["steps"]
+      if steps:
+        terms = sorted(
+            _reward_histories.keys(),
+            key=lambda k: reward_scales.get(k.rsplit("/", 1)[-1], 0.0),
+            reverse=True,
+        )
+        term_labels = [k.rsplit("/", 1)[-1] for k in terms]
+        values = [_reward_histories[k]["value"] for k in terms]
+        # Separate positive and negative contributions for correct stacking.
+        pos_vals = [
+            [max(v, 0) for v in series] for series in values
+        ]
+        neg_vals = [
+            [min(v, 0) for v in series] for series in values
+        ]
+        cmap = plt.get_cmap("tab20")
+        colors = [cmap(i % 20) for i in range(len(terms))]
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.stackplot(steps, pos_vals, labels=term_labels, colors=colors, alpha=0.8)
+        ax.stackplot(steps, neg_vals, colors=colors, alpha=0.8)
+        ax.axhline(0, color="black", linewidth=0.6)
+        ax.set_xlabel("training step")
+        ax.set_ylabel("episode reward contribution")
+        ax.set_title("Reward component contributions")
+        ax.legend(loc="upper left", fontsize="small", ncol=2)
+        fig.tight_layout()
+        charts["reward_contribution/stacked"] = wandb.Image(fig)
+        plt.close(fig)
+
+    return charts
 
   def progress(num_steps, metrics):
     times.append(time.monotonic())
 
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
-      wandb.log({**metrics, **reward_max_reference_lines(metrics)}, step=num_steps)
+      wandb.log(
+          {**metrics, **_build_reward_charts(num_steps, metrics)},
+          step=num_steps,
+      )
 
     # Log to TensorBoard
     if _USE_TB.value and not _PLAY_ONLY.value:

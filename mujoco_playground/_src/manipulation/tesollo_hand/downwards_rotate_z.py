@@ -52,7 +52,7 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=120,
-        target_hold_time=1.0,
+        target_hold_time=0.25,
         sensor_bundle="proprio",
         obs_noise=config_dict.create(
             level=1.0,
@@ -65,12 +65,12 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos=0.3,
+                fingertip_pos=1.0,
                 cube_ori=4.0,
                 joint_vel=-0.002,
                 wrist_vel=-0.02,
-                action_rate=-0.005,
-                cube_on_floor=-1.0,
+                action_rate=0.0,
+                cube_on_floor=0.0,
             ),
             success_reward=5.0,
         ),
@@ -193,7 +193,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         start_pos = jp.array([start_pos[0], start_pos[1], self._cube_init[2]])
 
         rng, goal_rot_rng = jax.random.split(rng)
-        goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
+        goal_angle = jax.random.uniform(goal_rot_rng, minval=jp.pi / 6, maxval=jp.pi / 3)
         goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
 
         qpos = self._init_q.at[self._cube_qids[:3]].set(start_pos)

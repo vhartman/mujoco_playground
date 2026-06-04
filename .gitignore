@@ -17,3 +17,5 @@ learning/queues/
 .vscode/*
 experimentation/*.csv
 experimentation/*.ipynb
+analysis/
+*.npz
