@@ -500,7 +500,8 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
             info["motor_targets"],              # 26: motor targets
             info["goal_pos"],                   # 3:  goal position
             info["goal_quat"],                  # 4:  goal orientation
-        ])  # total: 112
+            self._obs_fingertip_forces(data, info),  # 5:  per-tip contact force magnitudes
+        ])  # total: 117
 
     # ------------------------------------------------------------------
     # Cost and utility methods
