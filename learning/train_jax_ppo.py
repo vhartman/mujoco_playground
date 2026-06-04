@@ -250,12 +250,12 @@ def log_reward_scale_composition(env_cfg) -> None:
   cmap = plt.get_cmap("tab20")
   colors = [cmap(i % 20) for i in range(len(terms))]
 
-  fig, ax = plt.subplots(figsize=(6, 4))
+  fig, ax = plt.subplots(figsize=(8, 2))
   pos_base, neg_base = 0.0, 0.0
   for term, color in zip(terms, colors):
     width = scales[term]
     base = pos_base if width >= 0 else neg_base
-    ax.barh(0, width, left=base, height=0.6, color=color,
+    ax.barh(0, width, left=base, height=0.5, color=color,
             label=f"{term} ({width:+g})")
     if width >= 0:
       pos_base += width
@@ -263,10 +263,11 @@ def log_reward_scale_composition(env_cfg) -> None:
       neg_base += width
 
   ax.axvline(0, color="black", linewidth=0.8)
+  ax.set_ylim(-0.5, 0.5)
   ax.set_yticks([])
   ax.set_xlabel("reward scale")
   ax.set_title("Reward-term scale composition")
-  ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), fontsize="small", ncol=2)
+  ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=10, framealpha=0.9)
   fig.tight_layout()
 
   wandb.log({"reward_scales/composition": wandb.Image(fig)}, step=0)
