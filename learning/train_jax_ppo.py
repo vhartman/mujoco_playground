@@ -214,6 +214,65 @@ def rscope_fn(full_states, obs, rew, done):
   )
 
 
+def _reward_scales(env_cfg) -> dict:
+  """Return the env's reward-term scales, or {} if the env has none.
+
+  Generic across environments: only reads the standard
+  ``reward_config.scales`` location and tolerates its absence.
+  """
+  reward_config = env_cfg.get("reward_config", None)
+  if reward_config is None:
+    return {}
+  scales = reward_config.get("scales", None)
+  if scales is None:
+    return {}
+  return {k: float(v) for k, v in scales.items()}
+
+
+def log_reward_scale_composition(env_cfg) -> None:
+  """Log a one-shot stacked-bar plot of the reward-term scales to W&B.
+
+  Each term is a coloured segment whose height is proportional to its scale;
+  rewards stack upward from 0 and penalties stack downward, so the figure shows
+  the composition of the reward budget at a glance. Static: logged once at
+  init and never updated during the run.
+  """
+  scales = _reward_scales(env_cfg)
+  if not scales:
+    return
+
+  import matplotlib
+
+  matplotlib.use("Agg")
+  import matplotlib.pyplot as plt
+
+  terms = list(scales.keys())
+  cmap = plt.get_cmap("tab20")
+  colors = [cmap(i % 20) for i in range(len(terms))]
+
+  fig, ax = plt.subplots(figsize=(6, 6))
+  pos_base, neg_base = 0.0, 0.0
+  for term, color in zip(terms, colors):
+    height = scales[term]
+    base = pos_base if height >= 0 else neg_base
+    ax.bar(0, height, bottom=base, width=0.6, color=color,
+           label=f"{term} ({height:+g})")
+    if height >= 0:
+      pos_base += height
+    else:
+      neg_base += height
+
+  ax.axhline(0, color="black", linewidth=0.8)
+  ax.set_xticks([])
+  ax.set_ylabel("reward scale")
+  ax.set_title("Reward-term scale composition")
+  ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize="small")
+  fig.tight_layout()
+
+  wandb.log({"reward_scales/composition": wandb.Image(fig)}, step=0)
+  plt.close(fig)
+
+
 def make_eval_video_logger(env, episode_length: int, seed: int, render_every: int = 2):
   """Returns a policy_params_fn callback that logs a rollout video to W&B on every eval."""
   fps = 1.0 / env.dt / render_every
@@ -373,6 +432,13 @@ def main(argv):
     wandb.init(project="mjxrl", name=exp_name)
     wandb.config.update(env_cfg.to_dict())
     wandb.config.update({"env_name": _ENV_NAME.value})
+    # Static, one-shot reward-budget overview (not updated during the run).
+    log_reward_scale_composition(env_cfg)
+
+  # Theoretical (unattainable) per-episode reward ceilings, owned by the env.
+  # Replayed each step in `progress` as a horizontal reference line on the
+  # corresponding per-term reward plot.
+  theoretical_reward_maxes = env.unwrapped.theoretical_reward_maxes
 
   # Initialize TensorBoard if required
   if _USE_TB.value and not _PLAY_ONLY.value:
@@ -459,12 +525,28 @@ def main(argv):
   times = [time.monotonic()]
 
   # Progress function for logging
+  def reward_max_reference_lines(metrics):
+    """Constant `<key>__max` series for each per-term reward metric.
+
+    Matches any logged metric whose final path segment is a known reward term
+    (e.g. `eval/episode_reward/cube_pos`, `episode/reward/cube_pos`) and emits
+    its theoretical ceiling under the same key. Replayed every step so it
+    renders as a horizontal reference line; `_std` variants don't match a term
+    and are left untouched.
+    """
+    lines = {}
+    for key in metrics:
+      term = key.rsplit("/", 1)[-1]
+      if term in theoretical_reward_maxes:
+        lines[f"{key}__max"] = theoretical_reward_maxes[term]
+    return lines
+
   def progress(num_steps, metrics):
     times.append(time.monotonic())
 
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
-      wandb.log(metrics, step=num_steps)
+      wandb.log({**metrics, **reward_max_reference_lines(metrics)}, step=num_steps)
 
     # Log to TensorBoard
     if _USE_TB.value and not _PLAY_ONLY.value:
