@@ -373,6 +373,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     # Observation helpers
     # ------------------------------------------------------------------
 
+    def _cube_orientation_error(self, data: mjx.Data) -> jax.Array:
+        cube_ori = self.get_cube_orientation(data)
+        cube_goal_ori = self.get_cube_goal_orientation(data)
+        quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
+        quat_diff = math.normalize(quat_diff)
+        return 2.0 * jp.asin(jp.clip(jp.linalg.norm(quat_diff[1:]), max=1.0))
+
     _TIP_FORCE_SCALE = 10.0
     _ORI_TOLERANCE_RAD = 5.0 * jp.pi / 180.0
 
