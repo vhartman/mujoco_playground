@@ -184,14 +184,22 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     return self._mjx_model
 
 
+# Per-element label tuples shared by the generic hand-sensor components.
+# joint_pos/vel/motor_targets/deltas all index the 26 hand joints in JOINT_NAMES
+# order (identical to the actuator order). fingertip_pos is 5 tips × (x, y, z).
+_XYZ = ("x", "y", "z")
+_JOINT_LABELS = tuple(consts.JOINT_NAMES)
+_FINGERTIP_XYZ_LABELS = tuple(f"{n}_{a}" for n in consts.FINGERTIP_NAMES for a in _XYZ)
+_PALM_LABELS = ("palm_x", "palm_y", "palm_z")
+
 # Register generic hand-sensor obs components using the methods above.
 # fn signature is (env, data, info) which matches an unbound method call.
-obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=26, description="hand joint positions"))
-obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=26, description="hand joint velocities"))
-obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=26, description="current actuator targets"))
-obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=26, description="motor targets minus current qpos"))
-obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=15, description="fingertip positions (world frame)"))
-obs_module.register(obs_module.ObsComponent("palm_pos",     TesolloHandGraspEnv._obs_palm_pos,     size=3,  description="palm/grasp site position"))
+obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=26, description="hand joint positions",            labels=_JOINT_LABELS))
+obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=26, description="hand joint velocities",           labels=_JOINT_LABELS))
+obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=26, description="current actuator targets",         labels=_JOINT_LABELS))
+obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=26, description="motor targets minus current qpos",   labels=_JOINT_LABELS))
+obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=15, description="fingertip positions (world frame)", labels=_FINGERTIP_XYZ_LABELS))
+obs_module.register(obs_module.ObsComponent("palm_pos",     TesolloHandGraspEnv._obs_palm_pos,     size=3,  description="palm/grasp site position",          labels=_PALM_LABELS))
 
 
 # ---------------------------------------------------------------------------
