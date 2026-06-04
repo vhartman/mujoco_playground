@@ -83,6 +83,9 @@ def default_config() -> config_dict.ConfigDict:
             pert_wait_steps=[60, 150],
         ),
         kp_scale=1.0,
+        scene=config_dict.create(
+            cube_mass=0.108,  # kg
+        ),
         impl="warp",
         nconmax=200 * 8192,
         njmax=2200,
@@ -115,11 +118,22 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
             config=config,
             config_overrides=config_overrides,
         )
+        model_dirty = False
         if self._config.kp_scale != 1.0:
             s = self._config.kp_scale
             self._mj_model.actuator_gainprm[:, 0] *= s
             self._mj_model.actuator_biasprm[:, 1] *= s
             self._mj_model.actuator_biasprm[:, 2] *= s
+            model_dirty = True
+        cube_body_id = self._mj_model.body("cube").id
+        xml_cube_mass = float(self._mj_model.body_mass[cube_body_id])
+        cfg_cube_mass = float(self._config.scene.cube_mass)
+        if cfg_cube_mass != xml_cube_mass:
+            scale = cfg_cube_mass / xml_cube_mass
+            self._mj_model.body_mass[cube_body_id] = cfg_cube_mass
+            self._mj_model.body_inertia[cube_body_id] *= scale
+            model_dirty = True
+        if model_dirty:
             self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
 
@@ -191,7 +205,7 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
 
         # Random z-axis rotation only — preserves the cube's up face so the
         # policy never has to flip the cube to match the goal orientation.
-        goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=2 * jp.pi)
+        goal_angle = jax.random.uniform(goal_rot_rng, minval=0.0, maxval=jp.pi/2)
         goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
 
         # Build qpos from the keyframe and overwrite only the cube xyz position.
