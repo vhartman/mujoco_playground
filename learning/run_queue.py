@@ -270,7 +270,12 @@ def main():
     for r in runs:
         skip_tag = " (skip)" if r["idx"] < args.start_from else "      "
         f = r["flags"]
-        ov = f"  overrides={sorted(r['env_overrides'])}" if r["env_overrides"] else ""
+        if r["env_overrides"]:
+            flat_ov = _flatten(r["env_overrides"])
+            ov_str = ", ".join(f"{k}={v}" for k, v in sorted(flat_ov.items()))
+            ov = f"  overrides=[{ov_str}]"
+        else:
+            ov = ""
         print(
             f"  [{r['idx']:02d}]{skip_tag}  env={f['env_name']}"
             f"  suffix={f.get('suffix', '-')}"
