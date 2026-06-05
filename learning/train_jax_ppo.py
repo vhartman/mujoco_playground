@@ -526,7 +526,15 @@ def main(argv):
   reward_scales = _reward_scales(env_cfg)
 
   def _build_reward_charts(num_steps, metrics):
-    """Accumulate per-term reward histories and emit a wandb-native contribution chart."""
+    """Accumulate per-term reward histories and emit a plotly stacked-area chart.
+
+    Each term's contribution is raw_value * scale, so the total height of the
+    positive stack equals the total positive episode reward and the negative
+    stack shows penalty drag. Logged as a wandb-native interactive plotly chart
+    under episode/reward_contribution.
+    """
+    import plotly.graph_objects as go
+
     for key in metrics:
       term = key.rsplit("/", 1)[-1]
       if term not in reward_scales:
@@ -551,19 +559,31 @@ def main(argv):
       return {}
 
     steps = next(iter(deduped.values()))["steps"][:n]
-    sorted_terms = sorted(deduped, key=lambda t: reward_scales.get(t, 0.0), reverse=True)
-    xs = [steps] * len(sorted_terms)
-    ys = [deduped[t]["value"][:n] for t in sorted_terms]
+    # Drop zero-scale terms — they contribute nothing.
+    active_terms = [t for t in deduped if reward_scales.get(t, 0.0) != 0.0]
+    pos_terms = sorted([t for t in active_terms if reward_scales[t] > 0], key=lambda t: reward_scales[t], reverse=True)
+    neg_terms = sorted([t for t in active_terms if reward_scales[t] < 0], key=lambda t: reward_scales[t])
 
-    return {
-        "episode/reward_contribution": wandb.plot.line_series(
-            xs=xs,
-            ys=ys,
-            keys=sorted_terms,
-            title="Reward component contributions",
-            xname="step",
-        )
-    }
+    fig = go.Figure()
+    for term in pos_terms:
+      contribution = [v * reward_scales[term] for v in deduped[term]["value"][:n]]
+      fig.add_trace(go.Scatter(
+          x=steps, y=contribution, name=term,
+          stackgroup="pos", mode="lines", line=dict(width=0.5),
+      ))
+    for term in neg_terms:
+      contribution = [v * reward_scales[term] for v in deduped[term]["value"][:n]]
+      fig.add_trace(go.Scatter(
+          x=steps, y=contribution, name=term,
+          stackgroup="neg", mode="lines", line=dict(width=0.5),
+      ))
+    fig.update_layout(
+        title="Reward component contributions",
+        xaxis_title="training step",
+        yaxis_title="episode reward contribution",
+        hovermode="x unified",
+    )
+    return {"episode/reward_contribution": wandb.Plotly(fig)}
 
   def progress(num_steps, metrics):
     times.append(time.monotonic())
