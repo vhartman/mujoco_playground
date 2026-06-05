@@ -568,28 +568,31 @@ def main(argv):
       )
 
     # Stacked area chart: actual (scaled) contribution per term over training.
+    # Deduplicate by term name, preferring keys with the "eval/" prefix so that
+    # training-metrics calls (which fire more often) don't create a second,
+    # shorter series for the same term.
     if _reward_histories:
-      steps = next(iter(_reward_histories.values()))["steps"]
-      if steps:
-        terms = sorted(
-            _reward_histories.keys(),
-            key=lambda k: reward_scales.get(k.rsplit("/", 1)[-1], 0.0),
-            reverse=True,
-        )
-        term_labels = [k.rsplit("/", 1)[-1] for k in terms]
-        values = [_reward_histories[k]["value"] for k in terms]
-        # Separate positive and negative contributions for correct stacking.
-        pos_vals = [
-            [max(v, 0) for v in series] for series in values
-        ]
-        neg_vals = [
-            [min(v, 0) for v in series] for series in values
-        ]
+      seen_terms: dict[str, str] = {}  # term -> best key
+      for key in _reward_histories:
+        term = key.rsplit("/", 1)[-1]
+        prev = seen_terms.get(term)
+        if prev is None or key.startswith("eval/"):
+          seen_terms[term] = key
+      deduped = {term: _reward_histories[key] for term, key in seen_terms.items()}
+
+      # Align lengths: different call frequencies can give unequal series lengths.
+      n = min(len(h["steps"]) for h in deduped.values())
+      if n > 0:
+        steps = next(iter(deduped.values()))["steps"][:n]
+        sorted_terms = sorted(deduped, key=lambda t: reward_scales.get(t, 0.0), reverse=True)
+        values = [deduped[t]["value"][:n] for t in sorted_terms]
+        pos_vals = [[max(v, 0) for v in s] for s in values]
+        neg_vals = [[min(v, 0) for v in s] for s in values]
         cmap = plt.get_cmap("tab20")
-        colors = [cmap(i % 20) for i in range(len(terms))]
+        colors = [cmap(i % 20) for i in range(len(sorted_terms))]
 
         fig, ax = plt.subplots(figsize=(8, 4))
-        ax.stackplot(steps, pos_vals, labels=term_labels, colors=colors, alpha=0.8)
+        ax.stackplot(steps, pos_vals, labels=sorted_terms, colors=colors, alpha=0.8)
         ax.stackplot(steps, neg_vals, colors=colors, alpha=0.8)
         ax.axhline(0, color="black", linewidth=0.6)
         ax.set_xlabel("training step")
