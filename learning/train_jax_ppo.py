@@ -564,24 +564,43 @@ def main(argv):
     pos_terms = sorted([t for t in active_terms if reward_scales[t] > 0], key=lambda t: reward_scales[t], reverse=True)
     neg_terms = sorted([t for t in active_terms if reward_scales[t] < 0], key=lambda t: reward_scales[t])
 
+    # Build stacked area via explicit fill='tonexty' pairs so the fill
+    # survives wandb's plotly serialisation (stackgroup does not).
     fig = go.Figure()
+    cumsum = [0.0] * n
     for term in pos_terms:
       contribution = [v * reward_scales[term] for v in deduped[term]["value"][:n]]
+      top = [c + v for c, v in zip(cumsum, contribution)]
       fig.add_trace(go.Scatter(
-          x=steps, y=contribution, name=term,
-          stackgroup="pos", mode="lines", line=dict(width=0.5),
+          x=steps, y=list(cumsum), mode="lines",
+          line=dict(width=0, color="rgba(0,0,0,0)"),
+          showlegend=False, hoverinfo="skip",
       ))
+      fig.add_trace(go.Scatter(
+          x=steps, y=top, mode="lines",
+          line=dict(width=0.5), fill="tonexty", name=term,
+      ))
+      cumsum = top
+    cumsum_neg = [0.0] * n
     for term in neg_terms:
       contribution = [v * reward_scales[term] for v in deduped[term]["value"][:n]]
+      bottom = [c + v for c, v in zip(cumsum_neg, contribution)]
       fig.add_trace(go.Scatter(
-          x=steps, y=contribution, name=term,
-          stackgroup="neg", mode="lines", line=dict(width=0.5),
+          x=steps, y=list(cumsum_neg), mode="lines",
+          line=dict(width=0, color="rgba(0,0,0,0)"),
+          showlegend=False, hoverinfo="skip",
       ))
+      fig.add_trace(go.Scatter(
+          x=steps, y=bottom, mode="lines",
+          line=dict(width=0.5), fill="tonexty", name=term,
+      ))
+      cumsum_neg = bottom
     fig.update_layout(
         title="Reward component contributions",
         xaxis_title="training step",
         yaxis_title="episode reward contribution",
         hovermode="x unified",
+        xaxis=dict(rangeslider=dict(visible=False)),
     )
     return {"episode/reward_contribution": wandb.Plotly(fig)}
 
@@ -629,11 +648,12 @@ def main(argv):
       if "p25" in by_name and "p75" in by_name:
         fig.add_trace(go.Scatter(
             x=steps, y=by_name["p25"]["value"][:n],
-            mode="lines", line=dict(width=0), showlegend=False, name="p25",
+            mode="lines", line=dict(width=0, color=f"rgba({color}, 0)"),
+            showlegend=False, hoverinfo="skip",
         ))
         fig.add_trace(go.Scatter(
             x=steps, y=by_name["p75"]["value"][:n],
-            mode="lines", line=dict(width=0),
+            mode="lines", line=dict(width=0, color=f"rgba({color}, 0)"),
             fill="tonexty", fillcolor=f"rgba({color}, 0.25)",
             name="p25–p75",
         ))
@@ -655,6 +675,7 @@ def main(argv):
           xaxis_title="training step",
           yaxis_title=dist_label,
           hovermode="x unified",
+          xaxis=dict(rangeslider=dict(visible=False)),
       )
       # Use the same section prefix as the original scalars, e.g.
       # "training/policy_dist_loc/p25" -> chart key "training/policy_dist_loc"
@@ -703,10 +724,12 @@ def main(argv):
       fig = go.Figure()
       fig.add_trace(go.Scatter(
           x=steps, y=lower, mode="lines",
-          line=dict(width=0), showlegend=False, name="mean−std",
+          line=dict(width=0, color="rgba(68, 114, 196, 0)"),
+          showlegend=False, hoverinfo="skip",
       ))
       fig.add_trace(go.Scatter(
-          x=steps, y=upper, mode="lines", line=dict(width=0),
+          x=steps, y=upper, mode="lines",
+          line=dict(width=0, color="rgba(68, 114, 196, 0)"),
           fill="tonexty", fillcolor="rgba(68, 114, 196, 0.2)", name="±std",
       ))
       fig.add_trace(go.Scatter(
@@ -717,6 +740,7 @@ def main(argv):
       fig.update_layout(
           title=label, xaxis_title="training step",
           yaxis_title="value", hovermode="x unified",
+          xaxis=dict(rangeslider=dict(visible=False)),
       )
       charts[key] = wandb.Plotly(fig)
 
