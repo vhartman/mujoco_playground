@@ -585,13 +585,94 @@ def main(argv):
     )
     return {"episode/reward_contribution": wandb.Plotly(fig)}
 
+  _policy_dist_histories: dict[str, dict] = {}
+
+  def _build_policy_dist_charts(num_steps, metrics):
+    """Build plotly quantile-band charts for policy_dist_loc and policy_dist_std.
+
+    Replaces the per-quantile scalar sub-sections with two interactive band
+    charts (shaded p25-p75 band, p50 median line, mean dashed line). Returns
+    a filter set of scalar keys to suppress alongside the chart dict.
+    """
+    import plotly.graph_objects as go
+
+    _DIST_PREFIXES = ("policy_dist_loc", "policy_dist_std")
+    _DIST_COLORS = {"policy_dist_loc": "68, 114, 196", "policy_dist_std": "210, 118, 48"}
+
+    suppress = set()
+    for key in metrics:
+      for prefix in _DIST_PREFIXES:
+        if prefix in key:
+          _policy_dist_histories.setdefault(key, {"steps": [], "value": []})
+          _policy_dist_histories[key]["steps"].append(num_steps)
+          _policy_dist_histories[key]["value"].append(float(metrics[key]))
+          suppress.add(key)
+
+    if not _policy_dist_histories:
+      return {}, suppress
+
+    charts = {}
+    for prefix in _DIST_PREFIXES:
+      relevant = {k: v for k, v in _policy_dist_histories.items() if prefix in k}
+      if not relevant:
+        continue
+      n = min(len(h["steps"]) for h in relevant.values())
+      if n == 0:
+        continue
+
+      steps = next(iter(relevant.values()))["steps"][:n]
+      # Map last path segment -> history, e.g. "p25" -> hist
+      by_name = {k.rsplit("/", 1)[-1]: relevant[k] for k in relevant}
+      color = _DIST_COLORS[prefix]
+
+      fig = go.Figure()
+      if "p25" in by_name and "p75" in by_name:
+        fig.add_trace(go.Scatter(
+            x=steps, y=by_name["p25"]["value"][:n],
+            mode="lines", line=dict(width=0), showlegend=False, name="p25",
+        ))
+        fig.add_trace(go.Scatter(
+            x=steps, y=by_name["p75"]["value"][:n],
+            mode="lines", line=dict(width=0),
+            fill="tonexty", fillcolor=f"rgba({color}, 0.25)",
+            name="p25–p75",
+        ))
+      if "p50" in by_name:
+        fig.add_trace(go.Scatter(
+            x=steps, y=by_name["p50"]["value"][:n],
+            mode="lines", line=dict(color=f"rgba({color}, 1.0)", width=2),
+            name="median (p50)",
+        ))
+      if "mean" in by_name:
+        fig.add_trace(go.Scatter(
+            x=steps, y=by_name["mean"]["value"][:n],
+            mode="lines", line=dict(color=f"rgba({color}, 0.8)", width=1, dash="dash"),
+            name="mean",
+        ))
+      dist_label = prefix.removeprefix("policy_dist_")
+      fig.update_layout(
+          title=f"Policy distribution — {dist_label}",
+          xaxis_title="training step",
+          yaxis_title=dist_label,
+          hovermode="x unified",
+      )
+      # Use the same section prefix as the original scalars, e.g.
+      # "training/policy_dist_loc/p25" -> chart key "training/policy_dist_loc"
+      sample_key = next(k for k in relevant)
+      chart_key = sample_key.rsplit("/", 1)[0]
+      charts[chart_key] = wandb.Plotly(fig)
+
+    return charts, suppress
+
   def progress(num_steps, metrics):
     times.append(time.monotonic())
 
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
+      policy_charts, suppress = _build_policy_dist_charts(num_steps, metrics)
+      filtered = {k: v for k, v in metrics.items() if k not in suppress}
       wandb.log(
-          {**metrics, **_build_reward_charts(num_steps, metrics)},
+          {**filtered, **_build_reward_charts(num_steps, metrics), **policy_charts},
           step=num_steps,
       )
 
