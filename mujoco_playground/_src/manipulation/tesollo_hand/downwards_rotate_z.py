@@ -285,8 +285,8 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         done = self._get_termination(data)
         obs = self._get_obs(data, state.info)
-        rewards = self._get_reward(data, state.info, action)
-        rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
+        raw_rewards = self._get_reward(data, state.info, action)
+        scaled_rewards = {k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()}
 
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -299,10 +299,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["success_count"] = success.astype(float)
         state.info["step"] += 1
         state.metrics["reward/success"] = success.astype(float)
-        for k, v in rewards.items():
+        for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}"] = v
 
-        rew = sum(rewards.values()) * self.dt
+        rew = sum(scaled_rewards.values()) * self.dt
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 

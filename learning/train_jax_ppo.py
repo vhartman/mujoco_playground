@@ -524,22 +524,9 @@ def main(argv):
   # Structure: {metric_key: {"steps": [...], "value": [...]}}.
   _reward_histories: dict[str, dict] = {}
   reward_scales = _reward_scales(env_cfg)
-  episode_length = int(env_cfg.get("episode_length", 1))
 
   def _build_reward_charts(num_steps, metrics):
-    """Build wandb charts for reward terms and return them as a dict.
-
-    - `reward_normalized/<term>`: line_series with two lines — the term's
-      contribution normalized to [0, 1] (divided by its theoretical max) and a
-      constant ceiling at 1.0.  Only for terms with a positive theoretical max.
-    - `reward_contribution/stacked`: matplotlib stacked-area image showing how
-      much each term contributed to the total reward over training.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    # Accumulate history for every reward term present in metrics.
+    """Accumulate per-term reward histories and emit a wandb-native contribution chart."""
     for key in metrics:
       term = key.rsplit("/", 1)[-1]
       if term not in reward_scales:
@@ -548,62 +535,35 @@ def main(argv):
       hist["steps"].append(num_steps)
       hist["value"].append(float(metrics[key]))
 
-    charts = {}
+    if not _reward_histories:
+      return {}
 
-    # Normalized ceiling charts (one per positive-scale term).
-    for key, hist in _reward_histories.items():
+    # Deduplicate: one series per term, prefer eval/ keys over episode/ keys.
+    seen: dict[str, str] = {}
+    for key in _reward_histories:
       term = key.rsplit("/", 1)[-1]
-      scale = reward_scales.get(term, 0.0)
-      if scale <= 0:
-        continue
-      ceiling = scale * episode_length  # theoretical max for this term
-      normalized = [v / ceiling for v in hist["value"]]
-      n = len(hist["steps"])
-      charts[f"reward_normalized/{term}"] = wandb.plot.line_series(
-          xs=[hist["steps"], hist["steps"]],
-          ys=[normalized, [1.0] * n],
-          keys=["reward", "ceiling"],
-          title=term,
-          xname="step",
-      )
+      if term not in seen or key.startswith("eval/"):
+        seen[term] = key
+    deduped = {term: _reward_histories[key] for term, key in seen.items()}
 
-    # Stacked area chart: actual (scaled) contribution per term over training.
-    # Deduplicate by term name, preferring keys with the "eval/" prefix so that
-    # training-metrics calls (which fire more often) don't create a second,
-    # shorter series for the same term.
-    if _reward_histories:
-      seen_terms: dict[str, str] = {}  # term -> best key
-      for key in _reward_histories:
-        term = key.rsplit("/", 1)[-1]
-        prev = seen_terms.get(term)
-        if prev is None or key.startswith("eval/"):
-          seen_terms[term] = key
-      deduped = {term: _reward_histories[key] for term, key in seen_terms.items()}
+    n = min(len(h["steps"]) for h in deduped.values())
+    if n == 0:
+      return {}
 
-      # Align lengths: different call frequencies can give unequal series lengths.
-      n = min(len(h["steps"]) for h in deduped.values())
-      if n > 0:
-        steps = next(iter(deduped.values()))["steps"][:n]
-        sorted_terms = sorted(deduped, key=lambda t: reward_scales.get(t, 0.0), reverse=True)
-        values = [deduped[t]["value"][:n] for t in sorted_terms]
-        pos_vals = [[max(v, 0) for v in s] for s in values]
-        neg_vals = [[min(v, 0) for v in s] for s in values]
-        cmap = plt.get_cmap("tab20")
-        colors = [cmap(i % 20) for i in range(len(sorted_terms))]
+    steps = next(iter(deduped.values()))["steps"][:n]
+    sorted_terms = sorted(deduped, key=lambda t: reward_scales.get(t, 0.0), reverse=True)
+    xs = [steps] * len(sorted_terms)
+    ys = [deduped[t]["value"][:n] for t in sorted_terms]
 
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.stackplot(steps, pos_vals, labels=sorted_terms, colors=colors, alpha=0.8)
-        ax.stackplot(steps, neg_vals, colors=colors, alpha=0.8)
-        ax.axhline(0, color="black", linewidth=0.6)
-        ax.set_xlabel("training step")
-        ax.set_ylabel("episode reward contribution")
-        ax.set_title("Reward component contributions")
-        ax.legend(loc="upper left", fontsize="small", ncol=2)
-        fig.tight_layout()
-        charts["reward_contribution/stacked"] = wandb.Image(fig)
-        plt.close(fig)
-
-    return charts
+    return {
+        "episode/reward_contribution": wandb.plot.line_series(
+            xs=xs,
+            ys=ys,
+            keys=sorted_terms,
+            title="Reward component contributions",
+            xname="step",
+        )
+    }
 
   def progress(num_steps, metrics):
     times.append(time.monotonic())
