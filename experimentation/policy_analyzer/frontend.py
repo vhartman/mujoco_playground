@@ -56,35 +56,86 @@ def _render_frames(npz, mj_model, height: int = 360, width: int = 480) -> list:
     return render_array(mj_model, states, height=height, width=width, scene_option=scene_option)
 
 
-def update_root_index(analysis_dir: Path) -> None:
-    """Regenerate analysis/index.html as a landing page listing all available runs."""
-    runs = []
-    for d in analysis_dir.iterdir():
-        if not d.is_dir() or not (d / "index.html").exists():
-            continue
+def _load_run_meta(run_dir: Path) -> dict:
+    """Best-effort meta dict for a run dir, tried in priority order:
+    1. data.json (written by export_frontend — most complete)
+    2. rollout.npz id_* scalars (written by collect — always present)
+    Falls back gracefully; never raises.
+    """
+    data_json = run_dir / "data.json"
+    if data_json.exists():
+        try:
+            with open(data_json) as f:
+                return json.load(f).get("meta", {})
+        except Exception:
+            pass
+
+    npz_path = run_dir / "rollout.npz"
+    if not npz_path.exists():
+        return {}
+    try:
+        npz = np.load(npz_path, allow_pickle=False)
+        ckpt = str(npz["id_checkpoint"]) if "id_checkpoint" in npz.files else ""
         meta: dict = {}
+        if ckpt:
+            meta["checkpoint"] = ckpt
+            # Try to read sensor_bundle from the run's config.json
+            config_path = Path(ckpt).parent.parent / "checkpoints" / "config.json"
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        cfg = json.load(f)
+                    if "sensor_bundle" in cfg:
+                        meta["sensor_bundle"] = cfg["sensor_bundle"]
+                except Exception:
+                    pass
+        if "id_deterministic" in npz.files:
+            meta["deterministic"] = bool(npz["id_deterministic"])
+        if "obs" in npz.files:
+            meta["T"] = int(npz["obs"].shape[0])
+        elif "pre_squash" in npz.files:
+            meta["T"] = int(npz["pre_squash"].shape[0])
+        return meta
+    except Exception:
+        return {}
+
+
+def _run_tags(meta: dict) -> str:
+    """Build the grey detail string from a meta dict."""
+    ckpt = (meta.get("checkpoint") or "").replace("\\", "/").split("/")[-1]
+    parts = [
+        meta.get("sensor_bundle", ""),
+        f"ckpt {ckpt}" if ckpt else "",
+        f"T={meta['T']}" if "T" in meta else "",
+        "det" if meta.get("deterministic") else ("sto" if "deterministic" in meta else ""),
+    ]
+    return " / ".join(p for p in parts if p)
+
+
+def update_root_index(analysis_dir: Path) -> None:
+    """Regenerate analysis/index.html listing all subdirectories."""
+    runs = []
+    for d in sorted(analysis_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        meta = _load_run_meta(d)
+        npz_path = d / "rollout.npz"
         data_json = d / "data.json"
-        if data_json.exists():
-            try:
-                with open(data_json) as f:
-                    meta = json.load(f).get("meta", {})
-            except Exception:
-                pass
-        runs.append((d.name, meta, data_json.stat().st_mtime if data_json.exists() else 0))
+        mtime = (
+            data_json.stat().st_mtime if data_json.exists()
+            else npz_path.stat().st_mtime if npz_path.exists()
+            else d.stat().st_mtime
+        )
+        runs.append((d.name, meta, mtime, (d / "index.html").exists()))
 
     runs.sort(key=lambda r: r[2], reverse=True)
 
     rows = ""
-    for name, meta, _ in runs:
-        ckpt = (meta.get("checkpoint") or "").replace("\\", "/").split("/")[-1]
-        parts = [
-            meta.get("sensor_bundle", ""),
-            f"ckpt {ckpt}" if ckpt else "",
-            f"T={meta['T']}" if "T" in meta else "",
-            "det" if meta.get("deterministic") else ("sto" if "deterministic" in meta else ""),
-        ]
-        detail = " / ".join(p for p in parts if p)
+    for name, meta, _, has_frontend in runs:
+        detail = _run_tags(meta)
         rows += f'<li><a href="{name}/">{name}</a>'
+        if not has_frontend:
+            rows += ' <span class="no-fe">(no frontend)</span>'
         if detail:
             rows += f' <span class="d">{detail}</span>'
         rows += "</li>\n"
@@ -101,6 +152,7 @@ def update_root_index(analysis_dir: Path) -> None:
         "    a{color:#60a5fa;text-decoration:none}\n"
         "    a:hover{text-decoration:underline}\n"
         "    .d{color:#6b7280;margin-left:10px;font-size:11px}\n"
+        "    .no-fe{color:#9ca3af}\n"
         "  </style>\n"
         "</head>\n<body>\n"
         f"  <h1>Policy Analyzer — {len(runs)} run{'s' if len(runs) != 1 else ''}</h1>\n"

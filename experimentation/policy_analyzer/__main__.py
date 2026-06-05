@@ -36,17 +36,24 @@ def _run_plots(run_dir: Path, schema: dict | None = None, video: bool = False) -
 
 def _serve(analysis_dir: Path, port: int) -> None:
     frontend.update_root_index(analysis_dir)
-    handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler,
-        directory=str(analysis_dir),
-    )
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(analysis_dir), **kw)
+
+        def do_GET(self):
+            if self.path in ("/", "/index.html"):
+                frontend.update_root_index(analysis_dir)
+            super().do_GET()
+
+        def log_message(self, fmt, *args):  # suppress per-request noise
+            pass
+
     runs = [d.name for d in sorted(analysis_dir.iterdir())
-            if d.is_dir() and (d / "index.html").exists()] if analysis_dir.exists() else []
-    with http.server.HTTPServer(("", port), handler) as httpd:
+            if d.is_dir()] if analysis_dir.exists() else []
+    with http.server.HTTPServer(("", port), _Handler) as httpd:
         print(f"\nServing {analysis_dir}  ({len(runs)} run(s))")
         print(f"  Landing page:  http://localhost:{port}/")
-        for name in runs:
-            print(f"  {name}:  http://localhost:{port}/{name}/")
         print(f"\n  SSH tunnel:  ssh -L <local>:localhost:{port} <host>")
         print("  Ctrl-C to stop.\n")
         httpd.serve_forever()
