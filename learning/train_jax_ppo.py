@@ -600,6 +600,7 @@ def main(argv):
         xaxis_title="training step",
         yaxis_title="episode reward contribution",
         hovermode="x unified",
+        template="simple_white",
         xaxis=dict(rangeslider=dict(visible=False)),
     )
     return {"episode/reward_contribution": wandb.Plotly(fig)}
@@ -675,6 +676,7 @@ def main(argv):
           xaxis_title="training step",
           yaxis_title=dist_label,
           hovermode="x unified",
+        template="simple_white",
           xaxis=dict(rangeslider=dict(visible=False)),
       )
       # Use the same section prefix as the original scalars, e.g.

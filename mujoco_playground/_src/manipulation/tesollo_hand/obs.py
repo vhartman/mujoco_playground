@@ -29,6 +29,7 @@ class ObsComponent:
     fn: Callable   # (env, data, info) -> jax.Array
     size: int
     description: str
+    labels: tuple[str, ...] | None = None  # per-element names; len must == size
 
 
 _REGISTRY: dict[str, "ObsComponent"] = {}
@@ -37,6 +38,11 @@ _REGISTRY: dict[str, "ObsComponent"] = {}
 def register(component: ObsComponent) -> ObsComponent:
     if component.key in _REGISTRY:
         raise ValueError(f"Obs key {component.key!r} already registered.")
+    if component.labels is not None and len(component.labels) != component.size:
+        raise ValueError(
+            f"Obs key {component.key!r}: got {len(component.labels)} labels "
+            f"but size is {component.size}."
+        )
     _REGISTRY[component.key] = component
     return component
 
@@ -45,6 +51,12 @@ def get(key: str) -> ObsComponent:
     if key not in _REGISTRY:
         raise KeyError(f"Unknown obs key {key!r}. Registered: {sorted(_REGISTRY)}")
     return _REGISTRY[key]
+
+
+def element_labels(key: str) -> tuple[str, ...]:
+    """Per-element labels for a component; defaults to '<key>[i]' when unset."""
+    c = get(key)
+    return c.labels or tuple(f"{key}[{i}]" for i in range(c.size))
 
 
 SENSOR_BUNDLES: dict[str, tuple[str, ...]] = {
