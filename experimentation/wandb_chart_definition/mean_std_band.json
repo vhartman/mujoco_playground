@@ -1,0 +1,33 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "${string:title}",
+  "data": {"name": "wandb"},
+  "transform": [
+    {
+      "calculate": "datum['${field:mean}'] - datum['${field:std}']",
+      "as": "lower"
+    },
+    {
+      "calculate": "datum['${field:mean}'] + datum['${field:std}']",
+      "as": "upper"
+    }
+  ],
+  "encoding": {
+    "x": {"field": "${field:step}", "type": "quantitative", "title": "step"}
+  },
+  "layer": [
+    {
+      "mark": {"type": "area", "opacity": 0.25, "color": "#4472c4"},
+      "encoding": {
+        "y": {"field": "lower", "type": "quantitative", "title": "value"},
+        "y2": {"field": "upper"}
+      }
+    },
+    {
+      "mark": {"type": "line", "color": "#4472c4", "strokeWidth": 2},
+      "encoding": {
+        "y": {"field": "${field:mean}", "type": "quantitative"}
+      }
+    }
+  ]
+}

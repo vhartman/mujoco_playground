@@ -1,0 +1,30 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "${string:title}",
+  "data": {"name": "wandb"},
+  "transform": [
+    {
+      "fold": [
+        "${field:term1}",
+        "${field:term2}",
+        "${field:term3}",
+        "${field:term4}",
+        "${field:term5}",
+        "${field:term6}"
+      ],
+      "as": ["term", "value"]
+    },
+    {"filter": "datum.value != null && datum.value !== 0"}
+  ],
+  "mark": {"type": "area"},
+  "encoding": {
+    "x": {"field": "${field:step}", "type": "quantitative", "title": "step"},
+    "y": {
+      "field": "value",
+      "type": "quantitative",
+      "stack": "zero",
+      "title": "episode reward contribution"
+    },
+    "color": {"field": "term", "type": "nominal", "title": "term"}
+  }
+}

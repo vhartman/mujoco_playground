@@ -54,3 +54,56 @@ grouping (everything under `training/policy_dist_loc/` collapses into
 one line panel), so distribution evolution is already visible without
 any UI setup — the custom chart is just a nicer rendering of the same
 data.
+
+---
+
+## `mean_std_band.json`
+
+Mean ± std shaded band for any metric that has a `{key}` + `{key}_std`
+scalar pair. A single blue line with a translucent ±std band around it.
+
+Typical use: `eval/episode_reward` (mean) + `eval/episode_reward_std`.
+
+### Data flow
+
+No code changes needed — brax's built-in eval loop emits
+`eval/episode_reward` and `eval/episode_reward_std` as scalars at each
+evaluation step.
+
+### One-time setup in the W&B UI
+
+1. **Add panel → Custom Chart**, paste `mean_std_band.json`.
+2. Bind fields:
+   - `step` → `_step`
+   - `mean` → `eval/episode_reward`
+   - `std` → `eval/episode_reward_std`
+   - `title` → `"eval episode reward"`
+3. Save / duplicate for other mean+std pairs.
+
+---
+
+## `reward_contribution_area.json`
+
+Stacked area chart showing how much each reward term contributed per
+evaluation checkpoint. Positive terms stack upward from zero; negative
+terms (penalties) stack downward.
+
+Supports up to six terms (`term1`–`term6`). Leave unused term fields
+unbound — they are filtered out by the `null` check in the transform.
+
+### Data flow
+
+Each env's `step()` logs raw (unscaled) per-term rewards under
+`eval/episode_metrics/reward/{term_name}`. To show true contributions
+(accounting for scale) bind the **eval** metrics; to show raw
+maximization progress bind the same keys directly.
+
+### One-time setup in the W&B UI
+
+1. **Add panel → Custom Chart**, paste `reward_contribution_area.json`.
+2. Bind fields:
+   - `step` → `_step`
+   - `term1` → `eval/episode_metrics/reward/cube_ori` (or whichever terms apply)
+   - `term2`, `term3`, … → remaining active reward terms
+   - `title` → `"reward contribution"`
+3. Save as a project preset to reuse across runs.
