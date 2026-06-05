@@ -185,11 +185,13 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
 
 
 # Per-element label tuples shared by the generic hand-sensor components.
-# joint_pos/vel/motor_targets/deltas all index the 26 hand joints in JOINT_NAMES
-# order (identical to the actuator order). fingertip_pos is 5 tips × (x, y, z).
+# joint_pos/vel/motor_targets/deltas all index the 26 DOFs in actuator order;
+# ACTUATOR_NAMES encodes the axis (tx/ty/rz etc.) so are more readable than the
+# raw XML joint names. fingertip_pos is 5 tips × (x, y, z).
 _XYZ = ("x", "y", "z")
-_JOINT_LABELS = tuple(consts.JOINT_NAMES)
-_FINGERTIP_XYZ_LABELS = tuple(f"{n}_{a}" for n in consts.FINGERTIP_NAMES for a in _XYZ)
+_FINGER_ANAT = ("thumb", "index", "middle", "ring", "pinky")
+_JOINT_LABELS = tuple(consts.ACTUATOR_NAMES)
+_FINGERTIP_XYZ_LABELS = tuple(f"{f}_{a}" for f in _FINGER_ANAT for a in _XYZ)
 _PALM_LABELS = ("palm_x", "palm_y", "palm_z")
 
 # Register generic hand-sensor obs components using the methods above.

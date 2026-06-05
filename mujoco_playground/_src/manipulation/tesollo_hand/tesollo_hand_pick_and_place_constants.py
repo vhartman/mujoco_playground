@@ -74,39 +74,39 @@ JOINT_NAMES = [
 ]
 
 ACTUATOR_NAMES = [
-    "rj_wrist_0_1_a",
-    "rj_wrist_0_2_a",
-    "rj_wrist_0_3_a",
+    "wrist_tx",
+    "wrist_ty",
+    "wrist_tz",
 
-    "rj_wrist_1_1_a",
-    "rj_wrist_1_2_a",
-    "rj_wrist_1_3_a",
+    "wrist_rx",
+    "wrist_ry",
+    "wrist_rz",
 
     # thumb
-    "rj_dg_1_1_a",
-    "rj_dg_1_2_a",
-    "rj_dg_1_3_a",
-    "rj_dg_1_4_a",
+    "dg_1_j1_rx",
+    "dg_1_j2_rz",
+    "dg_1_j3_rx",
+    "dg_1_j4_rx",
     # index
-    "rj_dg_2_1_a",
-    "rj_dg_2_2_a",
-    "rj_dg_2_3_a",
-    "rj_dg_2_4_a",
+    "dg_2_j1_rx",
+    "dg_2_j2_ry",
+    "dg_2_j3_ry",
+    "dg_2_j4_ry",
     # middle
-    "rj_dg_3_1_a",
-    "rj_dg_3_2_a",
-    "rj_dg_3_3_a",
-    "rj_dg_3_4_a",
+    "dg_3_j1_rx",
+    "dg_3_j2_ry",
+    "dg_3_j3_ry",
+    "dg_3_j4_ry",
     # ring
-    "rj_dg_4_1_a",
-    "rj_dg_4_2_a",
-    "rj_dg_4_3_a",
-    "rj_dg_4_4_a",
+    "dg_4_j1_rx",
+    "dg_4_j2_ry",
+    "dg_4_j3_ry",
+    "dg_4_j4_ry",
     #pinky
-    "rj_dg_5_1_a",
-    "rj_dg_5_2_a",
-    "rj_dg_5_3_a",
-    "rj_dg_5_4_a",
+    "dg_5_j1_rz",
+    "dg_5_j2_rx",
+    "dg_5_j3_ry",
+    "dg_5_j4_ry",
 ]
 
 FINGERTIP_NAMES = [
