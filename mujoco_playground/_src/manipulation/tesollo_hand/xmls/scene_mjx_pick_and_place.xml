@@ -29,38 +29,38 @@
   </worldbody>
 
   <actuator>
-    <position kp="400" kv="100" name="rj_wrist_0_1_a" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="rj_wrist_0_2_a" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="rj_wrist_0_3_a" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
 
-    <position kp="5"  kv="1" name="rj_wrist_1_1_a" joint="rj_wrist_1_1" ctrlrange="-1.6 1.6"/>
-    <position kp="10" kv="1" name="rj_wrist_1_2_a" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
-    <position kp="10" kv="1" name="rj_wrist_1_3_a" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
+    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
 
-    <position kp="3" name="rj_dg_1_1_a" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
-    <position kp="3" name="rj_dg_1_2_a" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
-    <position kp="3" name="rj_dg_1_3_a" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
-    <position kp="3" name="rj_dg_1_4_a" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_1_j1_rx" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="dg_1_j2_rz" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="dg_1_j3_rx" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_1_j4_rx" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
 
-    <position kp="3" name="rj_dg_2_1_a" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
-    <position kp="3" name="rj_dg_2_2_a" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
-    <position kp="3" name="rj_dg_2_3_a" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
-    <position kp="3" name="rj_dg_2_4_a" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_2_j1_rx" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="dg_2_j2_ry" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="dg_2_j3_ry" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_2_j4_ry" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
 
-    <position kp="3" name="rj_dg_3_1_a" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
-    <position kp="3" name="rj_dg_3_2_a" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
-    <position kp="3" name="rj_dg_3_3_a" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
-    <position kp="3" name="rj_dg_3_4_a" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_3_j1_rx" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="dg_3_j2_ry" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="dg_3_j3_ry" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_3_j4_ry" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
 
-    <position kp="3" name="rj_dg_4_1_a" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
-    <position kp="3" name="rj_dg_4_2_a" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
-    <position kp="3" name="rj_dg_4_3_a" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
-    <position kp="3" name="rj_dg_4_4_a" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_4_j1_rx" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="dg_4_j2_ry" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="dg_4_j3_ry" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_4_j4_ry" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
 
-    <position kp="3" name="rj_dg_5_1_a" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
-    <position kp="3" name="rj_dg_5_2_a" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
-    <position kp="3" name="rj_dg_5_3_a" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
-    <position kp="3" name="rj_dg_5_4_a" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_5_j1_rz" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="dg_5_j2_rx" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="dg_5_j3_ry" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_5_j4_ry" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
   </actuator>
 
   <sensor>
