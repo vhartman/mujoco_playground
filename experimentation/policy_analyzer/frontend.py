@@ -122,7 +122,7 @@ def export_frontend(
     """
     import PIL.Image
     from experimentation.policy_analyzer.collect import load_env_from_checkpoint
-    from mujoco_playground._src.manipulation.tesollo_hand import io_schema as _io
+    from experimentation.policy_analyzer import io_schema as _io
 
     npz = np.load(run_dir / "rollout.npz", allow_pickle=False)
 

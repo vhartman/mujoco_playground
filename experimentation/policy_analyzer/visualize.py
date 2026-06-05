@@ -30,7 +30,7 @@ def rebuild_schema(npz) -> dict:
     from the npz, keeping the npz minimal.
     """
     from experimentation.policy_analyzer.collect import load_env_from_checkpoint
-    from mujoco_playground._src.manipulation.tesollo_hand import io_schema
+    from experimentation.policy_analyzer import io_schema
 
     env_name, cfg, env = load_env_from_checkpoint(str(npz["id_checkpoint"]))
     return io_schema.build_io_schema(

@@ -36,7 +36,7 @@ from mujoco_playground import registry, wrapper  # noqa: E402
 from brax.training.acme import running_statistics  # noqa: E402
 from brax.training.agents.ppo import networks as ppo_networks  # noqa: E402
 from brax.training.agents.ppo import train as ppo  # noqa: E402
-from mujoco_playground._src.manipulation.tesollo_hand import io_schema  # noqa: E402
+from experimentation.policy_analyzer import io_schema  # noqa: E402
 
 
 def load_env_from_checkpoint(ckpt_str: str):

@@ -1,17 +1,3 @@
-# Copyright 2025 DeepMind Technologies Limited
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
 """I/O schema for Tesollo hand policies.
 
 Produces a JSON-serializable description of a policy's observation inputs and
@@ -19,7 +5,7 @@ action outputs: ordered named groups, each expanded into named elements with
 their offset into the flat obs/action vector. This is the contract shared by the
 rollout collector, the data analyzer, and the dashboard frontend.
 
-The schema is derived from the obs registry (`obs.py`) + the compiled MuJoCo
+The schema is derived from the obs registry (obs.py) + the compiled MuJoCo
 model, so Python and the env can never disagree about layout.
 """
 
@@ -131,7 +117,7 @@ def build_io_schema(
         g = output_groups[-1]
         g["elements"].append({
             "index": idx,
-            "label": name,   # name = mj_model.actuator(idx).name, now semantic
+            "label": name,
             "ctrl_range": [float(ctrl_range[idx, 0]), float(ctrl_range[idx, 1])],
         })
         g["size"] += 1
