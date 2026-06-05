@@ -664,15 +664,78 @@ def main(argv):
 
     return charts, suppress
 
+  _eval_histories: dict[str, dict] = {}
+
+  def _build_eval_charts(num_steps, metrics):
+    """Replace eval mean+std scalar pairs with plotly mean±std band charts.
+
+    Any eval metric that has a `{key}_std` counterpart is merged into a single
+    interactive band chart keyed at the mean's original path. Both the mean and
+    std scalars are suppressed so the eval section only shows band charts.
+    Metrics without a _std counterpart (e.g. avg_episode_length) are left as-is.
+    """
+    import plotly.graph_objects as go
+
+    # Find all eval mean/std pairs.
+    mean_keys = [
+        k for k in metrics
+        if k.startswith("eval/") and f"{k}_std" in metrics
+    ]
+
+    suppress = set()
+    for key in mean_keys:
+      std_key = f"{key}_std"
+      hist = _eval_histories.setdefault(key, {"steps": [], "mean": [], "std": []})
+      hist["steps"].append(num_steps)
+      hist["mean"].append(float(metrics[key]))
+      hist["std"].append(float(metrics[std_key]))
+      suppress.add(key)
+      suppress.add(std_key)
+
+    charts = {}
+    for key, hist in _eval_histories.items():
+      n = len(hist["steps"])
+      if n == 0:
+        continue
+      steps = hist["steps"]
+      mean = hist["mean"]
+      std = hist["std"]
+      upper = [m + s for m, s in zip(mean, std)]
+      lower = [m - s for m, s in zip(mean, std)]
+
+      fig = go.Figure()
+      fig.add_trace(go.Scatter(
+          x=steps, y=lower, mode="lines",
+          line=dict(width=0), showlegend=False, name="mean−std",
+      ))
+      fig.add_trace(go.Scatter(
+          x=steps, y=upper, mode="lines", line=dict(width=0),
+          fill="tonexty", fillcolor="rgba(68, 114, 196, 0.2)", name="±std",
+      ))
+      fig.add_trace(go.Scatter(
+          x=steps, y=mean, mode="lines",
+          line=dict(color="rgba(68, 114, 196, 1.0)", width=2), name="mean",
+      ))
+      label = key.split("/", 1)[1]
+      fig.update_layout(
+          title=label, xaxis_title="training step",
+          yaxis_title="value", hovermode="x unified",
+      )
+      charts[key] = wandb.Plotly(fig)
+
+    return charts, suppress
+
   def progress(num_steps, metrics):
     times.append(time.monotonic())
 
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
-      policy_charts, suppress = _build_policy_dist_charts(num_steps, metrics)
+      policy_charts, policy_suppress = _build_policy_dist_charts(num_steps, metrics)
+      eval_charts, eval_suppress = _build_eval_charts(num_steps, metrics)
+      suppress = policy_suppress | eval_suppress
       filtered = {k: v for k, v in metrics.items() if k not in suppress}
       wandb.log(
-          {**filtered, **_build_reward_charts(num_steps, metrics), **policy_charts},
+          {**filtered, **_build_reward_charts(num_steps, metrics), **policy_charts, **eval_charts},
           step=num_steps,
       )
 
