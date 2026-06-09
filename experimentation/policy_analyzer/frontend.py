@@ -193,6 +193,13 @@ def export_frontend(
         PIL.Image.fromarray(frame).save(frames_dir / f"frame_{i:04d}.png")
     print(f"Wrote {T} frames to {frames_dir}")
 
+    obs_arr = np.asarray(npz["obs"])
+    mt_group = next((g for g in schema["input_groups"] if g["key"] == "motor_targets"), None)
+    motor_targets = (
+        obs_arr[:, mt_group["start"]:mt_group["start"] + mt_group["size"]].tolist()
+        if mt_group is not None else None
+    )
+
     data = {
         "meta": {
             "env_name": env_name,
@@ -206,11 +213,12 @@ def export_frontend(
         },
         "input_groups": schema["input_groups"],
         "output_groups": schema["output_groups"],
-        "obs": np.asarray(npz["obs"]).tolist(),
+        "obs": obs_arr.tolist(),
         "dof": {
-            "pre_squash":   np.asarray(npz["pre_squash"]).tolist(),
-            "action_scale": np.asarray(npz["action_scale"]).tolist(),
-            "command":      np.asarray(npz["command"]).tolist(),
+            "pre_squash":    np.asarray(npz["pre_squash"]).tolist(),
+            "action_scale":  np.asarray(npz["action_scale"]).tolist(),
+            "command":       np.asarray(npz["command"]).tolist(),
+            "motor_targets": motor_targets,
         },
     }
     data_path = run_dir / "data.json"

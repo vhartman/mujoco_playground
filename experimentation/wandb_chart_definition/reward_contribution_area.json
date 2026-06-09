@@ -1,16 +1,29 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "title": "${string:title}",
+  "title": "Reward term contributions",
   "data": {"name": "wandb"},
   "transform": [
     {
       "fold": [
-        "${field:term1}",
-        "${field:term2}",
-        "${field:term3}",
-        "${field:term4}",
-        "${field:term5}",
-        "${field:term6}"
+        "episode/reward/action_rate",
+        "episode/reward/cube_ang_vel",
+        "episode/reward/cube_at_goal",
+        "episode/reward/cube_dropped",
+        "episode/reward/cube_height",
+        "episode/reward/cube_lin_vel",
+        "episode/reward/cube_on_floor",
+        "episode/reward/cube_ori",
+        "episode/reward/cube_pos",
+        "episode/reward/cube_target_pos",
+        "episode/reward/energy",
+        "episode/reward/fingertip_pos",
+        "episode/reward/hand_table_collision",
+        "episode/reward/height",
+        "episode/reward/joint_vel",
+        "episode/reward/palm_pos",
+        "episode/reward/success",
+        "episode/reward/termination",
+        "episode/reward/wrist_vel"
       ],
       "as": ["term", "value"]
     },
@@ -18,7 +31,7 @@
   ],
   "mark": {"type": "area"},
   "encoding": {
-    "x": {"field": "${field:step}", "type": "quantitative", "title": "step"},
+    "x": {"field": "_step", "type": "quantitative", "title": "step"},
     "y": {
       "field": "value",
       "type": "quantitative",

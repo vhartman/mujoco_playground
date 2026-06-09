@@ -156,7 +156,7 @@ def _rollout_step(inference_fn, loc_scale_fn, env, carry, _):
     action        — post-tanh policy output in [-1, 1]
     pre_squash    — Normal mean (loc), unbounded; saturation shows here
     action_scale  — Normal std (scale = softplus(raw)+0.001), pre-tanh space
-    command       — clipped motor target in radians (next_state.data.ctrl)
+    command       — raw action delta = action * action_scale (next_state.info["action_delta"])
     traj_*        — MuJoCo data fields needed for rendering
     metrics       — env reward terms / counters
     """
@@ -170,7 +170,7 @@ def _rollout_step(inference_fn, loc_scale_fn, env, carry, _):
         "action": act,
         "pre_squash": loc,
         "action_scale": scale,
-        "command": next_state.data.ctrl,
+        "command": next_state.info["action_delta"],
         # render fields from the state BEFORE the step (consistent with obs)
         "traj_qpos": state.data.qpos,
         "traj_qvel": state.data.qvel,

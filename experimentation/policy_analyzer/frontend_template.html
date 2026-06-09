@@ -63,6 +63,8 @@
 
     .group-content { padding: 4px 6px 6px; }
     .chart-div { width: 100%; cursor: crosshair; }
+    .chart-row { display: flex; gap: 4px; }
+    .chart-row .chart-div { flex: 1; min-width: 0; width: auto; }
     .section-label {
       font-size: 10px; color: var(--muted); letter-spacing: 0.12em;
       padding: 10px 4px 3px; text-transform: uppercase;
@@ -267,10 +269,18 @@
   }
 
   // ── output group builder ───────────────────────────────────────────────────
+  // Layout per group:
+  //   Row 0 (full width):  pre-squash (loc ± σ)
+  //   Row 1 (side-by-side): [command delta (rad)] | [motor target (rad)]
+  //   Row 2 (side-by-side): [target error (rad)]  | [joint pos (rad)]
+  // Rows 1-2 require D.dof.motor_targets and joint_pos in obs.
 
   function buildGroup(container, group, gi) {
-    const tArr = Array.from({ length: D.meta.T }, (_, i) => i * D.meta.dt);
-    const tEnd = (D.meta.T - 1) * D.meta.dt;
+    const tArr  = Array.from({ length: D.meta.T }, (_, i) => i * D.meta.dt);
+    const tEnd  = (D.meta.T - 1) * D.meta.dt;
+    const hasMt = D.dof.motor_targets != null;
+    const jpStart = obsGroupStart('joint_pos');
+    const show2x2 = hasMt && jpStart != null;
 
     const details = document.createElement('details');
     const summary = document.createElement('summary');
@@ -280,110 +290,139 @@
     const content = document.createElement('div');
     content.className = 'group-content';
 
-    const psId  = 'ps-g'  + gi;
-    const cmdId = 'cmd-g' + gi;
-
-    const psDiv  = makeChartDiv(psId);
-    const cmdDiv = makeChartDiv(cmdId);
+    // Pre-squash (full width)
+    const psId  = 'ps-g' + gi;
+    const psDiv = makeChartDiv(psId);
     content.appendChild(psDiv);
-    content.appendChild(cmdDiv);
+
+    // 2×2 rows
+    let cdDiv, mtDiv, mdDiv, jpDiv, cdId, mtId, mdId, jpId;
+    if (show2x2) {
+      const row1 = makeRow();
+      cdId = 'cd-g' + gi; cdDiv = makeChartDiv(cdId);
+      mtId = 'mt-g' + gi; mtDiv = makeChartDiv(mtId);
+      row1.appendChild(cdDiv); row1.appendChild(mtDiv);
+      content.appendChild(row1);
+
+      const row2 = makeRow();
+      mdId = 'md-g' + gi; mdDiv = makeChartDiv(mdId);
+      jpId = 'jp-g' + gi; jpDiv = makeChartDiv(jpId);
+      row2.appendChild(mdDiv); row2.appendChild(jpDiv);
+      content.appendChild(row2);
+    }
+
     details.appendChild(content);
     container.appendChild(details);
 
-    // ── pre-squash chart ──────────────────────────────────────────────────
-    // Trace layout per DOF i:  index 2*i = band (no legend),  2*i+1 = loc line
+    // ── pre-squash (loc ± σ, full width) ─────────────────────────────────
+    // Trace layout: 2*i = band, 2*i+1 = loc line
     const psTraces = [];
     group.elements.forEach((el, i) => {
       const c   = COLORS[i % COLORS.length];
       const loc = D.dof.pre_squash.map(row => row[el.index]);
       const scl = D.dof.action_scale.map(row => row[el.index]);
-      const hi  = loc.map((v, ti) => v + scl[ti]);
-      const lo  = loc.map((v, ti) => v - scl[ti]);
-      psTraces.push({                                          // 2*i  — band
+      psTraces.push({                                          // 2*i — band
         x: tArr.concat(tArr.slice().reverse()),
-        y: hi.concat(lo.slice().reverse()),
+        y: loc.map((v, t) => v + scl[t]).concat(loc.map((v, t) => v - scl[t]).reverse()),
         fill: 'toself', fillcolor: withAlpha(c, 0.12),
         line: { width: 0 }, type: 'scatter', mode: 'none',
         showlegend: false, hoverinfo: 'skip',
       });
       psTraces.push({                                          // 2*i+1 — loc line
         x: tArr, y: loc, name: el.label,
-        line: { color: c, width: 1.5 },
-        type: 'scatter', mode: 'lines',
+        line: { color: c, width: 1.5 }, type: 'scatter', mode: 'lines',
       });
     });
-
-    const sat = D.meta.tanh_sat;
-    const psBase = [
-      hline(0, tEnd, +sat, '#fb923c', 'dot'),
-      hline(0, tEnd, -sat, '#fb923c', 'dot'),
-    ];
+    const sat    = D.meta.tanh_sat;
+    const psBase = [hline(0, tEnd, +sat, '#fb923c', 'dot'), hline(0, tEnd, -sat, '#fb923c', 'dot')];
     BASE_SHAPES[psId] = psBase;
     Plotly.newPlot(psId, psTraces, chartLayout(group.key + ' — pre-squash (loc ± σ)', psBase), cfg());
     psDiv.addEventListener('mousedown', e => onChartMouseDown(e, psDiv), { capture: true });
-
-    // When a loc line is toggled in the legend, mirror the visibility to its band.
     psDiv.on('plotly_legendclick', function(ev) {
-      const locIdx = ev.curveNumber;
-      const doi    = Math.floor(locIdx / 2);
-      const bandIdx = doi * 2;
-      const hiding  = psDiv.data[locIdx].visible !== 'legendonly';
-      Plotly.restyle(psDiv, { visible: hiding ? 'legendonly' : true }, [bandIdx]);
-      return true;  // let Plotly toggle the loc line too
-    });
-    psDiv.on('plotly_legenddoubleclick', () => false);  // disable isolate-one-trace
-
-    // ── command chart ─────────────────────────────────────────────────────
-    // Trace layout per DOF i:  3*i = cmd line,  3*i+1 = lo rail,  3*i+2 = hi rail
-    // Ctrl-range rails are traces (not shapes) so they can be toggled with the legend.
-    const cmdTraces = [];
-    group.elements.forEach((el, i) => {
-      const c = COLORS[i % COLORS.length];
-      cmdTraces.push({                                         // 3*i — cmd line
-        x: tArr,
-        y: D.dof.command.map(row => row[el.index]),
-        name: el.label,
-        line: { color: c, width: 1.5 },
-        type: 'scatter', mode: 'lines',
-      });
-      const hasRange = el.ctrl_range && el.ctrl_range.length === 2;
-      cmdTraces.push({                                         // 3*i+1 — lo rail
-        x: hasRange ? [tArr[0], tEnd] : [],
-        y: hasRange ? [el.ctrl_range[0], el.ctrl_range[0]] : [],
-        line: { color: c, width: 0.7, dash: 'dash' },
-        type: 'scatter', mode: 'lines',
-        showlegend: false, hoverinfo: 'skip',
-      });
-      cmdTraces.push({                                         // 3*i+2 — hi rail
-        x: hasRange ? [tArr[0], tEnd] : [],
-        y: hasRange ? [el.ctrl_range[1], el.ctrl_range[1]] : [],
-        line: { color: c, width: 0.7, dash: 'dash' },
-        type: 'scatter', mode: 'lines',
-        showlegend: false, hoverinfo: 'skip',
-      });
-    });
-
-    BASE_SHAPES[cmdId] = [];  // no static shapes; only the vline is added dynamically
-    Plotly.newPlot(cmdId, cmdTraces, chartLayout(group.key + ' — command (rad)', []), cfg());
-    cmdDiv.addEventListener('mousedown', e => onChartMouseDown(e, cmdDiv), { capture: true });
-
-    // When a cmd line is toggled in the legend, mirror visibility to its lo/hi rails.
-    cmdDiv.on('plotly_legendclick', function(ev) {
-      const cmdIdx = ev.curveNumber;
-      const doi    = Math.floor(cmdIdx / 3);
-      const loIdx  = doi * 3 + 1;
-      const hiIdx  = doi * 3 + 2;
-      const hiding = cmdDiv.data[cmdIdx].visible !== 'legendonly';
-      Plotly.restyle(cmdDiv, { visible: hiding ? 'legendonly' : true }, [loIdx, hiIdx]);
+      const doi = Math.floor(ev.curveNumber / 2);
+      const hiding = psDiv.data[ev.curveNumber].visible !== 'legendonly';
+      Plotly.restyle(psDiv, { visible: hiding ? 'legendonly' : true }, [doi * 2]);
       return true;
     });
-    cmdDiv.on('plotly_legenddoubleclick', () => false);
+    psDiv.on('plotly_legenddoubleclick', () => false);
 
-    // Resize on open (Plotly can't measure hidden divs)
+    if (!show2x2) {
+      details.addEventListener('toggle', () => { if (details.open) Plotly.Plots.resize(psDiv); });
+      return;
+    }
+
+    // Helper: build traces with ctrl_range rails (3*i layout)
+    function railTraces(yFn) {
+      const traces = [];
+      group.elements.forEach((el, i) => {
+        const c = COLORS[i % COLORS.length];
+        traces.push({ x: tArr, y: yFn(el), name: el.label,
+          line: { color: c, width: 1.5 }, type: 'scatter', mode: 'lines' });
+        const hr = el.ctrl_range && el.ctrl_range.length === 2;
+        traces.push({ x: hr ? [tArr[0], tEnd] : [], y: hr ? [el.ctrl_range[0], el.ctrl_range[0]] : [],
+          line: { color: c, width: 0.7, dash: 'dash' }, type: 'scatter', mode: 'lines',
+          showlegend: false, hoverinfo: 'skip' });
+        traces.push({ x: hr ? [tArr[0], tEnd] : [], y: hr ? [el.ctrl_range[1], el.ctrl_range[1]] : [],
+          line: { color: c, width: 0.7, dash: 'dash' }, type: 'scatter', mode: 'lines',
+          showlegend: false, hoverinfo: 'skip' });
+      });
+      return traces;
+    }
+
+    function railLegendClick(div) {
+      div.on('plotly_legendclick', function(ev) {
+        const doi = Math.floor(ev.curveNumber / 3);
+        const hiding = div.data[ev.curveNumber].visible !== 'legendonly';
+        Plotly.restyle(div, { visible: hiding ? 'legendonly' : true }, [doi*3+1, doi*3+2]);
+        return true;
+      });
+      div.on('plotly_legenddoubleclick', () => false);
+    }
+
+    // ── command delta ─────────────────────────────────────────────────────
+    const cdTraces = group.elements.map((el, i) => ({
+      x: tArr,
+      y: D.dof.command.map(row => row[el.index]),
+      name: el.label,
+      line: { color: COLORS[i % COLORS.length], width: 1.5 },
+      type: 'scatter', mode: 'lines',
+    }));
+    BASE_SHAPES[cdId] = [];
+    Plotly.newPlot(cdId, cdTraces, chartLayout(group.key + ' — command delta (rad)', []), cfg());
+    cdDiv.addEventListener('mousedown', e => onChartMouseDown(e, cdDiv), { capture: true });
+    cdDiv.on('plotly_legenddoubleclick', () => false);
+
+    // ── motor target (absolute) ───────────────────────────────────────────
+    BASE_SHAPES[mtId] = [];
+    Plotly.newPlot(mtId, railTraces(el => D.dof.motor_targets.map(row => row[el.index])),
+      chartLayout(group.key + ' — motor target (rad)', []), cfg());
+    mtDiv.addEventListener('mousedown', e => onChartMouseDown(e, mtDiv), { capture: true });
+    railLegendClick(mtDiv);
+
+    // ── target error (motor target − joint pos) ───────────────────────────
+    const mdTraces = group.elements.map((el, i) => ({
+      x: tArr,
+      y: D.dof.motor_targets.map((row, t) => row[el.index] - D.obs[t][jpStart + el.index]),
+      name: el.label,
+      line: { color: COLORS[i % COLORS.length], width: 1.5 },
+      type: 'scatter', mode: 'lines',
+    }));
+    BASE_SHAPES[mdId] = [];
+    Plotly.newPlot(mdId, mdTraces, chartLayout(group.key + ' — target error (rad)', []), cfg());
+    mdDiv.addEventListener('mousedown', e => onChartMouseDown(e, mdDiv), { capture: true });
+    mdDiv.on('plotly_legenddoubleclick', () => false);
+
+    // ── joint pos (actual) ────────────────────────────────────────────────
+    BASE_SHAPES[jpId] = [];
+    Plotly.newPlot(jpId, railTraces(el => D.obs.map(row => row[jpStart + el.index])),
+      chartLayout(group.key + ' — joint pos (rad)', []), cfg());
+    jpDiv.addEventListener('mousedown', e => onChartMouseDown(e, jpDiv), { capture: true });
+    railLegendClick(jpDiv);
+
+    // Resize on open
     details.addEventListener('toggle', () => {
       if (details.open) {
-        Plotly.Plots.resize(psDiv);
-        Plotly.Plots.resize(cmdDiv);
+        [psDiv, cdDiv, mtDiv, mdDiv, jpDiv].forEach(d => Plotly.Plots.resize(d));
       }
     });
   }
@@ -394,6 +433,17 @@
     const d = document.createElement('div');
     d.id = id; d.className = 'chart-div'; d.style.height = '170px';
     return d;
+  }
+
+  function obsGroupStart(key) {
+    const g = D.input_groups.find(g => g.key === key);
+    return g != null ? g.start : null;
+  }
+
+  function makeRow() {
+    const r = document.createElement('div');
+    r.className = 'chart-row';
+    return r;
   }
 
   function hline(x0, x1, y, color, dash, width) {
