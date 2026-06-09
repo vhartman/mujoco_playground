@@ -383,6 +383,7 @@ class GraspBase(TesolloHandGraspEnv, abc.ABC):
             "last_act": jp.zeros(self.mjx_model.nu),
             "last_last_act": jp.zeros(self.mjx_model.nu),
             "motor_targets": data.ctrl,
+            "action_delta": jp.zeros(self.mjx_model.nu),
             "qpos_error_history": jp.zeros(self._config.history_len * consts.NQ),
             "cube_pos_error_history": jp.zeros(self._config.history_len * 3),
             "cube_ori_error_history": jp.zeros(self._config.history_len * 6),
@@ -410,6 +411,7 @@ class GraspBase(TesolloHandGraspEnv, abc.ABC):
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
         delta = action * self._config.action_scale
+        state.info["action_delta"] = delta
         motor_targets = state.data.ctrl + delta
         motor_targets = jp.clip(motor_targets, self._lowers, self._uppers)
         motor_targets = (

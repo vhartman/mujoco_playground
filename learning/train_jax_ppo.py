@@ -525,7 +525,7 @@ def main(argv):
 
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
-      wandb.log({**metrics}, step=num_steps)
+      wandb.log(metrics, step=num_steps)
 
     # Log to TensorBoard
     if _USE_TB.value and not _PLAY_ONLY.value:

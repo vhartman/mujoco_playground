@@ -65,12 +65,12 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos=1.0,
-                cube_ori=4.0,
+                fingertip_pos=1.5,
+                cube_ori=2.0,
                 joint_vel=-0.002,
                 wrist_vel=-0.02,
-                action_rate=0.0,
-                cube_on_floor=0.0,
+                action_rate=-0.5,
+                cube_on_floor=-0.5,
             ),
             success_reward=5.0,
         ),
@@ -100,6 +100,16 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     """
 
     _TASK_KEYS: tuple[str, ...] = ("goal_quat",)
+    _TIP_FORCE_SCALE: float = 10.0
+    _ORI_TOLERANCE_RAD: float = 3.0 * jp.pi / 180.0
+    _VEL_TOLERANCE: float = 0.3
+    _TIP_FORCE_SENSORS: list[str] = [
+        "rl_dg_1_tip_cube_force",
+        "rl_dg_2_tip_cube_force",
+        "rl_dg_3_tip_cube_force",
+        "rl_dg_4_tip_cube_force",
+        "rl_dg_5_tip_cube_force",
+    ]
 
     def _task_obs_keys(self) -> tuple[str, ...]:
         return self._TASK_KEYS
@@ -156,6 +166,15 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._cube_geom_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
+        # Weight of the cube (N), used to normalize the floor-support penalty:
+        # when the floor bears the cube's full weight the penalty saturates at 1.
+        g = float(np.linalg.norm(self._mj_model.opt.gravity))
+        self._cube_weight = float(self._cube_mass) * g
+        ctrl_span = (
+            self._mj_model.actuator_ctrlrange[:, 1]
+            - self._mj_model.actuator_ctrlrange[:, 0]
+        )
+        self._joint_max_vel = jp.array(ctrl_span)
         non_hand_bodies = {"world", "cube", "goal"}
         self._hand_geom_ids = jp.array([
             g for g in range(self._mj_model.ngeom)
@@ -239,6 +258,8 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             "success_count": 0,
             "at_target_step_counter": jp.zeros((), dtype=jp.int32),
             "motor_targets": data.ctrl,
+            "action_delta": jp.zeros(self.mj_model.nu),
+            "last_action": jp.zeros(self.mj_model.nu),
             "goal_quat": goal_quat,
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
@@ -249,9 +270,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         metrics = {}
         for k in self._config.reward_config.scales.keys():
-            metrics[f"reward/{k}"] = jp.zeros(())
-        metrics["reward/success"] = jp.zeros((), dtype=float)
+            metrics[f"reward/{k}_per_step"] = jp.zeros(())
+        metrics["reward/success_per_step"] = jp.zeros((), dtype=float)
         metrics["success_count"] = jp.zeros((), dtype=float)
+        metrics["floor_support_fraction"] = jp.zeros((), dtype=float)
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -262,6 +284,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
         delta = action * self._config.action_scale
+        state.info["action_delta"] = delta
         motor_targets = jp.clip(state.data.ctrl + delta, self._lowers, self._uppers)
         motor_targets = (
             self._config.ema_alpha * motor_targets
@@ -286,6 +309,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         done = self._get_termination(data)
         obs = self._get_obs(data, state.info)
         raw_rewards = self._get_reward(data, state.info, action)
+        state.info["last_action"] = action
         scaled_rewards = {k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()}
 
         state.info["steps_since_last_success"] = jp.where(
@@ -298,9 +322,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         )
         state.metrics["success_count"] = success.astype(float)
         state.info["step"] += 1
-        state.metrics["reward/success"] = success.astype(float)
+        state.metrics["reward/success_per_step"] = success.astype(float)
         for k, v in raw_rewards.items():
-            state.metrics[f"reward/{k}"] = v
+            state.metrics[f"reward/{k}_per_step"] = v
+        state.metrics["floor_support_fraction"] = self._cube_floor_support_fraction(data)
 
         rew = sum(scaled_rewards.values()) * self.dt
         done = done.astype(rew.dtype)
@@ -320,27 +345,33 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         )
 
     @staticmethod
-    def r_joint_vel(hand_qvel: jax.Array) -> jax.Array:
-        vel_tolerance = 0.3
-        max_velocity = 0.8
+    def r_joint_vel(
+        hand_qvel: jax.Array, max_velocity: jax.Array, vel_tolerance: float
+    ) -> jax.Array:
+        active = max_velocity > vel_tolerance
         excess = jp.maximum(0.0, jp.abs(hand_qvel) - vel_tolerance)
-        return jp.sum((excess / (max_velocity - vel_tolerance)) ** 2)
+        denom = jp.where(active, max_velocity - vel_tolerance, 1.0)
+        return jp.mean(jp.where(active, (excess / denom) ** 2, 0.0))
 
     @staticmethod
-    def r_wrist_vel(wrist_qvel: jax.Array) -> jax.Array:
-        return jp.sum(jp.square(wrist_qvel))
+    def r_wrist_vel(wrist_qvel: jax.Array, max_velocity: jax.Array) -> jax.Array:
+        return jp.mean((wrist_qvel / jp.maximum(max_velocity, 1e-6)) ** 2)
 
     @staticmethod
     def r_cube_orientation(ori_error: jax.Array, tolerance_rad: float) -> jax.Array:
         return reward.tolerance(ori_error, (0, tolerance_rad), margin=1.0, sigmoid="gaussian")
 
     @staticmethod
-    def r_cube_on_floor(cube_on_floor: jax.Array) -> jax.Array:
-        return cube_on_floor.astype(float)
+    def r_cube_on_floor(floor_support_fraction: jax.Array) -> jax.Array:
+        # Continuous penalty in [0, 1]: the fraction of the cube's weight that
+        # the floor is currently supporting (vertical cube-floor contact force
+        # normalized by the cube's weight). Zero when the cube is fully held by
+        # the hand, growing to 1 as it comes to rest on the floor.
+        return floor_support_fraction
 
     @staticmethod
-    def r_action_rate(action: jax.Array) -> jax.Array:
-        return jp.sum(jp.square(action))
+    def r_action_rate(action: jax.Array, prev_action: jax.Array) -> jax.Array:
+        return jp.mean(jp.square(action - prev_action))
 
     def _get_reward(
         self,
@@ -350,23 +381,35 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     ) -> dict[str, jax.Array]:
         cube_pos = self.get_cube_position(data)
         cube_ori_error = self._cube_orientation_error(data)
-        cube_on_floor = self._cube_in_contact_with_floor(data)
-        cube_off_floor = (~cube_on_floor).astype(float)
+        floor_support_fraction = self._cube_floor_support_fraction(data)
+        # Smooth lift gate in [0, 1]: 0 while the cube rests fully on the floor,
+        # ramping to 1 as the hand takes its weight. Replaces a hard on/off
+        # contact flag so the orientation reward fades in continuously instead of
+        # snapping, which removes a discontinuity in the return.
+        lift_gate = 1.0 - floor_support_fraction
 
         fingertip_distances = jp.linalg.norm(
             self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos, axis=1
         )
-        fingertip_reward = jp.sum(
+        fingertip_reward = jp.mean(
             self.r_fingertip_pos_per_tip(fingertip_distances, self._geom.cube_half_size)
         )
 
         return {
             "fingertip_pos": fingertip_reward,
-            "cube_ori": cube_off_floor * self.r_cube_orientation(cube_ori_error, self._ORI_TOLERANCE_RAD),
-            "joint_vel": self.r_joint_vel(data.qvel[self._hand_dqids]),
-            "wrist_vel": self.r_wrist_vel(data.qvel[self._wrist_dqids]),
-            "action_rate": self.r_action_rate(action),
-            "cube_on_floor": self.r_cube_on_floor(cube_on_floor),
+            # Reward matching the target orientation in proportion to how much
+            # the cube has been lifted off the floor, so the policy can't farm
+            # orientation reward while the cube is still resting on the ground.
+            "cube_ori": lift_gate
+            * self.r_cube_orientation(cube_ori_error, self._ORI_TOLERANCE_RAD),
+            "joint_vel": self.r_joint_vel(
+                data.qvel[self._hand_dqids], self._joint_max_vel, self._VEL_TOLERANCE
+            ),
+            "wrist_vel": self.r_wrist_vel(
+                data.qvel[self._wrist_dqids], self._joint_max_vel[:6]
+            ),
+            "action_rate": self.r_action_rate(action, info["last_action"]),
+            "cube_on_floor": self.r_cube_on_floor(floor_support_fraction),
         }
 
     # ------------------------------------------------------------------
@@ -379,17 +422,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
         quat_diff = math.normalize(quat_diff)
         return 2.0 * jp.asin(jp.clip(jp.linalg.norm(quat_diff[1:]), max=1.0))
-
-    _TIP_FORCE_SCALE = 10.0
-    _ORI_TOLERANCE_RAD = 5.0 * jp.pi / 180.0
-
-    _TIP_FORCE_SENSORS = [
-        "rl_dg_1_tip_cube_force",
-        "rl_dg_2_tip_cube_force",
-        "rl_dg_3_tip_cube_force",
-        "rl_dg_4_tip_cube_force",
-        "rl_dg_5_tip_cube_force",
-    ]
 
     def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         forces = jp.array([
@@ -441,13 +473,43 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             g = impl.contact__geom
             return g[:, 0], g[:, 1]
 
-    def _cube_in_contact_with_floor(self, data: mjx.Data) -> jax.Array:
+    def _contact_dist(self, data: mjx.Data) -> jax.Array:
+        impl = data._impl
+        if hasattr(impl, 'contact'):
+            return impl.contact.dist
+        return impl.contact__dist
+
+    def _cube_floor_contact_mask(self, data: mjx.Data) -> jax.Array:
+        """Boolean mask over contacts that are active cube-floor touch points.
+
+        A contact slot counts only when it is a cube-floor geom pair *and* the
+        geoms are actually penetrating (``dist < 0``), which excludes the padded
+        / inactive slots in the fixed-size MJX contact buffer.
+        """
         g1, g2 = self._contact_geoms(data)
+        dist = self._contact_dist(data)
         floor_id, cube_id = self._floor_geom_id, self._cube_geom_id
-        return jp.any(
+        is_pair = (
             ((g1 == floor_id) & (g2 == cube_id))
             | ((g1 == cube_id) & (g2 == floor_id))
         )
+        return is_pair & (dist < 0.0)
+
+    def _cube_in_contact_with_floor(self, data: mjx.Data) -> jax.Array:
+        return jp.any(self._cube_floor_contact_mask(data))
+
+    def _cube_floor_support_fraction(self, data: mjx.Data) -> jax.Array:
+        """Fraction (in [0, 1]) of the cube's weight borne by the floor.
+
+        Reads the net cube-floor contact force (world frame) from the
+        ``cube_floor_force`` sensor and divides its vertical component by the
+        cube's weight, so it is 0 when the hand fully supports the cube and 1
+        once the floor takes its entire weight (clipped, since the hand can
+        briefly press the cube into the floor with more than its own weight).
+        """
+        net_force = mjx_env.get_sensor_data(self.mj_model, data, "cube_floor_force")
+        vertical_support = jp.abs(net_force[2])
+        return jp.minimum(vertical_support / self._cube_weight, 1.0)
 
     def _cube_lin_velocity(self, data: mjx.Data) -> jax.Array:
         return math.norm(self.get_cube_linvel(data))

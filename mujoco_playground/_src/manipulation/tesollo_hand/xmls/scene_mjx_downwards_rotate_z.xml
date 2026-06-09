@@ -29,8 +29,8 @@
     <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
 
     <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-0.1 0.1"/>
-    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
-    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-0.2 0.2"/>
+    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-0.2 0.2"/>
 
     <position kp="3" name="dg_1_j1_rx" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
     <position kp="3" name="dg_1_j2_rz" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
@@ -86,6 +86,9 @@
     <contact name="rl_dg_3_tip_cube_force" geom1="rl_dg_3_tip" geom2="cube" num="4" data="force"/>
     <contact name="rl_dg_4_tip_cube_force" geom1="rl_dg_4_tip" geom2="cube" num="4" data="force"/>
     <contact name="rl_dg_5_tip_cube_force" geom1="rl_dg_5_tip" geom2="cube" num="4" data="force"/>
+
+    <!-- net contact force between the cube and the floor (world frame). -->
+    <contact name="cube_floor_force" geom1="cube" geom2="floor" num="8" data="force" reduce="netforce"/>
   </sensor>
 
   <keyframe>
