@@ -96,6 +96,20 @@
   const BASE_SHAPES = {};   // divId -> static shapes (no vline)
   let dragDiv = null;       // chart div currently being dragged
 
+  // ── session back-link (when viewed inside a session) ─────────────────────
+  {
+    const parts = window.location.pathname.split('/');
+    const si = parts.indexOf('sessions');
+    if (si !== -1) {
+      const sid = parts[si + 1];
+      const a = document.createElement('a');
+      a.href = `/#sid=${sid}`;
+      a.textContent = '← Session';
+      a.style.cssText = 'position:fixed;top:8px;left:8px;color:#60a5fa;font-size:11px;z-index:200;text-decoration:none;background:#1f2937;padding:2px 8px;border-radius:3px;border:1px solid #374151';
+      document.body.appendChild(a);
+    }
+  }
+
   // ── data load ──────────────────────────────────────────────────────────────
 
   fetch('./data.json').then(r => r.json()).then(d => { D = d; init(); });

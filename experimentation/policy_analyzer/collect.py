@@ -67,7 +67,18 @@ def load_env_from_checkpoint(ckpt_str: str):
     return env_name, cfg, env
 
 
-def restore_policy(log_dir: Path):
+def list_checkpoints(log_dir: Path) -> list[str]:
+    """Return checkpoint step strings for a run, sorted ascending by step number."""
+    ckpt_dir = log_dir / "checkpoints"
+    if not ckpt_dir.exists():
+        return []
+    return sorted(
+        [d.name for d in ckpt_dir.iterdir() if d.is_dir()],
+        key=lambda s: int(s),
+    )
+
+
+def restore_policy(log_dir: Path, checkpoint_step: str | None = None):
     """Restore env + inference fn from a logs/<run> checkpoint dir.
 
     Mirrors eval_runs.eval_run's restore path (lines ~100-150) but returns the
@@ -91,7 +102,15 @@ def restore_policy(log_dir: Path):
     )
     if not ckpt_subdirs:
         raise FileNotFoundError(f"No checkpoint dirs in {ckpt_dir}")
-    restore_path = ckpt_subdirs[-1]
+
+    if checkpoint_step and checkpoint_step != "latest":
+        restore_path = ckpt_dir / checkpoint_step
+        if not restore_path.exists():
+            raise FileNotFoundError(
+                f"Checkpoint step {checkpoint_step} not found in {ckpt_dir}"
+            )
+    else:
+        restore_path = ckpt_subdirs[-1]
     print(f"Restoring from: {restore_path}")
 
     ppo_params = eval_runs._get_ppo_params(env_name, env_cfg.get("impl", "warp"))
@@ -200,16 +219,19 @@ def _make_loc_scale_fn(ppo_network, params):
     return loc_scale_fn
 
 
-def collect_rollout(log_dir: Path, seed: int = 1, deterministic: bool = True) -> dict:
-    """Restore the policy and run one rollout; return numpy arrays + meta + schema."""
-    h = restore_policy(log_dir)
-    eval_env = h["eval_env"]
-    episode_length = h["ppo_params"].episode_length
+def run_single_rollout(handles: dict, seed: int = 1, deterministic: bool = True) -> dict:
+    """Run one rollout using pre-restored policy handles.
+
+    Faster than collect_rollout for multiple rollouts from the same checkpoint
+    because it skips the expensive restore step.
+    """
+    eval_env = handles["eval_env"]
+    episode_length = handles["ppo_params"].episode_length
 
     inference_fn = jax.jit(
-        h["make_inference_fn"](h["params"], deterministic=deterministic)
+        handles["make_inference_fn"](handles["params"], deterministic=deterministic)
     )
-    loc_scale_fn = jax.jit(_make_loc_scale_fn(h["ppo_network"], h["params"]))
+    loc_scale_fn = jax.jit(_make_loc_scale_fn(handles["ppo_network"], handles["params"]))
     step_fn = functools.partial(_rollout_step, inference_fn, loc_scale_fn, eval_env)
 
     rng = jax.random.PRNGKey(seed)
@@ -235,24 +257,17 @@ def collect_rollout(log_dir: Path, seed: int = 1, deterministic: bool = True) ->
             f"{name} dim {arr.shape[1]} != env.action_size {eval_env.action_size}"
         )
 
-    # Schema is built live from the env; it is the single source of truth for
-    # labels/offsets and is rebuilt on demand (never persisted). The only bits
-    # not re-derivable from env code + existing run logs are the rollout choices
-    # (seed/deterministic) and the env identity needed to rebuild the env later,
-    # so those few scalars are embedded in the npz to keep it self-describing.
     schema = io_schema.build_io_schema(
         eval_env,
-        env_name=h["env_name"],
-        sensor_bundle=h["env_cfg"].sensor_bundle,
-        policy_hidden_layer_sizes=h["ppo_params"].network_factory.get(
+        env_name=handles["env_name"],
+        sensor_bundle=handles["env_cfg"].sensor_bundle,
+        policy_hidden_layer_sizes=handles["ppo_params"].network_factory.get(
             "policy_hidden_layer_sizes", None
         ),
     )
     identity = {
-        # env_name and sensor_bundle are NOT stored — they're derivable from
-        # checkpoint via load_env_from_checkpoint (logs/<run>/checkpoints/config.json).
-        "checkpoint": str(h["restore_path"]),
-        "dt": float(eval_env.dt),   # env property, not in config.json
+        "checkpoint": str(handles["restore_path"]),
+        "dt": float(eval_env.dt),
         "deterministic": bool(deterministic),
         "seed": int(seed),
     }
@@ -267,6 +282,12 @@ def collect_rollout(log_dir: Path, seed: int = 1, deterministic: bool = True) ->
         "identity": identity,
         **traj_fields,
     }
+
+
+def collect_rollout(log_dir: Path, seed: int = 1, deterministic: bool = True) -> dict:
+    """Restore the policy and run one rollout; return numpy arrays + meta + schema."""
+    handles = restore_policy(log_dir)
+    return run_single_rollout(handles, seed=seed, deterministic=deterministic)
 
 
 def write_artifacts(out_dir: Path, rollout: dict) -> Path:

@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Policy Analyzer</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js" charset="utf-8"></script>
+<style>
+  :root {
+    --bg:     #111827;
+    --panel:  #1f2937;
+    --border: #374151;
+    --text:   #f3f4f6;
+    --muted:  #9ca3af;
+    --blue:   #60a5fa;
+    --green:  #34d399;
+    --yellow: #fbbf24;
+    --red:    #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 12px/1.4 ui-monospace, monospace;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── header ── */
+  #hdr {
+    flex-shrink: 0;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0; padding: 0 12px;
+    height: 36px;
+  }
+  .logo { color: var(--muted); margin-right: 16px; font-size: 11px; }
+  .tab-btn {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); cursor: pointer; font: inherit; font-size: 12px;
+    padding: 0 12px; height: 36px; transition: color .15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--blue); }
+  #session-info {
+    margin-left: auto; color: var(--muted); font-size: 11px;
+  }
+
+  /* ── panes ── */
+  .pane { display: flex; flex: 1; min-height: 0; }
+
+  /* ── configure pane ── */
+  #pane-cfg {
+    flex-direction: column; padding: 28px 40px; overflow-y: auto;
+  }
+  .form-section { max-width: 440px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px;
+  }
+  .form-group select, .form-group input[type=number] {
+    width: 100%; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 8px; border-radius: 4px; font: inherit;
+    appearance: auto;
+  }
+  .form-row { display: flex; gap: 12px; }
+  .form-row .form-group { flex: 1; }
+  #run-btn {
+    background: #2563eb; color: #fff; border: none;
+    padding: 8px 22px; border-radius: 4px; cursor: pointer; font: inherit;
+    margin-top: 6px;
+  }
+  #run-btn:hover:not(:disabled) { background: #1d4ed8; }
+  #run-btn:disabled { background: var(--border); color: var(--muted); cursor: default; }
+
+  /* ── session pane ── */
+  #pane-ses {
+    display: none; flex-direction: row;
+  }
+  #ses-sidebar {
+    width: 190px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #ses-sidebar-top {
+    padding: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    display: flex; gap: 6px; align-items: center;
+  }
+  #ses-sidebar-top select {
+    flex: 1; min-width: 0;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 6px; border-radius: 3px; font: inherit;
+    font-size: 11px;
+  }
+  #del-btn {
+    flex-shrink: 0;
+    background: none; border: 1px solid var(--border); border-radius: 3px;
+    color: var(--muted); cursor: pointer; font: inherit; font-size: 12px;
+    padding: 3px 6px; line-height: 1;
+  }
+  #del-btn:hover { color: var(--red); border-color: var(--red); }
+  #rollout-list { flex: 1; overflow-y: auto; padding: 6px; }
+  .ritem {
+    padding: 4px 6px; margin: 1px 0; border-radius: 3px;
+    display: flex; align-items: center; gap: 6px; font-size: 11px;
+  }
+  .ritem a { color: inherit; text-decoration: none; }
+  .ritem a:hover { text-decoration: underline; }
+  .ritem.pending { color: var(--muted); }
+  .ritem.running { color: var(--yellow); }
+  .ritem.done    { color: var(--green); }
+  .ritem.error   { color: var(--red); }
+  .ritem .rname  { flex: 1; }
+  .ritem .rtag   { font-size: 10px; color: var(--muted); }
+
+  /* ── aggregate content ── */
+  #ses-main {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .agg-row { display: flex; gap: 8px; }
+  .agg-chart {
+    flex: 1; min-width: 0; height: 200px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  }
+  #stat-bar {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    padding: 8px 10px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 4px; font-size: 11px;
+  }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { color: var(--muted); font-size: 10px; }
+  .stat-val { color: var(--text); font-size: 13px; font-weight: 600; }
+
+  details.grp { }
+  details.grp > summary {
+    cursor: pointer; list-style: none; color: var(--muted); font-size: 11px;
+    padding: 4px 0; user-select: none;
+  }
+  details.grp > summary::before { content: '▶ '; }
+  details.grp[open] > summary::before { content: '▼ '; }
+  details.grp > summary:hover { color: var(--text); }
+  .grp-charts {
+    display: flex; gap: 8px; padding: 4px 0 8px 0;
+  }
+  .grp-chart {
+    flex: 1; min-width: 0; height: 190px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  }
+
+  .rdetail {
+    font-size: 10px; color: var(--yellow);
+    padding: 1px 6px 3px 22px; line-height: 1.3;
+  }
+
+  /* ── empty states ── */
+  .empty { color: var(--muted); padding: 20px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <span class="logo">Policy Analyzer</span>
+  <button class="tab-btn active" id="tab-cfg" onclick="switchTab('cfg')">Configure</button>
+  <button class="tab-btn" id="tab-ses" onclick="switchTab('ses')">Session</button>
+  <span id="session-info"></span>
+</div>
+
+<!-- Configure pane -->
+<div class="pane" id="pane-cfg">
+  <div class="form-section">
+    <div class="form-group">
+      <label>Policy</label>
+      <select id="run-sel" onchange="onRunChange()">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Checkpoint</label>
+      <select id="ckpt-sel">
+        <option value="latest">latest</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Deterministic rollouts</label>
+        <input type="number" id="n-det" value="3" min="0" max="20">
+      </div>
+      <div class="form-group">
+        <label>Stochastic rollouts</label>
+        <input type="number" id="n-sto" value="3" min="0" max="20">
+      </div>
+    </div>
+    <button id="run-btn" onclick="onRunClick()">▶ Run Analysis</button>
+  </div>
+</div>
+
+<!-- Session pane -->
+<div class="pane" id="pane-ses">
+  <div id="ses-sidebar">
+    <div id="ses-sidebar-top">
+      <select id="session-sel" onchange="onSessionChange()">
+        <option value="">No sessions</option>
+      </select>
+      <button id="del-btn" title="Delete session" onclick="onDeleteClick()">🗑</button>
+    </div>
+    <div id="rollout-list"><div class="empty">No rollouts</div></div>
+  </div>
+  <div id="ses-main">
+    <div class="empty" id="agg-empty">Start a session to see aggregate stats.</div>
+    <div id="stat-bar" style="display:none"></div>
+    <div class="agg-row" style="display:none" id="reward-row">
+      <div class="agg-chart" id="reward-chart"></div>
+    </div>
+    <div id="group-plots"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── constants ─────────────────────────────────────────────────────────────────
+const COLORS = [
+  '#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c',
+  '#4ade80','#38bdf8','#e879f9','#facc15','#f472b6','#67e8f9',
+];
+const plotCfg = {responsive: true, displayModeBar: false};
+
+function basePlotLayout(title) {
+  return {
+    title: {text: title, font: {size: 11, color: '#9ca3af'}},
+    paper_bgcolor: '#1f2937', plot_bgcolor: '#111827',
+    font: {color: '#f3f4f6', size: 10},
+    margin: {l: 44, r: 8, t: 28, b: 36},
+    xaxis: {title: 't (s)', gridcolor: '#374151', titlefont: {size: 10}},
+    yaxis: {gridcolor: '#374151'},
+    legend: {font: {size: 9}},
+    showlegend: true,
+  };
+}
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let currentSession = null;   // {session_id, run, rollouts, n_done, n_total}
+let rolloutData = {};        // {rollout_name: data.json contents}
+let pollTimer = null;
+let knownSessions = [];      // list[dict] from /api/sessions
+
+// ── tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('tab-cfg').classList.toggle('active', tab === 'cfg');
+  document.getElementById('tab-ses').classList.toggle('active', tab === 'ses');
+  document.getElementById('pane-cfg').style.display = tab === 'cfg' ? '' : 'none';
+  document.getElementById('pane-ses').style.display = tab === 'ses' ? 'flex' : 'none';
+  if (tab === 'ses') {
+    setTimeout(() => Plotly.Plots.resize(document.getElementById('reward-chart')), 50);
+  }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  // Read hash first so tab switch is immediate — don't wait on data fetches.
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const sid = hash.get('sid');
+  if (sid) switchTab('ses');
+
+  await loadPolicies();
+  await refreshSessionList();
+
+  if (sid) {
+    await loadSession(sid);
+    startPolling();
+  } else if (knownSessions.length > 0) {
+    await loadSession(knownSessions[0].session_id);
+  }
+}
+
+// Handle back-link navigation from rollout pages in the same tab (no full reload).
+window.addEventListener('hashchange', async () => {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const sid = hash.get('sid');
+  if (!sid) return;
+  stopPolling();
+  rolloutData = {};
+  document.getElementById('group-plots').innerHTML = '';
+  switchTab('ses');
+  await refreshSessionList();
+  await loadSession(sid);
+  startPolling();
+});
+
+// ── configure tab ─────────────────────────────────────────────────────────────
+async function loadPolicies() {
+  const policies = await fetch('/api/policies').then(r => r.json());
+  const sel = document.getElementById('run-sel');
+  const byEnv = {};
+  for (const p of policies) {
+    if (!byEnv[p.env]) byEnv[p.env] = [];
+    byEnv[p.env].push(p);
+  }
+  sel.innerHTML = '<option value="">— select policy —</option>';
+  for (const env of Object.keys(byEnv).sort()) {
+    const og = document.createElement('optgroup');
+    og.label = env;
+    for (const r of byEnv[env]) {
+      const opt = document.createElement('option');
+      opt.value = r.name;
+      // Show suffix if present (last dash-segment when it contains underscore)
+      const parts = r.name.split('-');
+      const suffix = parts[parts.length - 1];
+      opt.textContent = suffix.includes('_') ? `${r.name.substring(0, r.name.lastIndexOf('-' + suffix))}  [${suffix}]` : r.name;
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
+  }
+}
+
+async function onRunChange() {
+  const run = document.getElementById('run-sel').value;
+  if (!run) return;
+  const steps = await fetch(`/api/checkpoints?run=${encodeURIComponent(run)}`).then(r => r.json());
+  const sel = document.getElementById('ckpt-sel');
+  sel.innerHTML = '<option value="latest">latest</option>';
+  for (const s of [...steps].reverse()) {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = `step ${parseInt(s).toLocaleString()}`;
+    sel.appendChild(opt);
+  }
+}
+
+async function onRunClick() {
+  const run = document.getElementById('run-sel').value;
+  const ckpt = document.getElementById('ckpt-sel').value;
+  const nDet = parseInt(document.getElementById('n-det').value) || 0;
+  const nSto = parseInt(document.getElementById('n-sto').value) || 0;
+  if (!run || nDet + nSto === 0) return;
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  try {
+    const resp = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({run, checkpoint_step: ckpt || 'latest', n_det: nDet, n_sto: nSto}),
+    });
+    const {session_id} = await resp.json();
+    rolloutData = {};
+    window.location.hash = `sid=${session_id}`;
+    await refreshSessionList();
+    await loadSession(session_id);
+    switchTab('ses');
+    startPolling();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Analysis';
+  }
+}
+
+// ── session management ────────────────────────────────────────────────────────
+async function refreshSessionList() {
+  knownSessions = await fetch('/api/sessions').then(r => r.json());
+  const sel = document.getElementById('session-sel');
+  sel.innerHTML = knownSessions.length === 0
+    ? '<option value="">No sessions</option>'
+    : knownSessions.map(s => {
+        const label = s.run.split('-').pop() || s.session_id;
+        const done = `${s.n_done}/${s.n_total}`;
+        return `<option value="${s.session_id}">${label} (${done})</option>`;
+      }).join('');
+  if (currentSession) {
+    sel.value = currentSession.session_id;
+  }
+}
+
+async function onSessionChange() {
+  const sid = document.getElementById('session-sel').value;
+  if (!sid) return;
+  stopPolling();
+  rolloutData = {};
+  document.getElementById('group-plots').innerHTML = '';
+  window.location.hash = `sid=${sid}`;
+  await loadSession(sid);
+  startPolling();
+}
+
+async function onDeleteClick() {
+  const sid = currentSession && currentSession.session_id;
+  if (!sid) return;
+  const label = knownSessions.find(s => s.session_id === sid)
+    ? document.getElementById('session-sel').options[document.getElementById('session-sel').selectedIndex].text
+    : sid;
+  if (!confirm(`Delete session "${label}"?\n\nThis removes all rollout data on disk.`)) return;
+
+  await fetch(`/api/sessions/${sid}`, {method: 'DELETE'});
+  stopPolling();
+  currentSession = null;
+  rolloutData = {};
+  window.location.hash = '';
+  document.getElementById('group-plots').innerHTML = '';
+  document.getElementById('session-info').textContent = '';
+  document.getElementById('rollout-list').innerHTML = '<div class="empty">No rollouts</div>';
+  renderAggregatePlots();
+  await refreshSessionList();
+  if (knownSessions.length > 0) {
+    await loadSession(knownSessions[0].session_id);
+    startPolling();
+  }
+}
+
+async function loadSession(sid) {
+  const data = await fetch(`/api/sessions/${sid}`).then(r => r.json()).catch(() => null);
+  if (!data) return;
+  currentSession = data;
+
+  document.getElementById('session-info').textContent =
+    `${data.run.split('-').pop() || data.run}  ·  ${data.n_done}/${data.n_total} done`;
+  document.getElementById('session-sel').value = sid;
+
+  renderRolloutList(data);
+  await fetchCompletedData();
+  renderAggregatePlots();
+}
+
+// ── polling ───────────────────────────────────────────────────────────────────
+function startPolling() {
+  stopPolling();
+  pollTimer = setTimeout(doPoll, 2000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+}
+
+async function doPoll() {
+  if (!currentSession) return;
+  const data = await fetch(`/api/sessions/${currentSession.session_id}`)
+    .then(r => r.json()).catch(() => null);
+  if (!data) return;
+
+  currentSession = data;
+  document.getElementById('session-info').textContent =
+    `${data.run.split('-').pop() || data.run}  ·  ${data.n_done}/${data.n_total} done`;
+  renderRolloutList(data);
+
+  const prevDone = Object.keys(rolloutData).length;
+  await fetchCompletedData();
+  if (Object.keys(rolloutData).length !== prevDone) {
+    renderAggregatePlots();
+  }
+
+  if (data.n_done < data.n_total) {
+    pollTimer = setTimeout(doPoll, 2000);
+  } else {
+    await refreshSessionList();
+  }
+}
+
+// ── rollout list ──────────────────────────────────────────────────────────────
+function renderRolloutList(session) {
+  const icons = {pending: '○', running: '●', done: '✓', error: '✗'};
+  const sid = session.session_id;
+  const list = document.getElementById('rollout-list');
+
+  const nRunning = session.rollouts.filter(r => r.status === 'running').length;
+  const nPending = session.rollouts.filter(r => r.status === 'pending').length;
+  const nError   = session.rollouts.filter(r => r.status === 'error').length;
+  let statusLine = '';
+  if (nRunning > 0 || nPending > 0) {
+    const parts = [];
+    if (nRunning > 0) parts.push(`<span style="color:var(--yellow)">${nRunning} running</span>`);
+    if (nPending > 0) parts.push(`<span>${nPending} queued</span>`);
+    if (nError   > 0) parts.push(`<span style="color:var(--red)">${nError} failed</span>`);
+    statusLine = `<div style="font-size:10px;color:var(--muted);padding:2px 6px 6px">${parts.join(' · ')}</div>`;
+  } else if (nError > 0 && session.n_done === 0) {
+    statusLine = `<div style="font-size:10px;color:var(--red);padding:2px 6px 6px">all ${nError} rollouts failed</div>`;
+  }
+
+  list.innerHTML = statusLine + session.rollouts.map(r => {
+    const url = `/sessions/${sid}/${r.name}/`;
+    const nameEl = r.status === 'done'
+      ? `<a href="${url}" target="_blank" class="rname">${r.name}</a>`
+      : `<span class="rname">${r.name}</span>`;
+    const tag = r.deterministic ? 'det' : 'sto';
+    const detail = r.detail
+      ? `<div class="rdetail">${r.detail}</div>`
+      : (r.status === 'error' && r.error
+          ? `<div class="rdetail" style="color:var(--red)">${r.error.slice(0, 80)}</div>`
+          : '');
+    return `<div class="ritem-wrap">
+      <div class="ritem ${r.status}">
+        <span>${icons[r.status] || '?'}</span>${nameEl}
+        <span class="rtag">${tag}</span>
+      </div>${detail}
+    </div>`;
+  }).join('') || '<div class="empty">No rollouts</div>';
+}
+
+// ── data fetching ─────────────────────────────────────────────────────────────
+async function fetchCompletedData() {
+  if (!currentSession) return;
+  const sid = currentSession.session_id;
+  const toFetch = currentSession.rollouts.filter(
+    r => r.status === 'done' && !rolloutData[r.name]
+  );
+  await Promise.all(toFetch.map(async r => {
+    try {
+      const d = await fetch(`/sessions/${sid}/${r.name}/data.json`).then(x => x.json());
+      rolloutData[r.name] = d;
+    } catch (_) {}
+  }));
+}
+
+// ── aggregate plots ───────────────────────────────────────────────────────────
+function computeBands(series) {
+  const T = series[0].length;
+  const n = series.length;
+  const means = Array.from({length: T}, (_, t) =>
+    series.reduce((sum, v) => sum + v[t], 0) / n
+  );
+  const stds = n > 1
+    ? Array.from({length: T}, (_, t) => {
+        const m = means[t];
+        return Math.sqrt(series.reduce((s, v) => s + (v[t] - m) ** 2, 0) / n);
+      })
+    : Array(T).fill(0);
+  return {
+    means,
+    upper: means.map((m, t) => m + stds[t]),
+    lower: means.map((m, t) => m - stds[t]),
+  };
+}
+
+function bandTraces(x, bands, label, color, showLegend = true) {
+  return [
+    {
+      x: [...x, ...x.slice().reverse()],
+      y: [...bands.upper, ...bands.lower.slice().reverse()],
+      fill: 'toself', fillcolor: color + '30',
+      line: {color: 'transparent'},
+      type: 'scatter', mode: 'none',
+      showlegend: false, hoverinfo: 'skip',
+    },
+    {
+      x, y: bands.means,
+      type: 'scatter', mode: 'lines',
+      name: label, line: {color, width: 1.5},
+      showlegend,
+    },
+  ];
+}
+
+function renderAggregatePlots() {
+  const datasets = Object.values(rolloutData);
+  const n = datasets.length;
+  const empty = document.getElementById('agg-empty');
+  const statBar = document.getElementById('stat-bar');
+  const rewardRow = document.getElementById('reward-row');
+
+  if (n === 0) {
+    if (currentSession && currentSession.n_total > 0) {
+      const nDone    = currentSession.n_done;
+      const nTotal   = currentSession.n_total;
+      const nRunning = currentSession.rollouts.filter(r => r.status === 'running').length;
+      const nError   = currentSession.rollouts.filter(r => r.status === 'error').length;
+      const nPending = currentSession.rollouts.filter(r => r.status === 'pending').length;
+      const parts = [`${nDone}/${nTotal} complete`];
+      if (nRunning > 0) parts.push(`${nRunning} running`);
+      if (nPending > 0) parts.push(`${nPending} queued`);
+      if (nError > 0)   parts.push(`${nError} failed`);
+      let msg = parts.join('  ·  ');
+      if (nRunning === 0 && nPending === nTotal) {
+        msg += '\n\nLoading model and compiling… first rollout may take a minute.';
+      } else if (nRunning === 0 && nPending > 0 && nDone === 0) {
+        msg += '\n\nPrevious rollout finished, next one starting…';
+      }
+      empty.style.whiteSpace = 'pre';
+      empty.textContent = msg;
+    } else {
+      empty.style.whiteSpace = '';
+      empty.textContent = 'Start a session to see aggregate stats.';
+    }
+    empty.style.display = '';
+    statBar.style.display = 'none';
+    rewardRow.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  statBar.style.display = 'flex';
+  rewardRow.style.display = '';
+
+  const T = datasets[0].meta.T;
+  const dt = datasets[0].meta.dt;
+  const tArr = Array.from({length: T}, (_, i) => +(i * dt).toFixed(4));
+
+  // ── stat bar ──
+  const totals = datasets.map(d => d.rewards.total.reduce((s, v) => s + v, 0));
+  const meanTotal = totals.reduce((s, v) => s + v, 0) / n;
+  const stdTotal = n > 1
+    ? Math.sqrt(totals.reduce((s, v) => s + (v - meanTotal) ** 2, 0) / n)
+    : 0;
+
+  // Success: look for a 'success' key in reward term_keys
+  let successHtml = '';
+  const tkArr = datasets[0].rewards.term_keys;
+  const successIdx = tkArr.findIndex(k => k.includes('success'));
+  if (successIdx >= 0 && datasets[0].dof) {
+    // success is not stored per-term in data.json right now, skip
+  }
+
+  statBar.innerHTML = `
+    <div class="stat-item">
+      <span class="stat-label">rollouts</span>
+      <span class="stat-val">${n}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">episode reward (mean)</span>
+      <span class="stat-val">${meanTotal.toFixed(2)}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">episode reward (std)</span>
+      <span class="stat-val">${stdTotal.toFixed(2)}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">episode reward (min / max)</span>
+      <span class="stat-val">${Math.min(...totals).toFixed(2)} / ${Math.max(...totals).toFixed(2)}</span>
+    </div>
+  `;
+
+  // ── reward over time ──
+  const rewardSeries = datasets.map(d => d.rewards.total);
+  const rewardBands = computeBands(rewardSeries);
+  Plotly.react(
+    'reward-chart',
+    bandTraces(tArr, rewardBands, 'reward', COLORS[0], false),
+    {...basePlotLayout(`Total Reward per step  (n=${n})`), showlegend: false},
+    plotCfg,
+  );
+
+  // ── per-output-group plots ──
+  const groups = datasets[0].output_groups;
+  const groupsDiv = document.getElementById('group-plots');
+
+  for (const group of groups) {
+    const gid = `grp-${group.key}`;
+    let sec = document.getElementById(`sec-${gid}`);
+    if (!sec) {
+      sec = document.createElement('details');
+      sec.className = 'grp';
+      sec.id = `sec-${gid}`;
+      sec.open = group === groups[0];  // expand first group
+      sec.innerHTML = `
+        <summary>${group.key}  <span style="color:var(--muted);font-size:10px">${group.elements.length} DOF</span></summary>
+        <div class="grp-charts">
+          <div class="grp-chart" id="${gid}-cmd"></div>
+          <div class="grp-chart" id="${gid}-mt"></div>
+        </div>
+      `;
+      sec.addEventListener('toggle', () => {
+        if (sec.open) {
+          Plotly.Plots.resize(document.getElementById(`${gid}-cmd`));
+          Plotly.Plots.resize(document.getElementById(`${gid}-mt`));
+        }
+      });
+      groupsDiv.appendChild(sec);
+    }
+
+    // command delta traces (one band per DOF element)
+    const cmdTraces = group.elements.flatMap((el, i) => {
+      const series = datasets.map(d => d.dof.command.map(row => row[el.index]));
+      return bandTraces(tArr, computeBands(series), el.label, COLORS[i % COLORS.length]);
+    });
+
+    // motor target traces
+    const mtTraces = datasets[0].dof.motor_targets
+      ? group.elements.flatMap((el, i) => {
+          const series = datasets.map(d => d.dof.motor_targets.map(row => row[el.index]));
+          return bandTraces(tArr, computeBands(series), el.label, COLORS[i % COLORS.length]);
+        })
+      : [{x: tArr, y: Array(T).fill(null), type: 'scatter', mode: 'lines', name: 'n/a'}];
+
+    Plotly.react(
+      `${gid}-cmd`,
+      cmdTraces,
+      basePlotLayout(`${group.key}  —  command delta (rad)`),
+      plotCfg,
+    );
+    Plotly.react(
+      `${gid}-mt`,
+      mtTraces,
+      basePlotLayout(`${group.key}  —  motor target (rad)`),
+      plotCfg,
+    );
+  }
+}
+
+// ── start ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

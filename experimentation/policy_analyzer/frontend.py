@@ -167,6 +167,7 @@ def export_frontend(
     schema: Optional[dict] = None,
     render_height: int = 360,
     render_width: int = 480,
+    update_index: bool = True,
 ) -> Path:
     """Generate frontend artifacts in run_dir from rollout.npz.
 
@@ -200,6 +201,15 @@ def export_frontend(
         if mt_group is not None else None
     )
 
+    reward_term_keys = (
+        [str(k) for k in npz["reward_term_keys"]]
+        if "reward_term_keys" in npz.files else []
+    )
+    reward_terms_arr = (
+        np.asarray(npz["reward_terms"])
+        if "reward_terms" in npz.files else np.zeros((T, 0))
+    )
+
     data = {
         "meta": {
             "env_name": env_name,
@@ -220,6 +230,10 @@ def export_frontend(
             "command":       np.asarray(npz["command"]).tolist(),
             "motor_targets": motor_targets,
         },
+        "rewards": {
+            "term_keys": reward_term_keys,
+            "total": reward_terms_arr.sum(axis=1).tolist(),
+        },
     }
     data_path = run_dir / "data.json"
     with open(data_path, "w") as f:
@@ -228,5 +242,6 @@ def export_frontend(
 
     shutil.copy(_TEMPLATE, run_dir / "index.html")
 
-    update_root_index(run_dir.parent)
+    if update_index:
+        update_root_index(run_dir.parent)
     return run_dir
