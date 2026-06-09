@@ -43,7 +43,7 @@ def _patch_ppo_losses() -> None:
     The replacement is a verbatim copy of brax 0.14.2's compute_ppo_loss
     except for the final metrics dict, which drops the six
     `policy_dist_{mean,max,min}_{loc,std}` scalars and emits ten quantile
-    scalars keyed `policy_dist_{loc,std}/p{05,25,50,75,95}` instead.
+    scalars keyed `policy_dist_{loc,std}_p{25,50,75}` and `policy_dist_{loc,std}_{mean,min,max}` instead.
     """
     from brax.training import types
     from brax.training.agents.ppo import losses as ppo_losses
@@ -182,15 +182,15 @@ def _patch_ppo_losses() -> None:
             "kl_mean": kl,
         }
         for name, q in zip(_QUANTILE_NAMES, loc_q):
-            metrics[f"policy_dist_loc/{name}"] = q
+            metrics[f"policy_dist_loc_{name}"] = q
         for name, q in zip(_QUANTILE_NAMES, std_q):
-            metrics[f"policy_dist_std/{name}"] = q
-        metrics["policy_dist_loc/mean"] = jnp.mean(loc_flat)
-        metrics["policy_dist_loc/min"] = jnp.min(loc_flat)
-        metrics["policy_dist_loc/max"] = jnp.max(loc_flat)
-        metrics["policy_dist_std/mean"] = jnp.mean(std_flat)
-        metrics["policy_dist_std/min"] = jnp.min(std_flat)
-        metrics["policy_dist_std/max"] = jnp.max(std_flat)
+            metrics[f"policy_dist_std_{name}"] = q
+        metrics["policy_dist_loc_mean"] = jnp.mean(loc_flat)
+        metrics["policy_dist_loc_min"] = jnp.min(loc_flat)
+        metrics["policy_dist_loc_max"] = jnp.max(loc_flat)
+        metrics["policy_dist_std_mean"] = jnp.mean(std_flat)
+        metrics["policy_dist_std_min"] = jnp.min(std_flat)
+        metrics["policy_dist_std_max"] = jnp.max(std_flat)
 
         return total_loss, metrics
 
