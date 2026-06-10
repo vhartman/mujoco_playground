@@ -56,14 +56,39 @@ Flags:
 
 | Flag | Description |
 |---|---|
-| `--queue PATH` | Queue YAML to execute (required). |
+| `--queue PATH` | Queue YAML to execute (one of `--queue` / `--resume` required). |
 | `--dry-run` | Print each command without running it. |
 | `--start-from N` | Skip the first N entries (resume a partial queue). |
+| `--resume N` | Continue the last N runs of a previous queue from their checkpoints (see below). |
+| `--resume-steps STEPS` | Additional timesteps to train each resumed run (required with `--resume`). |
+| `--resume-from DIR` | Queue-log dir to resume from (default: most recent under `logs/_queue`). |
 | `--yes` / `-y` | Skip the confirmation prompt. |
 
 Each run's stdout/stderr is tee'd to `logs/_queue/<queue>-<timestamp>/run-NN-*.log`.
-A `status.json` (updated after each run) records exit codes, timing, and the
-path to the experiment directory produced by the trainer.
+A `status.json` (updated after each run) records exit codes, timing, the
+experiment directory produced by the trainer, and the full run spec
+(script + flags) so the run can later be resumed self-containedly.
+
+### Resuming from checkpoints
+
+To continue training the last few runs of a finished queue:
+
+```bash
+python learning/run_queue.py --resume 2 --resume-steps 50_000_000
+```
+
+This takes the most recent queue (its `status.json`), continues each of the
+last `N` runs by warm-starting `train_jax_ppo.py` from that run's latest
+checkpoint (`logs/<exp_name>/checkpoints`), and trains for `--resume-steps` more
+timesteps. Everything else — env, overrides, seed, logging flags — is inferred
+from the recorded run; only the count and step budget are supplied. The brax
+trainer restores the saved weights and normalizer but counts steps from zero, so
+`--resume-steps` is exactly how much further each run trains.
+
+Resumed runs get a `_cont` suffix and write into
+`logs/_queue/<queue>-resume-<timestamp>/`. Runs whose checkpoint is missing are
+skipped with a warning. Use `--resume-from DIR` to resume a specific (not the
+latest) queue, and `--dry-run` to preview the commands first.
 
 ### Queue YAML format
 

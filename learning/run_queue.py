@@ -7,6 +7,11 @@ Usage:
     python learning/run_queue.py --queue learning/queues/overnight.yaml
     python learning/run_queue.py --queue learning/queues/overnight.yaml --dry-run
     python learning/run_queue.py --queue learning/queues/overnight.yaml --start-from 3
+
+    # Continue the last 2 runs of the most recent queue for 50M more steps each,
+    # warm-starting from their checkpoints. Env, overrides and flags are inferred
+    # from the recorded run; only the count and step budget are given.
+    python learning/run_queue.py --resume 2 --resume-steps 50_000_000
 """
 
 import argparse
@@ -148,6 +153,116 @@ def parse_queue(path: pathlib.Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint resume
+# ---------------------------------------------------------------------------
+
+_QUEUE_TS_RE = re.compile(r"-\d{8}-\d{6}$")
+
+
+def _queue_stem(dir_name: str) -> str:
+    """'downwards_rotate_z_force-20260609-155858' -> 'downwards_rotate_z_force'."""
+    return _QUEUE_TS_RE.sub("", dir_name)
+
+
+def _most_recent_queue_dir(queue_root: pathlib.Path) -> pathlib.Path:
+    """Return the queue-log dir whose status.json was written most recently."""
+    candidates = [p.parent for p in queue_root.glob("*/status.json")]
+    if not candidates:
+        raise FileNotFoundError(f"No previous queue runs found under {queue_root}.")
+    return max(candidates, key=lambda d: (d / "status.json").stat().st_mtime)
+
+
+def _load_overrides(path) -> dict:
+    """Load a flat-dotted overrides YAML, tolerating a missing/None path."""
+    if not path:
+        return {}
+    p = pathlib.Path(path)
+    if not p.exists():
+        return {}
+    with open(p) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _recover_run_spec(entry: dict, source_dir: pathlib.Path) -> dict | None:
+    """Recover the script + flags + env_overrides that produced a status entry.
+
+    Prefers the spec recorded inline in status.json (newer runs store it). Falls
+    back to re-parsing the original queue YAML (matched by dir-name stem + idx)
+    for older status files. Returns None if neither source is available.
+    """
+    if entry.get("flags") is not None and entry.get("script") is not None:
+        return {
+            "script": entry["script"],
+            "flags": dict(entry["flags"]),
+            "env_overrides": _load_overrides(entry.get("overrides_file")),
+        }
+    queue_file = pathlib.Path("learning/queues") / f"{_queue_stem(source_dir.name)}.yaml"
+    if not queue_file.exists():
+        return None
+    for r in parse_queue(queue_file):
+        if r["idx"] == entry["idx"]:
+            return {
+                "script": r["script"],
+                "flags": dict(r["flags"]),
+                "env_overrides": r["env_overrides"],
+            }
+    return None
+
+
+def build_resume_runs(
+    source_dir: pathlib.Path, last_n: int, resume_steps: int
+) -> list[dict]:
+    """Build run specs that continue the last `last_n` runs from `source_dir`.
+
+    Each resumed run warm-starts from its predecessor's latest checkpoint
+    (``logs/<exp_name>/checkpoints``) and trains for `resume_steps` more steps.
+    Everything else — env, overrides, seed, logging flags — is recovered from
+    the source run. Runs without a usable checkpoint are skipped with a warning.
+    """
+    statuses = json.loads((source_dir / "status.json").read_text())
+    if last_n > len(statuses):
+        print(f"  note: only {len(statuses)} run(s) recorded; resuming all of them.")
+    selected = statuses[-last_n:]
+
+    runs = []
+    for entry in selected:
+        src_label = f"run-{entry['idx']:02d}-{entry['env_name']}"
+        exp_name = entry.get("exp_name")
+        if not exp_name:
+            print(f"  skip {src_label}: no experiment name recorded (no checkpoint).")
+            continue
+        ckpt_dir = (pathlib.Path("logs") / exp_name / "checkpoints").resolve()
+        has_ckpt = ckpt_dir.is_dir() and any(
+            p.is_dir() and p.name.isdigit() for p in ckpt_dir.glob("*")
+        )
+        if not has_ckpt:
+            print(f"  skip {src_label}: no checkpoints under {ckpt_dir}.")
+            continue
+        spec = _recover_run_spec(entry, source_dir)
+        if spec is None:
+            print(f"  skip {src_label}: could not recover original run flags.")
+            continue
+
+        flags = spec["flags"]
+        flags["load_checkpoint_path"] = str(ckpt_dir)
+        flags["num_timesteps"] = resume_steps
+        orig_suffix = flags.get("suffix")
+        flags["suffix"] = f"{orig_suffix}_cont" if orig_suffix else "cont"
+
+        runs.append({
+            "idx": len(runs),
+            "script": spec["script"],
+            "flags": flags,
+            "env_overrides": spec["env_overrides"],
+            "resumed_from": exp_name,
+        })
+
+    if not runs:
+        raise ValueError(f"No resumable runs found in {source_dir}.")
+    return runs
+
+
+# ---------------------------------------------------------------------------
 # Subprocess execution
 # ---------------------------------------------------------------------------
 
@@ -232,6 +347,11 @@ def run_one(run: dict, log_dir: pathlib.Path) -> dict:
         "exp_name": exp_name,
         "log": str(log_path),
         "overrides_file": str(overrides_path) if overrides_path else None,
+        # Full run spec, so a later --resume is self-contained (independent of
+        # whether the source queue YAML has since changed).
+        "script": run["script"],
+        "flags": run["flags"],
+        "resumed_from": run.get("resumed_from"),
     }
 
 
@@ -244,7 +364,7 @@ def main():
         description="Run training runs sequentially from a queue YAML file.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--queue", required=True, help="Path to the queue YAML file.")
+    parser.add_argument("--queue", help="Path to the queue YAML file.")
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Print the command for each run without executing.",
@@ -254,17 +374,54 @@ def main():
         help="Skip the first N entries (use to resume a partially-done queue).",
     )
     parser.add_argument(
+        "--resume", type=int, default=None, metavar="N",
+        help="Continue the last N runs from a previous queue, warm-starting each "
+             "from its latest checkpoint. Requires --resume-steps.",
+    )
+    parser.add_argument(
+        "--resume-steps", type=int, default=None, metavar="STEPS",
+        help="Additional timesteps to train each resumed run (used with --resume).",
+    )
+    parser.add_argument(
+        "--resume-from", default=None, metavar="DIR",
+        help="Queue-log dir to resume from (default: most recent under logs/_queue).",
+    )
+    parser.add_argument(
         "--yes", "-y", action="store_true",
         help="Skip the interactive confirmation prompt.",
     )
     args = parser.parse_args()
 
-    queue_path = pathlib.Path(args.queue)
-    runs = parse_queue(queue_path)
+    if args.resume is not None:
+        if args.queue:
+            parser.error("--queue and --resume are mutually exclusive.")
+        if args.resume_steps is None:
+            parser.error("--resume requires --resume-steps.")
+        if args.resume < 1:
+            parser.error("--resume must be >= 1.")
+        queue_root = pathlib.Path("logs") / "_queue"
+        source_dir = (
+            pathlib.Path(args.resume_from)
+            if args.resume_from
+            else _most_recent_queue_dir(queue_root)
+        )
+        print(f"\nResuming last {args.resume} run(s) from: {source_dir}")
+        print(f"Each continues for {args.resume_steps:,} more timesteps.\n")
+        runs = build_resume_runs(source_dir, args.resume, args.resume_steps)
+        run_label = f"{_queue_stem(source_dir.name)}-resume"
+        source_desc = f"{source_dir}  (resume)"
+    else:
+        if not args.queue:
+            parser.error("one of --queue or --resume is required.")
+        queue_path = pathlib.Path(args.queue)
+        runs = parse_queue(queue_path)
+        run_label = queue_path.stem
+        source_desc = str(queue_path)
+
     active = [r for r in runs if r["idx"] >= args.start_from]
 
     # Print the execution plan
-    print(f"\nQueue    : {queue_path}")
+    print(f"\nSource   : {source_desc}")
     print(f"Runs     : {len(runs)} total, {len(active)} will execute")
     print()
     for r in runs:
@@ -275,6 +432,11 @@ def main():
             f"  suffix={f.get('suffix', '-')}"
             f"  seed={f.get('seed', '-')}"
         )
+        if r.get("resumed_from"):
+            print(
+                f"            resume_from={r['resumed_from']}"
+                f"  steps={f.get('num_timesteps')}"
+            )
         if r["env_overrides"]:
             flat_ov = _flatten(r["env_overrides"])
             print("            overrides={")
@@ -304,7 +466,7 @@ def main():
             return
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = pathlib.Path("logs") / "_queue" / f"{queue_path.stem}-{timestamp}"
+    log_dir = pathlib.Path("logs") / "_queue" / f"{run_label}-{timestamp}"
     log_dir.mkdir(parents=True, exist_ok=True)
     status_path = log_dir / "status.json"
     print(f"Queue log dir: {log_dir}\n")
