@@ -190,6 +190,9 @@ def _rollout_step(inference_fn, loc_scale_fn, env, carry, _):
         "pre_squash": loc,
         "action_scale": scale,
         "command": next_state.info["action_delta"],
+        # absolute EMA-smoothed motor target (always present in info, regardless
+        # of whether the obs bundle exposes a motor_targets group)
+        "motor_targets": next_state.info["motor_targets"],
         # render fields from the state BEFORE the step (consistent with obs)
         "traj_qpos": state.data.qpos,
         "traj_qvel": state.data.qvel,
@@ -243,6 +246,7 @@ def run_single_rollout(handles: dict, seed: int = 1, deterministic: bool = True)
     pre_squash   = np.asarray(traj["pre_squash"])     # [T, action_dim]
     action_scale = np.asarray(traj["action_scale"])   # [T, action_dim]
     command      = np.asarray(traj["command"])         # [T, action_dim]
+    motor_targets = np.asarray(traj["motor_targets"])   # [T, action_dim]
     traj_fields  = {k: np.asarray(traj[k]) for k in (
         "traj_qpos", "traj_qvel", "traj_mocap_pos", "traj_mocap_quat", "traj_xfrc_applied"
     )}
@@ -252,7 +256,8 @@ def run_single_rollout(handles: dict, seed: int = 1, deterministic: bool = True)
         f"obs dim {obs.shape[1]} != env.obs_size {eval_env.obs_size}"
     )
     for name, arr in (("action", action), ("pre_squash", pre_squash),
-                      ("action_scale", action_scale), ("command", command)):
+                      ("action_scale", action_scale), ("command", command),
+                      ("motor_targets", motor_targets)):
         assert arr.shape[1] == eval_env.action_size, (
             f"{name} dim {arr.shape[1]} != env.action_size {eval_env.action_size}"
         )
@@ -277,11 +282,82 @@ def run_single_rollout(handles: dict, seed: int = 1, deterministic: bool = True)
         "pre_squash": pre_squash,
         "action_scale": action_scale,
         "command": command,
+        "motor_targets": motor_targets,
         "metrics": metrics,
         "schema": schema,
         "identity": identity,
         **traj_fields,
     }
+
+
+def run_batched_rollout(
+    handles: dict, seeds, deterministic: bool = True
+) -> list[dict]:
+    """Run one rollout per seed in a single vmapped pass on one device.
+
+    All seeds share the JIT compile and run as a batched MJX simulation — far
+    cheaper than launching a separate process per seed. Returns one dict per
+    seed, each shaped exactly like run_single_rollout's output so the existing
+    write_artifacts / export_frontend / visualize pipeline works unchanged.
+    """
+    seeds = [int(s) for s in seeds]
+    eval_env = handles["eval_env"]
+    episode_length = handles["ppo_params"].episode_length
+
+    inference_fn = handles["make_inference_fn"](handles["params"], deterministic=deterministic)
+    loc_scale_fn = _make_loc_scale_fn(handles["ppo_network"], handles["params"])
+    step_fn = functools.partial(_rollout_step, inference_fn, loc_scale_fn, eval_env)
+
+    def single(rng):
+        state = eval_env.reset(rng)
+        _, traj = jax.lax.scan(step_fn, (state, rng), None, length=episode_length)
+        return traj
+
+    rngs = jax.vmap(jax.random.PRNGKey)(jp.asarray(seeds))   # [N, 2]
+    batched = jax.jit(jax.vmap(single))(rngs)                # each leaf [N, T, ...]
+
+    schema = io_schema.build_io_schema(
+        eval_env,
+        env_name=handles["env_name"],
+        sensor_bundle=handles["env_cfg"].sensor_bundle,
+        policy_hidden_layer_sizes=handles["ppo_params"].network_factory.get(
+            "policy_hidden_layer_sizes", None
+        ),
+    )
+
+    results = []
+    for i, seed in enumerate(seeds):
+        sl = jax.tree_util.tree_map(lambda x: np.asarray(x[i]), batched)  # noqa: B023
+        obs = sl["obs"]
+        assert obs.shape[1] == eval_env.obs_size, (
+            f"obs dim {obs.shape[1]} != env.obs_size {eval_env.obs_size}"
+        )
+        for name in ("action", "pre_squash", "action_scale", "command", "motor_targets"):
+            assert sl[name].shape[1] == eval_env.action_size, (
+                f"{name} dim {sl[name].shape[1]} != env.action_size {eval_env.action_size}"
+            )
+        results.append({
+            "obs": obs,
+            "action": sl["action"],
+            "pre_squash": sl["pre_squash"],
+            "action_scale": sl["action_scale"],
+            "command": sl["command"],
+            "motor_targets": sl["motor_targets"],
+            "metrics": sl["metrics"],
+            "schema": schema,
+            "identity": {
+                "checkpoint": str(handles["restore_path"]),
+                "dt": float(eval_env.dt),
+                "deterministic": bool(deterministic),
+                "seed": int(seed),
+            },
+            "traj_qpos": sl["traj_qpos"],
+            "traj_qvel": sl["traj_qvel"],
+            "traj_mocap_pos": sl["traj_mocap_pos"],
+            "traj_mocap_quat": sl["traj_mocap_quat"],
+            "traj_xfrc_applied": sl["traj_xfrc_applied"],
+        })
+    return results
 
 
 def collect_rollout(log_dir: Path, seed: int = 1, deterministic: bool = True) -> dict:
@@ -307,6 +383,7 @@ def write_artifacts(out_dir: Path, rollout: dict) -> Path:
         pre_squash=rollout["pre_squash"],
         action_scale=rollout["action_scale"],
         command=rollout["command"],
+        motor_targets=rollout["motor_targets"],
         reward_terms=reward_terms,
         reward_term_keys=np.array(metric_keys),
         traj_qpos=rollout["traj_qpos"],

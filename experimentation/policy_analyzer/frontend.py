@@ -168,10 +168,16 @@ def export_frontend(
     render_height: int = 360,
     render_width: int = 480,
     update_index: bool = True,
+    env=None,
+    env_name: Optional[str] = None,
+    cfg=None,
 ) -> Path:
     """Generate frontend artifacts in run_dir from rollout.npz.
 
     Also regenerates analysis/index.html (run_dir.parent) as the landing page.
+
+    Pass a preloaded (env, env_name, cfg) to skip rebuilding the env — useful
+    when exporting many seeds from the same checkpoint in one process.
     """
     import PIL.Image
     from experimentation.policy_analyzer.collect import load_env_from_checkpoint
@@ -179,7 +185,8 @@ def export_frontend(
 
     npz = np.load(run_dir / "rollout.npz", allow_pickle=False)
 
-    env_name, cfg, env = load_env_from_checkpoint(str(npz["id_checkpoint"]))
+    if env is None or env_name is None or cfg is None:
+        env_name, cfg, env = load_env_from_checkpoint(str(npz["id_checkpoint"]))
 
     if schema is None:
         schema = _io.build_io_schema(env, env_name=env_name, sensor_bundle=cfg.sensor_bundle)
@@ -195,11 +202,16 @@ def export_frontend(
     print(f"Wrote {T} frames to {frames_dir}")
 
     obs_arr = np.asarray(npz["obs"])
-    mt_group = next((g for g in schema["input_groups"] if g["key"] == "motor_targets"), None)
-    motor_targets = (
-        obs_arr[:, mt_group["start"]:mt_group["start"] + mt_group["size"]].tolist()
-        if mt_group is not None else None
-    )
+    # Prefer the directly-captured absolute motor target (always available);
+    # fall back to the obs-derived group for older npz files that predate it.
+    if "motor_targets" in npz.files:
+        motor_targets = np.asarray(npz["motor_targets"]).tolist()
+    else:
+        mt_group = next((g for g in schema["input_groups"] if g["key"] == "motor_targets"), None)
+        motor_targets = (
+            obs_arr[:, mt_group["start"]:mt_group["start"] + mt_group["size"]].tolist()
+            if mt_group is not None else None
+        )
 
     reward_term_keys = (
         [str(k) for k in npz["reward_term_keys"]]
@@ -209,6 +221,35 @@ def export_frontend(
         np.asarray(npz["reward_terms"])
         if "reward_terms" in npz.files else np.zeros((T, 0))
     )
+
+    # The env logs RAW reward components in metrics; scale them by their config
+    # weights so the plotted magnitudes match each term's actual contribution to
+    # the reward. Non-reward diagnostics (e.g. floor_support_fraction) are dropped.
+    rc = getattr(cfg, "reward_config", None)
+    scales = dict(rc.scales) if rc is not None and hasattr(rc, "scales") else {}
+    success_reward = float(getattr(rc, "success_reward", 1.0)) if rc is not None else 1.0
+
+    def _term_scale(key: str):
+        if not key.startswith("reward/"):
+            return None  # diagnostic metric, not a reward term → exclude
+        name = key[len("reward/"):]
+        if name.endswith("_per_step"):
+            name = name[: -len("_per_step")]
+        if name == "success":
+            return success_reward
+        return float(scales.get(name, 1.0))
+
+    reward_idx, reward_scales, reward_keys = [], [], []
+    for i, k in enumerate(reward_term_keys):
+        s = _term_scale(k)
+        if s is not None:
+            reward_idx.append(i)
+            reward_scales.append(s)
+            reward_keys.append(k)
+    if reward_idx:
+        scaled_terms = reward_terms_arr[:, reward_idx] * np.asarray(reward_scales)
+    else:
+        scaled_terms = np.zeros((T, 0))
 
     data = {
         "meta": {
@@ -231,8 +272,11 @@ def export_frontend(
             "motor_targets": motor_targets,
         },
         "rewards": {
-            "term_keys": reward_term_keys,
-            "total": reward_terms_arr.sum(axis=1).tolist(),
+            # scaled reward terms only (diagnostics excluded); total = their sum,
+            # which is the actual per-step reward.
+            "term_keys": reward_keys,
+            "total": scaled_terms.sum(axis=1).tolist(),
+            "terms": scaled_terms.tolist(),   # [T, R] scaled per-term time series
         },
     }
     data_path = run_dir / "data.json"

@@ -15,6 +15,8 @@
     --green:  #34d399;
     --yellow: #fbbf24;
     --red:    #f87171;
+    --accent: #c46a6a;        /* soothing dark red — branding + active state */
+    --accent-dim: #8f4a4a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -30,14 +32,26 @@
     display: flex; align-items: center; gap: 0; padding: 0 12px;
     height: 36px;
   }
-  .logo { color: var(--muted); margin-right: 16px; font-size: 11px; }
+  .logo {
+    display: flex; align-items: center; gap: 7px;
+    margin-right: 20px; font-size: 13px; font-weight: 600;
+    letter-spacing: .4px; color: var(--text);
+    text-shadow: 0 0 12px rgba(196, 106, 106, .25);
+  }
+  .logo-mark {
+    width: 12px; height: 12px; border-radius: 3px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+    box-shadow: 0 0 8px rgba(196, 106, 106, .55);
+    transform: rotate(45deg);
+  }
+  .logo-accent { color: var(--accent); margin-left: 4px; }
   .tab-btn {
     background: none; border: none; border-bottom: 2px solid transparent;
     color: var(--muted); cursor: pointer; font: inherit; font-size: 12px;
     padding: 0 12px; height: 36px; transition: color .15s;
   }
   .tab-btn:hover { color: var(--text); }
-  .tab-btn.active { color: var(--text); border-bottom-color: var(--blue); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
   #session-info {
     margin-left: auto; color: var(--muted); font-size: 11px;
   }
@@ -128,35 +142,76 @@
   .stat-label { color: var(--muted); font-size: 10px; }
   .stat-val { color: var(--text); font-size: 13px; font-weight: 600; }
 
-  details.grp { }
-  details.grp > summary {
-    cursor: pointer; list-style: none; color: var(--muted); font-size: 11px;
-    padding: 4px 0; user-select: none;
-  }
-  details.grp > summary::before { content: '▶ '; }
-  details.grp[open] > summary::before { content: '▼ '; }
-  details.grp > summary:hover { color: var(--text); }
-  .grp-charts {
-    display: flex; gap: 8px; padding: 4px 0 8px 0;
-  }
-  .grp-chart {
-    flex: 1; min-width: 0; height: 190px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
-  }
-
   .rdetail {
     font-size: 10px; color: var(--yellow);
     padding: 1px 6px 3px 22px; line-height: 1.3;
   }
 
+  #session-tags {
+    flex-shrink: 0; border-top: 1px solid var(--border);
+    padding: 8px; display: flex; flex-direction: column; gap: 3px;
+  }
+  #session-tags .strow { display: flex; gap: 6px; font-size: 10px; line-height: 1.4; }
+  #session-tags .stkey { color: var(--muted); flex-shrink: 0; width: 64px; }
+  #session-tags .stval { color: var(--text); word-break: break-word; }
+
   /* ── empty states ── */
   .empty { color: var(--muted); padding: 20px; font-size: 11px; }
+
+  /* ── view switcher ── */
+  #ses-main { padding: 0; }
+  #view-tabs {
+    flex-shrink: 0; display: flex; gap: 0; align-items: center;
+    border-bottom: 1px solid var(--border); padding: 0 8px;
+  }
+  .view-btn {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); cursor: pointer; font: inherit; font-size: 11px;
+    padding: 6px 12px; transition: color .15s;
+  }
+  .view-btn:hover { color: var(--text); }
+  .view-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .view {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #view-rollout { padding: 0; }
+  #rollout-frame { flex: 1; width: 100%; border: none; background: var(--bg); }
+
+  /* ── video grid (top of the Aggregate view) ── */
+  #video-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px; align-content: start;
+  }
+  #video-grid:empty { display: none; }
+  .vtile {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    overflow: hidden;
+  }
+  .vtile.done { cursor: pointer; }
+  .vtile .vframe {
+    position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vtile .vframe img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; display: none;
+  }
+  .vtile.ready .vframe img { display: block; }
+  .vstatus { color: var(--muted); font-size: 10px; text-align: center; padding: 6px; }
+  .vtile.running .vstatus { color: var(--yellow); }
+  .vtile.error   .vstatus { color: var(--red); }
+  .vtile .vlabel {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 8px; font-size: 11px; color: var(--text);
+  }
+  .vtile .vlabel .vtag { color: var(--muted); font-size: 10px; }
 </style>
 </head>
 <body>
 
 <div id="hdr">
-  <span class="logo">Policy Analyzer</span>
+  <span class="logo"><span class="logo-mark"></span>Policy<span class="logo-accent">Analyzer</span></span>
   <button class="tab-btn active" id="tab-cfg" onclick="switchTab('cfg')">Configure</button>
   <button class="tab-btn" id="tab-ses" onclick="switchTab('ses')">Session</button>
   <span id="session-info"></span>
@@ -201,14 +256,29 @@
       <button id="del-btn" title="Delete session" onclick="onDeleteClick()">🗑</button>
     </div>
     <div id="rollout-list"><div class="empty">No rollouts</div></div>
+    <div id="session-tags"></div>
   </div>
   <div id="ses-main">
-    <div class="empty" id="agg-empty">Start a session to see aggregate stats.</div>
-    <div id="stat-bar" style="display:none"></div>
-    <div class="agg-row" style="display:none" id="reward-row">
-      <div class="agg-chart" id="reward-chart"></div>
+    <div id="view-tabs">
+      <button class="view-btn active" data-view="aggregate" onclick="showView('aggregate')">Aggregate</button>
+      <button class="view-btn" id="view-btn-rollout" data-view="rollout" style="display:none" onclick="showView('rollout')"></button>
     </div>
-    <div id="group-plots"></div>
+
+    <div class="view" id="view-aggregate">
+      <div class="empty" id="agg-empty">Start a session to see aggregate stats.</div>
+      <div id="video-grid"></div>
+      <div id="stat-bar" style="display:none"></div>
+      <div class="agg-row" style="display:none" id="reward-row">
+        <div class="agg-chart" id="reward-chart"></div>
+      </div>
+      <div class="agg-row" style="display:none" id="reward-terms-row">
+        <div class="agg-chart" id="reward-terms-chart"></div>
+      </div>
+    </div>
+
+    <div class="view" id="view-rollout" style="display:none">
+      <iframe id="rollout-frame" title="rollout analysis"></iframe>
+    </div>
   </div>
 </div>
 
@@ -238,8 +308,146 @@ function basePlotLayout(title) {
 // ── state ─────────────────────────────────────────────────────────────────────
 let currentSession = null;   // {session_id, run, rollouts, n_done, n_total}
 let rolloutData = {};        // {rollout_name: data.json contents}
-let pollTimer = null;
+let evtSource = null;        // EventSource for live session updates
 let knownSessions = [];      // list[dict] from /api/sessions
+let currentView = 'aggregate';   // 'aggregate' | 'rollout'
+let openRolloutName = null;      // rollout shown in the embedded iframe
+const videoAnims = {};           // rollout_name -> {timer, idx, T, blobs}
+
+// Resize every aggregate Plotly chart — needed because Plotly measures the
+// container at creation time, and a chart drawn while its tab/view was hidden
+// (zero size) otherwise stays blank until a window resize.
+function resizeAggregateCharts() {
+  const ids = ['reward-chart', 'reward-terms-chart'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el && el.data) { try { Plotly.Plots.resize(el); } catch (_) {} }
+  }
+}
+
+// ── view switching (within the session pane) ────────────────────────────────────
+function showView(view) {
+  currentView = view;
+  for (const el of document.querySelectorAll('.view-btn')) {
+    el.classList.toggle('active', el.dataset.view === view);
+  }
+  document.getElementById('view-aggregate').style.display = view === 'aggregate' ? 'flex' : 'none';
+  document.getElementById('view-rollout').style.display   = view === 'rollout'   ? 'flex' : 'none';
+  if (view === 'aggregate') {
+    renderVideoGrid();
+    setTimeout(resizeAggregateCharts, 50);
+  }
+  // Previews keep looping from cached blobs even when hidden — cheap (no network),
+  // and avoids re-fetching every frame when you switch back. They're only torn
+  // down on a session switch (resetSessionViews → destroyVideoAnims).
+}
+
+function openRollout(name) {
+  if (!currentSession) return;
+  openRolloutName = name;
+  const btn = document.getElementById('view-btn-rollout');
+  btn.style.display = '';
+  btn.textContent = name;
+  const frame = document.getElementById('rollout-frame');
+  const src = `/sessions/${currentSession.session_id}/${name}/`;
+  if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
+  showView('rollout');
+}
+
+// ── video grid ──────────────────────────────────────────────────────────────────
+// One reserved tile per rollout, created up front. Each fills with a looping
+// preview once its rollout completes. Frames are preloaded once into in-memory
+// blob URLs so playback never re-hits the network (smooth even over SSH).
+function destroyVideoAnims() {
+  for (const k of Object.keys(videoAnims)) {
+    const a = videoAnims[k];
+    if (a.timer) clearInterval(a.timer);
+    if (a.blobs) a.blobs.forEach(u => { if (u && u.startsWith('blob:')) URL.revokeObjectURL(u); });
+    delete videoAnims[k];
+  }
+}
+// Back-compat alias (used by reset paths).
+const stopAllVideoAnims = destroyVideoAnims;
+
+const STATUS_TEXT = {pending: 'queued', running: 'running…', error: 'failed', done: ''};
+
+function renderVideoGrid() {
+  if (!currentSession) return;
+  const grid = document.getElementById('video-grid');
+  const sid = currentSession.session_id;
+  const rollouts = currentSession.rollouts;
+
+  if (rollouts.length === 0) {
+    destroyVideoAnims();
+    grid.innerHTML = '';   // empty grid is hidden via #video-grid:empty
+    return;
+  }
+
+  for (const r of rollouts) {
+    // Reserve the tile up front (in session order), regardless of status.
+    let tile = document.getElementById(`vtile-${r.name}`);
+    if (!tile) {
+      tile = document.createElement('div');
+      tile.id = `vtile-${r.name}`;
+      const tag = r.deterministic ? 'det' : 'sto';
+      tile.innerHTML = `
+        <div class="vframe"><img alt="${r.name}"><div class="vstatus"></div></div>
+        <div class="vlabel"><span>${r.name}</span><span class="vtag">${tag}</span></div>`;
+      grid.appendChild(tile);
+    }
+
+    // Reflect current status on the placeholder (preserve 'ready' once the
+    // preview is playing, so re-renders don't hide the video).
+    const ready = videoAnims[r.name] && videoAnims[r.name].blobs ? ' ready' : '';
+    tile.className = 'vtile ' + r.status + ready;
+    const statusEl = tile.querySelector('.vstatus');
+    statusEl.textContent = r.detail
+      || (r.status === 'error' ? (r.error || 'failed').slice(0, 60) : STATUS_TEXT[r.status] || '');
+    tile.onclick = r.status === 'done' ? () => openRollout(r.name) : null;
+
+    // Once done and its data is available, preload frames + start the loop.
+    if (r.status === 'done' && !videoAnims[r.name] && rolloutData[r.name]) {
+      startTilePlayback(sid, r, tile);
+    }
+  }
+}
+
+async function startTilePlayback(sid, r, tile) {
+  const data = rolloutData[r.name];
+  const T = data && data.meta ? data.meta.T : 0;
+  const dt = data && data.meta ? data.meta.dt : 0.04;
+  if (!T) return;
+
+  // Reserve the slot immediately so we don't double-load on the next render.
+  const anim = {idx: 0, T, timer: null, blobs: null};
+  videoAnims[r.name] = anim;
+
+  const url = i => `/sessions/${sid}/${r.name}/frames/frame_${String(i).padStart(4, '0')}.png`;
+  let blobs;
+  try {
+    blobs = await Promise.all(
+      Array.from({length: T}, (_, i) =>
+        fetch(url(i)).then(res => res.blob()).then(b => URL.createObjectURL(b)))
+    );
+  } catch (_) {
+    blobs = Array.from({length: T}, (_, i) => url(i));  // fallback: stream directly
+  }
+  // Session may have been switched while frames were loading.
+  if (videoAnims[r.name] !== anim) {
+    blobs.forEach(u => { if (u && u.startsWith('blob:')) URL.revokeObjectURL(u); });
+    return;
+  }
+  anim.blobs = blobs;
+
+  const img = tile.querySelector('img');
+  img.src = blobs[0];
+  tile.classList.add('ready');
+  const period = Math.max(33, Math.round(dt * 1000));   // real-time, capped at 30fps
+  anim.timer = setInterval(() => {
+    anim.idx = (anim.idx + 1) % anim.T;
+    img.src = anim.blobs[anim.idx];
+  }, period);
+}
 
 // ── tab switching ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -247,8 +455,8 @@ function switchTab(tab) {
   document.getElementById('tab-ses').classList.toggle('active', tab === 'ses');
   document.getElementById('pane-cfg').style.display = tab === 'cfg' ? '' : 'none';
   document.getElementById('pane-ses').style.display = tab === 'ses' ? 'flex' : 'none';
-  if (tab === 'ses') {
-    setTimeout(() => Plotly.Plots.resize(document.getElementById('reward-chart')), 50);
+  if (tab === 'ses' && currentView === 'aggregate') {
+    setTimeout(resizeAggregateCharts, 50);
   }
 }
 
@@ -264,7 +472,7 @@ async function init() {
 
   if (sid) {
     await loadSession(sid);
-    startPolling();
+    startStream();
   } else if (knownSessions.length > 0) {
     await loadSession(knownSessions[0].session_id);
   }
@@ -275,13 +483,13 @@ window.addEventListener('hashchange', async () => {
   const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const sid = hash.get('sid');
   if (!sid) return;
-  stopPolling();
+  stopStream();
   rolloutData = {};
-  document.getElementById('group-plots').innerHTML = '';
+  resetSessionViews();
   switchTab('ses');
   await refreshSessionList();
   await loadSession(sid);
-  startPolling();
+  startStream();
 });
 
 // ── configure tab ─────────────────────────────────────────────────────────────
@@ -347,7 +555,7 @@ async function onRunClick() {
     await refreshSessionList();
     await loadSession(session_id);
     switchTab('ses');
-    startPolling();
+    startStream();
   } finally {
     btn.disabled = false;
     btn.textContent = '▶ Run Analysis';
@@ -373,12 +581,12 @@ async function refreshSessionList() {
 async function onSessionChange() {
   const sid = document.getElementById('session-sel').value;
   if (!sid) return;
-  stopPolling();
+  stopStream();
   rolloutData = {};
-  document.getElementById('group-plots').innerHTML = '';
+  resetSessionViews();
   window.location.hash = `sid=${sid}`;
   await loadSession(sid);
-  startPolling();
+  startStream();
 }
 
 async function onDeleteClick() {
@@ -390,23 +598,34 @@ async function onDeleteClick() {
   if (!confirm(`Delete session "${label}"?\n\nThis removes all rollout data on disk.`)) return;
 
   await fetch(`/api/sessions/${sid}`, {method: 'DELETE'});
-  stopPolling();
+  stopStream();
   currentSession = null;
   rolloutData = {};
   window.location.hash = '';
-  document.getElementById('group-plots').innerHTML = '';
+  resetSessionViews();
   document.getElementById('session-info').textContent = '';
   document.getElementById('rollout-list').innerHTML = '<div class="empty">No rollouts</div>';
   renderAggregatePlots();
   await refreshSessionList();
   if (knownSessions.length > 0) {
     await loadSession(knownSessions[0].session_id);
-    startPolling();
+    startStream();
   }
 }
 
+// Reset the main-pane views when switching to a different session.
+function resetSessionViews() {
+  stopAllVideoAnims();
+  document.getElementById('video-grid').innerHTML = '';
+  document.getElementById('rollout-frame').removeAttribute('src');
+  openRolloutName = null;
+  document.getElementById('view-btn-rollout').style.display = 'none';
+  document.getElementById('session-tags').innerHTML = '';
+  showView('aggregate');
+}
+
 async function loadSession(sid) {
-  const data = await fetch(`/api/sessions/${sid}`).then(r => r.json()).catch(() => null);
+  const data = await fetch(`/api/sessions/${sid}?t=${Date.now()}`).then(r => r.json()).catch(() => null);
   if (!data) return;
   currentSession = data;
 
@@ -416,24 +635,35 @@ async function loadSession(sid) {
 
   renderRolloutList(data);
   await fetchCompletedData();
+  renderSessionTags(data);
+  renderVideoGrid();        // before plots: must not be blocked if plotting throws
   renderAggregatePlots();
 }
 
-// ── polling ───────────────────────────────────────────────────────────────────
-function startPolling() {
-  stopPolling();
-  pollTimer = setTimeout(doPoll, 2000);
-}
-
-function stopPolling() {
-  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-}
-
-async function doPoll() {
+// ── live updates (Server-Sent Events) ───────────────────────────────────────────
+// The server pushes a fresh session snapshot whenever its state changes, so there
+// is no client poll loop to die, no cache to fight, and no fixed latency.
+function startStream() {
+  stopStream();
   if (!currentSession) return;
-  const data = await fetch(`/api/sessions/${currentSession.session_id}`)
-    .then(r => r.json()).catch(() => null);
-  if (!data) return;
+  const sid = currentSession.session_id;
+  evtSource = new EventSource(`/api/sessions/${sid}/stream`);
+  evtSource.onmessage = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch (_) { return; }
+    applySessionUpdate(data);
+  };
+  // EventSource reconnects automatically on error; nothing to do here.
+}
+
+function stopStream() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+}
+
+let _terminalRefreshed = false;
+async function applySessionUpdate(data) {
+  if (!data || !currentSession || data.session_id !== currentSession.session_id) return;
+  if (data.deleted) { stopStream(); return; }
 
   currentSession = data;
   document.getElementById('session-info').textContent =
@@ -442,14 +672,23 @@ async function doPoll() {
 
   const prevDone = Object.keys(rolloutData).length;
   await fetchCompletedData();
+  // Refresh the grid first (and unconditionally) so placeholder statuses update
+  // live and previews start the moment a rollout finishes — and so a plotting
+  // error can never prevent the videos from rendering.
+  renderVideoGrid();
   if (Object.keys(rolloutData).length !== prevDone) {
+    renderSessionTags(data);
     renderAggregatePlots();
   }
 
-  if (data.n_done < data.n_total) {
-    pollTimer = setTimeout(doPoll, 2000);
+  // Refresh the session dropdown once, when everything is terminal.
+  const nTerminal = data.rollouts.filter(
+    r => r.status === 'done' || r.status === 'error'
+  ).length;
+  if (data.n_total > 0 && nTerminal === data.n_total) {
+    if (!_terminalRefreshed) { _terminalRefreshed = true; refreshSessionList(); }
   } else {
-    await refreshSessionList();
+    _terminalRefreshed = false;
   }
 }
 
@@ -474,9 +713,8 @@ function renderRolloutList(session) {
   }
 
   list.innerHTML = statusLine + session.rollouts.map(r => {
-    const url = `/sessions/${sid}/${r.name}/`;
     const nameEl = r.status === 'done'
-      ? `<a href="${url}" target="_blank" class="rname">${r.name}</a>`
+      ? `<a href="javascript:void(0)" onclick="openRollout('${r.name}')" class="rname">${r.name}</a>`
       : `<span class="rname">${r.name}</span>`;
     const tag = r.deterministic ? 'det' : 'sto';
     const detail = r.detail
@@ -491,6 +729,39 @@ function renderRolloutList(session) {
       </div>${detail}
     </div>`;
   }).join('') || '<div class="empty">No rollouts</div>';
+}
+
+// ── session-shared tags (sidebar) ───────────────────────────────────────────────
+// These are identical across all rollouts in a session (env, checkpoint, …),
+// so we show them once in the sidebar rather than per-rollout.
+function renderSessionTags(session) {
+  const el = document.getElementById('session-tags');
+  if (!session) { el.innerHTML = ''; return; }
+
+  const env = session.run.split(/-\d{8}-/)[0] || session.run;
+
+  // Prefer values from a completed rollout's meta; fall back to session fields.
+  const meta = Object.values(rolloutData).find(d => d && d.meta);
+  let ckpt = session.checkpoint_step;
+  if ((!ckpt || ckpt === 'latest') && meta) {
+    ckpt = (meta.checkpoint || '').replace(/\\/g, '/').split('/').pop();
+  }
+  const ckptNum = parseInt(ckpt, 10);
+  const ckptLabel = Number.isNaN(ckptNum) ? (ckpt || 'latest') : String(ckptNum);
+
+  // sensor_bundle comes straight from the server (read from the run's config.json),
+  // so it shows immediately — no need to wait for a rollout to finish.
+  const sensor = session.sensor_bundle || (meta && meta.sensor_bundle);
+
+  const rows = [['env', env]];
+  if (sensor) rows.push(['sensor', sensor]);
+  rows.push(['checkpoint', ckptLabel]);
+  if (meta && meta.T != null)  rows.push(['steps', String(meta.T)]);
+  if (meta && meta.dt != null) rows.push(['dt', meta.dt + ' s']);
+
+  el.innerHTML = rows.map(([k, v]) =>
+    `<div class="strow"><span class="stkey">${k}</span><span class="stval">${v}</span></div>`
+  ).join('');
 }
 
 // ── data fetching ─────────────────────────────────────────────────────────────
@@ -542,17 +813,37 @@ function bandTraces(x, bands, label, color, showLegend = true) {
       x, y: bands.means,
       type: 'scatter', mode: 'lines',
       name: label, line: {color, width: 1.5},
-      showlegend,
+      showlegend: showLegend,
     },
   ];
 }
 
 function renderAggregatePlots() {
+  // Isolate plotting so an error (e.g. Plotly failing to load, or bad data)
+  // can't abort the caller and take the video grid / live updates down with it.
+  try {
+    _renderAggregatePlots();
+  } catch (err) {
+    console.error('renderAggregatePlots failed:', err);
+    const empty = document.getElementById('agg-empty');
+    if (empty) {
+      empty.style.display = '';
+      empty.style.whiteSpace = 'pre';
+      const plotlyMissing = (typeof Plotly === 'undefined');
+      empty.textContent = plotlyMissing
+        ? 'Plotly failed to load (CDN unreachable?).\nCharts are unavailable; videos still work.'
+        : 'Plot error: ' + (err && err.message ? err.message : err);
+    }
+  }
+}
+
+function _renderAggregatePlots() {
   const datasets = Object.values(rolloutData);
   const n = datasets.length;
   const empty = document.getElementById('agg-empty');
   const statBar = document.getElementById('stat-bar');
   const rewardRow = document.getElementById('reward-row');
+  const rewardTermsRow = document.getElementById('reward-terms-row');
 
   if (n === 0) {
     if (currentSession && currentSession.n_total > 0) {
@@ -580,6 +871,7 @@ function renderAggregatePlots() {
     empty.style.display = '';
     statBar.style.display = 'none';
     rewardRow.style.display = 'none';
+    rewardTermsRow.style.display = 'none';
     return;
   }
   empty.style.display = 'none';
@@ -634,61 +926,45 @@ function renderAggregatePlots() {
     plotCfg,
   );
 
-  // ── per-output-group plots ──
-  const groups = datasets[0].output_groups;
-  const groupsDiv = document.getElementById('group-plots');
-
-  for (const group of groups) {
-    const gid = `grp-${group.key}`;
-    let sec = document.getElementById(`sec-${gid}`);
-    if (!sec) {
-      sec = document.createElement('details');
-      sec.className = 'grp';
-      sec.id = `sec-${gid}`;
-      sec.open = group === groups[0];  // expand first group
-      sec.innerHTML = `
-        <summary>${group.key}  <span style="color:var(--muted);font-size:10px">${group.elements.length} DOF</span></summary>
-        <div class="grp-charts">
-          <div class="grp-chart" id="${gid}-cmd"></div>
-          <div class="grp-chart" id="${gid}-mt"></div>
-        </div>
-      `;
-      sec.addEventListener('toggle', () => {
-        if (sec.open) {
-          Plotly.Plots.resize(document.getElementById(`${gid}-cmd`));
-          Plotly.Plots.resize(document.getElementById(`${gid}-mt`));
-        }
-      });
-      groupsDiv.appendChild(sec);
-    }
-
-    // command delta traces (one band per DOF element)
-    const cmdTraces = group.elements.flatMap((el, i) => {
-      const series = datasets.map(d => d.dof.command.map(row => row[el.index]));
-      return bandTraces(tArr, computeBands(series), el.label, COLORS[i % COLORS.length]);
+  // ── per-reward-term distribution across rollouts (mean ± std band per term) ──
+  // Same visual style as the pre-squash distribution plots: one shaded band +
+  // mean line per series, here one series per reward term.
+  const termKeys = datasets[0].rewards.term_keys || [];
+  const haveTerms = datasets.every(d => d.rewards && Array.isArray(d.rewards.terms))
+    && termKeys.length > 0;
+  if (haveTerms) {
+    rewardTermsRow.style.display = '';
+    const termTraces = termKeys.flatMap((key, k) => {
+      const series = datasets.map(d => d.rewards.terms.map(row => row[k]));
+      const label = key.startsWith('reward/') ? key.slice(7) : key;
+      return bandTraces(tArr, computeBands(series), label, COLORS[k % COLORS.length]);
     });
-
-    // motor target traces
-    const mtTraces = datasets[0].dof.motor_targets
-      ? group.elements.flatMap((el, i) => {
-          const series = datasets.map(d => d.dof.motor_targets.map(row => row[el.index]));
-          return bandTraces(tArr, computeBands(series), el.label, COLORS[i % COLORS.length]);
-        })
-      : [{x: tArr, y: Array(T).fill(null), type: 'scatter', mode: 'lines', name: 'n/a'}];
-
     Plotly.react(
-      `${gid}-cmd`,
-      cmdTraces,
-      basePlotLayout(`${group.key}  —  command delta (rad)`),
+      'reward-terms-chart',
+      termTraces,
+      basePlotLayout(`Reward terms per step  (mean ± std, n=${n})`),
       plotCfg,
     );
-    Plotly.react(
-      `${gid}-mt`,
-      mtTraces,
-      basePlotLayout(`${group.key}  —  motor target (rad)`),
-      plotCfg,
-    );
+    // Toggling a term's line in the legend should also hide/show its band.
+    // Traces are laid out [band, line] per term, so the band for the clicked
+    // line (curveNumber 2k+1) is the trace right before it (2k).
+    const rtDiv = document.getElementById('reward-terms-chart');
+    if (!rtDiv._bandToggleWired) {
+      rtDiv._bandToggleWired = true;
+      rtDiv.on('plotly_legendclick', (ev) => {
+        const band = ev.curveNumber - 1;
+        if (band < 0) return true;
+        const lineVisible = rtDiv.data[ev.curveNumber].visible !== 'legendonly';
+        Plotly.restyle(rtDiv, {visible: lineVisible ? 'legendonly' : true}, [band]);
+        return true;  // keep Plotly's default toggle on the clicked line
+      });
+    }
+  } else {
+    rewardTermsRow.style.display = 'none';
   }
+
+  // Charts may have been (re)created while the view was hidden; ensure they size.
+  if (currentView === 'aggregate') setTimeout(resizeAggregateCharts, 0);
 }
 
 // ── start ─────────────────────────────────────────────────────────────────────

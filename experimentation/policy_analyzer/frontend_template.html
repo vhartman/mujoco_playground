@@ -96,8 +96,12 @@
   const BASE_SHAPES = {};   // divId -> static shapes (no vline)
   let dragDiv = null;       // chart div currently being dragged
 
-  // ── session back-link (when viewed inside a session) ─────────────────────
-  {
+  // Embedded inside the session view's iframe? Then the parent shows the
+  // session tags + navigation, so we hide our own header/back-link.
+  const EMBEDDED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+
+  // ── session back-link (only when opened standalone, not embedded) ─────────
+  if (!EMBEDDED) {
     const parts = window.location.pathname.split('/');
     const si = parts.indexOf('sessions');
     if (si !== -1) {
@@ -118,10 +122,17 @@
 
   function init() {
     const m = D.meta;
-    const ckpt = (m.checkpoint || '').replace(/\\/g, '/').split('/').pop() || '?';
-    document.getElementById('title').innerHTML =
-      tag(m.env_name) + tag(m.sensor_bundle) + tag('ckpt ' + ckpt) +
-      tag('T=' + m.T) + tag('dt=' + m.dt + 's') + tag(m.deterministic ? 'det' : 'sto');
+    if (EMBEDDED) {
+      // Session view (parent) renders the shared tags; keep the iframe clean.
+      document.getElementById('header').style.display = 'none';
+    } else {
+      const ckptRaw = (m.checkpoint || '').replace(/\\/g, '/').split('/').pop() || '?';
+      const ckptNum = parseInt(ckptRaw, 10);
+      const ckptLabel = Number.isNaN(ckptNum) ? ckptRaw : String(ckptNum);
+      document.getElementById('title').innerHTML =
+        tag(m.env_name) + tag(m.sensor_bundle) + tag('checkpoint: ' + ckptLabel) +
+        tag('T=' + m.T) + tag('dt=' + m.dt + 's');
+    }
 
     // Show first frame immediately while the rest load
     document.getElementById('frame-img').src = frameUrl(0);
