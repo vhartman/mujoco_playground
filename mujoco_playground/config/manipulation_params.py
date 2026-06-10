@@ -334,7 +334,7 @@ def brax_ppo_config(
   elif env_name == "TesolloDownwardsRotateZ":
     rl_config.num_timesteps = 1_000_000_000
     rl_config.num_evals = 20
-    rl_config.num_minibatches = 32
+    rl_config.num_minibatches = 64
     rl_config.unroll_length = 40
     rl_config.num_updates_per_batch = 4
     rl_config.discounting = 0.99
@@ -347,8 +347,6 @@ def brax_ppo_config(
         value_hidden_layer_sizes=(512, 256, 128),
         policy_obs_key="state",
         value_obs_key="privileged_state",
-        # distribution_type="normal",
-        # state_dependent_std=True,
     )
     rl_config.num_resets_per_eval = 1
   elif env_name == "TesolloGrasp":
@@ -388,7 +386,7 @@ def brax_ppo_config(
         value_obs_key="privileged_state",
     )
     rl_config.num_resets_per_eval = 1
-  elif env_name.startswith("TesolloPinch"):
+  elif env_name == "TesolloPinch":
     rl_config.num_timesteps = 500_000_000
     rl_config.num_evals = 50
     rl_config.num_minibatches = 16*2
