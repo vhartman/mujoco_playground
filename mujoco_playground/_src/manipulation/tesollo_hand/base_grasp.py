@@ -99,7 +99,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         obs_module.resolve_bundle(self._config.sensor_bundle)
         + self._task_obs_keys()
     )
-    return sum(obs_module.get(k).size for k in all_keys)
+    return sum(obs_module.get(k).resolve_size(self) for k in all_keys)
 
   def _task_obs_keys(self) -> tuple[str, ...]:
     return ()
@@ -135,11 +135,16 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
   def get_palm_orientation(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "palm_orientation")
 
+  @property
+  def _fingertip_names(self) -> tuple[str, ...]:
+    """Active fingertip site names for this env. Override to reduce the set."""
+    return consts.FINGERTIP_NAMES
+
   def get_fingertip_positions(self, data: mjx.Data) -> jax.Array:
     """Get fingertip positions relative to the grasp site."""
     return jp.concatenate([
         mjx_env.get_sensor_data(self.mj_model, data, f"{name}_position")
-        for name in consts.FINGERTIP_NAMES
+        for name in self._fingertip_names
     ])
 
   # ------------------------------------------------------------------
@@ -196,11 +201,17 @@ _PALM_LABELS = ("palm_x", "palm_y", "palm_z")
 
 # Register generic hand-sensor obs components using the methods above.
 # fn signature is (env, data, info) which matches an unbound method call.
-obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=26, description="hand joint positions",            labels=_JOINT_LABELS))
-obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=26, description="hand joint velocities",           labels=_JOINT_LABELS))
-obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=26, description="current actuator targets",         labels=_JOINT_LABELS))
-obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=26, description="motor targets minus current qpos",   labels=_JOINT_LABELS))
-obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=15, description="fingertip positions (world frame)", labels=_FINGERTIP_XYZ_LABELS))
+# DOF-dependent and fingertip-count-dependent components use a callable size
+# so envs with fewer active DOFs or fewer active fingers (e.g. 8-DOF pinch,
+# 20-DOF wrist-fixed, 2-finger pinch) report the correct obs_size without
+# needing a subclass per configuration.
+_ndof = lambda env: len(env._hand_qids)       # noqa: E731
+_ntips = lambda env: 3 * len(env._fingertip_names)  # noqa: E731
+obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=_ndof,  description="hand joint positions"))
+obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=_ndof,  description="hand joint velocities"))
+obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=_ndof, description="current actuator targets"))
+obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=_ndof, description="motor targets minus current qpos"))
+obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=_ntips, description="fingertip positions (world frame)"))
 obs_module.register(obs_module.ObsComponent("palm_pos",     TesolloHandGraspEnv._obs_palm_pos,     size=3,  description="palm/grasp site position",          labels=_PALM_LABELS))
 
 

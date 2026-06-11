@@ -26,10 +26,14 @@ from typing import Callable
 @dataclasses.dataclass(frozen=True)
 class ObsComponent:
     key: str
-    fn: Callable   # (env, data, info) -> jax.Array
-    size: int
+    fn: Callable                          # (env, data, info) -> jax.Array
+    size: int | Callable                  # int, or (env) -> int for DOF-dependent components
     description: str
-    labels: tuple[str, ...] | None = None  # per-element names; len must == size
+    labels: tuple[str, ...] | None = None # per-element names; only valid when size is a plain int
+
+    def resolve_size(self, env) -> int:
+        """Return the concrete element count for the given env instance."""
+        return self.size(env) if callable(self.size) else self.size
 
 
 _REGISTRY: dict[str, "ObsComponent"] = {}
@@ -38,11 +42,17 @@ _REGISTRY: dict[str, "ObsComponent"] = {}
 def register(component: ObsComponent) -> ObsComponent:
     if component.key in _REGISTRY:
         raise ValueError(f"Obs key {component.key!r} already registered.")
-    if component.labels is not None and len(component.labels) != component.size:
-        raise ValueError(
-            f"Obs key {component.key!r}: got {len(component.labels)} labels "
-            f"but size is {component.size}."
-        )
+    if component.labels is not None:
+        if callable(component.size):
+            raise ValueError(
+                f"Obs key {component.key!r}: static labels cannot be paired with "
+                "a callable size — size is unknown at registration time."
+            )
+        if len(component.labels) != component.size:
+            raise ValueError(
+                f"Obs key {component.key!r}: got {len(component.labels)} labels "
+                f"but size is {component.size}."
+            )
     _REGISTRY[component.key] = component
     return component
 
@@ -53,10 +63,13 @@ def get(key: str) -> ObsComponent:
     return _REGISTRY[key]
 
 
-def element_labels(key: str) -> tuple[str, ...]:
+def element_labels(key: str, env=None) -> tuple[str, ...]:
     """Per-element labels for a component; defaults to '<key>[i]' when unset."""
     c = get(key)
-    return c.labels or tuple(f"{key}[{i}]" for i in range(c.size))
+    if c.labels:
+        return c.labels
+    n = c.resolve_size(env) if env is not None else (c.size if not callable(c.size) else 0)
+    return tuple(f"{key}[{i}]" for i in range(n))
 
 
 # ---------------------------------------------------------------------------

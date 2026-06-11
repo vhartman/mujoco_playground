@@ -38,7 +38,7 @@ class SceneBuilder:
     def __init__(self, xml_path: str | Path):
         self._xml_path = Path(xml_path)
 
-    def build(
+    def build_spec(
         self,
         *,
         keyframe_name: str = "home",
@@ -46,14 +46,18 @@ class SceneBuilder:
         joints_to_remove: list[str] = (),
         actuators_to_remove: list[str] = (),
         pose_overrides: PoseOverrideFn | None = None,
-    ) -> str:
-        """Return a modified XML string with the requested joints/actuators removed.
+    ) -> mujoco.MjSpec:
+        """Return a modified MjSpec with the requested joints/actuators removed.
 
         Bodies in `bodies_to_bake` have their current keyframe pose baked into
         their parent-relative pos/quat before their joints are removed, so they
         stay in place in the frozen scene.  `pose_overrides` can supply custom
         (pos, quat) pairs for bodies that need non-standard computation (e.g. a
         body that is a child of a <frame> rather than another body).
+
+        Returns MjSpec directly to avoid the to_xml() → from_string() roundtrip,
+        which can fail when the spec merges multiple model assets with conflicting
+        default class hierarchies.
         """
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         model = spec.compile()
@@ -63,20 +67,17 @@ class SceneBuilder:
         mujoco.mj_resetDataKeyframe(model, data, key_id)
         mujoco.mj_forward(model, data)
 
-        # Compute and apply any caller-supplied pose overrides first.
         overrides = pose_overrides(spec, data, model) if pose_overrides else {}
         for body_name, (pos, quat) in overrides.items():
             body = spec.worldbody.find_child(body_name)
             body.pos = pos
             body.quat = quat
 
-        # Bake remaining bodies using the generic parent-frame computation.
         for body_name in bodies_to_bake:
             pos, quat = _body_pose_in_parent_frame(data, model, body_name)
             spec.worldbody.find_child(body_name).pos = pos
             spec.worldbody.find_child(body_name).quat = quat
 
-        # Snapshot surviving joint qpos and actuator ctrl before addresses change.
         remove_joints = set(joints_to_remove)
         remove_actuators = set(actuators_to_remove)
         new_qpos = [
@@ -102,7 +103,25 @@ class SceneBuilder:
             spec.delete(key)
         spec.add_key(name=keyframe_name, qpos=new_qpos, ctrl=new_ctrl)
 
-        return spec.to_xml()
+        return spec
+
+    def build(
+        self,
+        *,
+        keyframe_name: str = "home",
+        bodies_to_bake: list[str] = (),
+        joints_to_remove: list[str] = (),
+        actuators_to_remove: list[str] = (),
+        pose_overrides: PoseOverrideFn | None = None,
+    ) -> str:
+        """Like build_spec() but returns an XML string instead of an MjSpec."""
+        return self.build_spec(
+            keyframe_name=keyframe_name,
+            bodies_to_bake=bodies_to_bake,
+            joints_to_remove=joints_to_remove,
+            actuators_to_remove=actuators_to_remove,
+            pose_overrides=pose_overrides,
+        ).to_xml()
 
 def _rh_pose_overrides(
     spec: mujoco.MjSpec,

@@ -1,0 +1,97 @@
+<mujoco model="tesollo_cube_pinch">
+  <include file="scene_base.xml"/>
+  <include file="reorientation_cube.xml"/>
+
+  <custom>
+    <numeric name="contact_sensor_maxmatch" data="105"/>
+  </custom>
+
+  <statistic center="0.04 0.04 0.15" extent="0.5" meansize="0.01"/>
+
+  <asset>
+    <model name="tesollo_trans3" file="tesollo_hand_free_body.xml"/>
+  </asset>
+
+  <worldbody>
+    <body pos="0. 0. 0.114" quat="-1 1 -1 1">
+      <attach model="tesollo_trans3" body="rh" prefix=""/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+
+    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-0.3 0.3"/>
+    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-0.3 0.3"/>
+    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-0.3 0.3"/>
+
+    <position kp="3" name="dg_1_j1_rx" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
+    <position kp="3" name="dg_1_j2_rz" joint="rj_dg_1_2" ctrlrange="-3.14159 0"/>
+    <position kp="3" name="dg_1_j3_rx" joint="rj_dg_1_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_1_j4_rx" joint="rj_dg_1_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="dg_2_j1_rx" joint="rj_dg_2_1" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="dg_2_j2_ry" joint="rj_dg_2_2" ctrlrange="0 2.00713"/>
+    <position kp="3" name="dg_2_j3_ry" joint="rj_dg_2_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_2_j4_ry" joint="rj_dg_2_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="dg_3_j1_rx" joint="rj_dg_3_1" ctrlrange="-0.610865 0.610865"/>
+    <position kp="3" name="dg_3_j2_ry" joint="rj_dg_3_2" ctrlrange="0 1.95477"/>
+    <position kp="3" name="dg_3_j3_ry" joint="rj_dg_3_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_3_j4_ry" joint="rj_dg_3_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="dg_4_j1_rx" joint="rj_dg_4_1" ctrlrange="-0.610865 0.418879"/>
+    <position kp="3" name="dg_4_j2_ry" joint="rj_dg_4_2" ctrlrange="0 1.90241"/>
+    <position kp="3" name="dg_4_j3_ry" joint="rj_dg_4_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_4_j4_ry" joint="rj_dg_4_4" ctrlrange="0 1.5708"/>
+
+    <position kp="3" name="dg_5_j1_rz" joint="rj_dg_5_1" ctrlrange="-0.0174533 1.0472"/>
+    <position kp="3" name="dg_5_j2_rx" joint="rj_dg_5_2" ctrlrange="-0.418879 0.610865"/>
+    <position kp="3" name="dg_5_j3_ry" joint="rj_dg_5_3" ctrlrange="0 1.5708"/>
+    <position kp="3" name="dg_5_j4_ry" joint="rj_dg_5_4" ctrlrange="0 1.5708"/>
+  </actuator>
+
+  <sensor>
+    <!-- cube. -->
+    <framepos name="cube_position" objtype="body" objname="cube"/>
+    <framequat name="cube_orientation" objtype="body" objname="cube"/>
+    <framelinvel name="cube_linvel" objtype="body" objname="cube"/>
+    <frameangvel name="cube_angvel" objtype="body" objname="cube"/>
+    <frameangacc name="cube_angacc" objtype="body" objname="cube"/>
+    <framezaxis name="cube_upvector" objtype="body" objname="cube"/>
+
+    <!-- hand. -->
+    <framepos name="palm_position" objtype="site" objname="grasp_site"/>
+    <framepos name="rl_dg_1_tip_c_position" objtype="site" objname="rl_dg_1_tip_c"/>
+    <framepos name="rl_dg_2_tip_c_position" objtype="site" objname="rl_dg_2_tip_c"/>
+    <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c"/>
+    <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c"/>
+    <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c"/>
+
+    <!-- contact forces: thumb and index only for the pinch task. -->
+    <contact name="cube_force" geom1="cube" subtree2="rh" num="32" data="force"/>
+    <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
+  </sensor>
+
+  <keyframe>
+    <key name="home"
+      qpos="
+      0.0 0.0 0.035 1 0 0 0
+      -0.16 0.025 -0.13 0.018 0.3 0.198
+      -0.0846 -1.59 0 0.775
+      -0.172 0.29 0.819 0.45
+      -0.104 1.08 1.49 1.5
+      0.000154 1.21 1.43 1.33
+      0.00107 0.256 1.23 1.5"
+      ctrl="
+      -0.16 0.025 -0.13 0.018 0.3 0.198
+      -0.0846 -1.59 0 0.775
+      -0.172 0.29 0.819 0.45
+      -0.104 1.08 1.49 1.5
+      0.000154 1.21 1.43 1.33
+      0.00107 0.256 1.23 1.5"/>
+  </keyframe>
+</mujoco>
