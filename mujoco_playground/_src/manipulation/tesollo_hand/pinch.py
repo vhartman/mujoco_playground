@@ -49,15 +49,15 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.5,
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=400,
+        episode_length=120,
         # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
         sensor_bundle="proprio.target",
         # Target total contact force from hand on cube sides, in Newtons.
         force_target=10.0,
         # Range [min, max] for randomizing force_target on each reset.
-        force_target_range=[10.0, 10.0],
+        force_target_range=[5.0, 15.0],
         # Force must stay within ±force_tolerance N of target for success_hold_time seconds.
-        force_tolerance=2.0,
+        force_tolerance=1.0,
         success_hold_time=1.0,
         obs_noise=config_dict.create(
             level=0.0,
@@ -70,17 +70,13 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                cube_force=5.0,
-                fingertip_reach=2.0,
-                fingertip_pos_per_tip=2.0,
-                pinch_alignment=2.0,
+                # Two normalized [0, 1] reward components ...
+                cube_force=5.0,            # contact force matching the target
+                fingertip_pos_per_tip=2.0,  # fingertips reaching the cube centre
+                # ... plus smoothness penalties.
                 action_rate=-0.005,
                 joint_vel=-0.01,
-                energy=-1e-3,
-                termination=-100.0,
             ),
-            shaping_scale=9.0,
-            shaping_floor=0.5,
             success_reward=10.0,
         ),
         pert_config=config_dict.create(
@@ -216,11 +212,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def _build_obs_components(self) -> dict:
         c = super()._build_obs_components()
         c.update({
-            "fingertip_forces": obs_module.ObsComponent(
-                "fingertip_forces", self._obs_fingertip_forces,
-                size=len(self._TIP_FORCE_SENSORS),
-                description="per-tip contact force magnitude vs cube, /tip_force_scale",
-            ),
             "target_force": obs_module.ObsComponent(
                 "target_force", self._obs_target_force,
                 size=1,
@@ -421,23 +412,17 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
 
         obs = self._get_obs(data, state.info)
-        rewards = self._get_reward(data, action, state.info, done, effective_force)
+        rewards = self._get_reward(data, action, state.info, effective_force)
 
-        a = self._config.reward_config.shaping_floor
-        rf = a + (1.0 - a) * rewards["cube_force"]
-        rr = a + (1.0 - a) * rewards["fingertip_reach"] / 2.0
-        shaping = self._config.reward_config.shaping_scale * rf * rr
-
+        # Weighted sum of the two normalized reward components plus penalties,
+        # then a per-step bonus whenever the force is within tolerance.
         sc = self._config.reward_config.scales
-        penalties = (
-            sc.action_rate * rewards["action_rate"]
-            + sc.joint_vel * rewards["joint_vel"]
-            + sc.energy * rewards["energy"]
-            + sc.termination * rewards["termination"]
+        rew = (
+            sc.cube_force * rewards["cube_force"]
             + sc.fingertip_pos_per_tip * rewards["fingertip_pos_per_tip"]
-        )
-
-        rew = (shaping + penalties) * self.dt
+            + sc.action_rate * rewards["action_rate"]
+            + sc.joint_vel * rewards["joint_vel"]
+        ) * self.dt
         rew += in_tolerance * self._config.reward_config.success_reward
 
         state.info["step"] += 1
@@ -445,13 +430,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.info["last_act"] = action
         state.metrics["reward/success"] = success.astype(float)
         state.metrics["reward/cube_force"] = rewards["cube_force"]
-        state.metrics["reward/fingertip_reach"] = rewards["fingertip_reach"]
-        state.metrics["reward/fingertip_pos_per_tip"] = sc.fingertip_pos_per_tip * rewards["fingertip_pos_per_tip"]
-        state.metrics["reward/pinch_alignment"] = rewards["pinch_alignment"]
-        state.metrics["reward/action_rate"] = sc.action_rate * rewards["action_rate"]
-        state.metrics["reward/joint_vel"] = sc.joint_vel * rewards["joint_vel"]
-        state.metrics["reward/energy"] = sc.energy * rewards["energy"]
-        state.metrics["reward/termination"] = sc.termination * rewards["termination"]
+        state.metrics["reward/fingertip_pos_per_tip"] = rewards["fingertip_pos_per_tip"]
+        state.metrics["reward/action_rate"] = rewards["action_rate"]
+        state.metrics["reward/joint_vel"] = rewards["joint_vel"]
         state.metrics["f_thumb"] = f_thumb
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
@@ -480,47 +461,33 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         data: mjx.Data,
         action: jax.Array,
         info: dict[str, Any],
-        done: jax.Array,
         effective_force: jax.Array,
     ) -> dict[str, jax.Array]:
+        # Contact force matching the (randomized) target, normalized to [0, 1].
+        # Use the relative force error so tolerance() gets constant bounds/margin
+        # (passing the traced target as bounds breaks under jit). With error e =
+        # (f - target) / target this is identical to a Gaussian tolerance on f
+        # with bounds=(target, target), margin=target.
         force_target = info["force_target"]
+        force_error = (effective_force - force_target) / force_target
         force_reward = reward.tolerance(
-            effective_force,
-            bounds=(force_target, force_target),
-            margin=force_target,
-            sigmoid="gaussian",
+            force_error, bounds=(0.0, 0.0), margin=1.0, sigmoid="gaussian"
         )
 
+        # Fingertips reaching the cube centre, normalized to [0, 1]: the mean
+        # over tips of a per-tip closeness reward.
         cube_pos = self.get_cube_position(data)
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         reach_dists = jp.linalg.norm(tips - cube_pos, axis=1)
-        fingertip_reach = jp.sum(
-            reward.tolerance(reach_dists, bounds=(0, 0.035), margin=0.1, sigmoid="reciprocal")
-        )
-        fingertip_pos_per_tip = jp.sum(
+        fingertip_pos_per_tip = jp.mean(
             reward.tolerance(reach_dists, bounds=(0, self._cube_half_size), margin=0.1, sigmoid="reciprocal")
-        )
-
-        thumb_dist = jp.linalg.norm(tips[0] - cube_pos)
-        index_dist = jp.linalg.norm(tips[1] - cube_pos)
-        pinch_alignment = jp.sum(
-            reward.tolerance(
-                jp.array([thumb_dist, index_dist]),
-                bounds=(0, 0.01),
-                margin=0.08,
-                sigmoid="reciprocal",
-            )
         )
 
         return {
             "cube_force": force_reward,
-            "fingertip_reach": fingertip_reach,
             "fingertip_pos_per_tip": fingertip_pos_per_tip,
-            "pinch_alignment": pinch_alignment,
             "action_rate": self._cost_action_rate(action, info["last_act"], info["last_last_act"]),
             "joint_vel": self._cost_joint_vel(data),
-            "energy": self._cost_energy(data.qvel[self._hand_dqids], data.actuator_force),
-            "termination": done,
         }
 
     def _total_contact_force(self, data: mjx.Data) -> jax.Array:
@@ -530,9 +497,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def _fingertip_force(self, data: mjx.Data, sensor_name: str) -> jax.Array:
         f = mjx_env.get_sensor_data(self.mj_model, data, sensor_name).reshape(-1, 3)
         return jp.sum(jp.linalg.norm(f, axis=1))
-
-    def _cost_energy(self, qvel: jax.Array, qfrc_actuator: jax.Array) -> jax.Array:
-        return jp.sum(jp.abs(qvel) * jp.abs(qfrc_actuator))
 
     def _cost_action_rate(
         self, act: jax.Array, last_act: jax.Array, last_last_act: jax.Array
