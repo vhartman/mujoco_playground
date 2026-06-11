@@ -214,6 +214,55 @@ def rscope_fn(full_states, obs, rew, done):
   )
 
 
+def _collect_flag_overrides() -> dict:
+  """Return {flag_name: value} for every CLI flag explicitly set by the user."""
+  return {
+      name: fh.value
+      for name, fh in [
+          ("env_name", _ENV_NAME),
+          ("impl", _IMPL),
+          ("vision", _VISION),
+          ("load_checkpoint_path", _LOAD_CHECKPOINT_PATH),
+          ("suffix", _SUFFIX),
+          ("play_only", _PLAY_ONLY),
+          ("use_wandb", _USE_WANDB),
+          ("log_video_to_wandb", _LOG_VIDEO_TO_WANDB),
+          ("use_tb", _USE_TB),
+          ("domain_randomization", _DOMAIN_RANDOMIZATION),
+          ("seed", _SEED),
+          ("num_timesteps", _NUM_TIMESTEPS),
+          ("num_videos", _NUM_VIDEOS),
+          ("num_evals", _NUM_EVALS),
+          ("reward_scaling", _REWARD_SCALING),
+          ("episode_length", _EPISODE_LENGTH),
+          ("normalize_observations", _NORMALIZE_OBSERVATIONS),
+          ("action_repeat", _ACTION_REPEAT),
+          ("unroll_length", _UNROLL_LENGTH),
+          ("num_minibatches", _NUM_MINIBATCHES),
+          ("num_updates_per_batch", _NUM_UPDATES_PER_BATCH),
+          ("discounting", _DISCOUNTING),
+          ("learning_rate", _LEARNING_RATE),
+          ("entropy_cost", _ENTROPY_COST),
+          ("num_envs", _NUM_ENVS),
+          ("num_eval_envs", _NUM_EVAL_ENVS),
+          ("batch_size", _BATCH_SIZE),
+          ("max_grad_norm", _MAX_GRAD_NORM),
+          ("clipping_epsilon", _CLIPPING_EPSILON),
+          ("policy_hidden_layer_sizes", _POLICY_HIDDEN_LAYER_SIZES),
+          ("value_hidden_layer_sizes", _VALUE_HIDDEN_LAYER_SIZES),
+          ("policy_obs_key", _POLICY_OBS_KEY),
+          ("value_obs_key", _VALUE_OBS_KEY),
+          ("rscope_envs", _RSCOPE_ENVS),
+          ("deterministic_rscope", _DETERMINISTIC_RSCOPE),
+          ("run_evals", _RUN_EVALS),
+          ("log_training_metrics", _LOG_TRAINING_METRICS),
+          ("training_metrics_steps", _TRAINING_METRICS_STEPS),
+          ("env_overrides_file", _ENV_OVERRIDES_FILE),
+      ]
+      if fh.present
+  }
+
+
 def _reward_scales(env_cfg) -> dict:
   """Return the env's reward-term scales, or {} if the env has none.
 
@@ -412,8 +461,11 @@ def main(argv):
   if _TRAINING_METRICS_STEPS.present:
     ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
 
+  flag_overrides = _collect_flag_overrides()
+
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
+  print(f"CLI overrides: {json.dumps(flag_overrides, indent=2)}")
 
   # Generate unique experiment name
   now = datetime.datetime.now()
@@ -433,6 +485,8 @@ def main(argv):
     wandb.init(project="mjxrl", name=exp_name)
     wandb.config.update(env_cfg.to_dict())
     wandb.config.update({"env_name": _ENV_NAME.value})
+    if flag_overrides:
+      wandb.config.update({"run_overrides": flag_overrides})
     # Static, one-shot reward-budget overview (not updated during the run).
     log_reward_scale_composition(env_cfg)
 
