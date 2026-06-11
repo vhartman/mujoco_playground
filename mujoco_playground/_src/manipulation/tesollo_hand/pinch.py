@@ -20,6 +20,7 @@ __all__ = [
     "domain_randomize",
 ]
 
+import functools
 from typing import Any, Dict, Optional, Union
 
 import jax
@@ -32,6 +33,7 @@ import numpy as np
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src import reward
 from mujoco_playground._src.manipulation.tesollo_hand import base_grasp as tesollo_hand_base
+from mujoco_playground._src.manipulation.tesollo_hand import obs as obs_module
 from mujoco_playground._src.manipulation.tesollo_hand import (
     tesollo_hand_pinch_constants as consts,
 )
@@ -48,8 +50,8 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=400,
-        # "baseline" | "proprio" | "force"
-        sensor_bundle="proprio",
+        # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
+        sensor_bundle="proprio.target",
         # Target total contact force from hand on cube sides, in Newtons.
         force_target=10.0,
         # Range [min, max] for randomizing force_target on each reset.
@@ -109,9 +111,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     Only the 8 thumb+index DOFs are controlled. The cube has no freejoint.
 
     Observation layout is controlled by config.sensor_bundle:
-      "baseline" → joint_pos(8) + joint_vel(8) + force_target(1) = 17
-      "proprio"  → + motor_targets(8)                             = 25
-      "force"    → + motor_targets(8) + force(3)                  = 28
+      "baseline"                       → joint_pos(8) + joint_vel(8) + target_force(1) = 17
+      "proprio.target"                 → + motor_targets(8)                             = 25
+      "proprio.target+force.magnitude" → + motor_targets(8) + fingertip_forces(2)      = 27
     """
 
     def __init__(
@@ -132,11 +134,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self._mj_model.vis.global_.offheight = 2160
         self._xml_path = consts.SCENE_XML.as_posix()
 
-        if self._config.sensor_bundle not in consts.SENSOR_BUNDLES:
-            raise ValueError(
-                f"Unknown sensor_bundle {self._config.sensor_bundle!r}. "
-                f"Valid: {sorted(consts.SENSOR_BUNDLES)}"
-            )
         if self._config.pid_gains.enable:
             self._apply_pid_gains()
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
@@ -158,6 +155,13 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         _init_data = mujoco.MjData(self._mj_model)
         mujoco.mj_forward(self._mj_model, _init_data)
         self._init_cube_pos = jp.array(_init_data.xpos[self._cube_body_id])
+        self._obs_components = self._build_obs_components()
+        obs_module.validate_spec(
+            self._config.sensor_bundle,
+            self._task_obs_keys(),
+            self._obs_components,
+            self._config.obs_noise.scales,
+        )
 
     def _apply_pid_gains(self) -> None:
         """Override actuator PID gains from config, replacing XML-baked values."""
@@ -198,6 +202,34 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def mjx_model(self) -> mjx.Model:
         return self._mjx_model
 
+    _TASK_KEYS: tuple[str, ...] = ("target_force",)
+
+    _TIP_FORCE_SENSORS: list[str] = [
+        "rl_dg_1_tip_cube_force",
+        "rl_dg_2_tip_cube_force",
+    ]
+    _TIP_FORCE_SCALE: float = 10.0
+
+    def _task_obs_keys(self) -> tuple[str, ...]:
+        return self._TASK_KEYS
+
+    def _build_obs_components(self) -> dict:
+        c = super()._build_obs_components()
+        c.update({
+            "fingertip_forces": obs_module.ObsComponent(
+                "fingertip_forces", self._obs_fingertip_forces,
+                size=len(self._TIP_FORCE_SENSORS),
+                description="per-tip contact force magnitude vs cube, /tip_force_scale",
+            ),
+            "target_force": obs_module.ObsComponent(
+                "target_force", self._obs_target_force,
+                size=1,
+                description="randomised force target, normalised by config.force_target",
+                labels=("target_force",),
+            ),
+        })
+        return c
+
     @property
     def _fingertip_names(self) -> tuple[str, ...]:
         return tuple(consts.FINGERTIP_NAMES)
@@ -213,65 +245,28 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     # Observation
     # ------------------------------------------------------------------
 
-    @property
-    def obs_size(self) -> int:
-        n = consts.N_ACTIVE
-        base = n + n + 1  # joint_pos + joint_vel + force_target
-        bundle = self._config.sensor_bundle
-        if bundle == "proprio":
-            return base + n
-        if bundle == "force":
-            return base + n + 3
-        return base  # "baseline"
-
     def _get_obs(self, data: mjx.Data, info: dict[str, Any]) -> mjx_env.Observation:
-        sensor_bundle = self._config.sensor_bundle
-        joint_pos = self._obs_joint_pos(data, info)
-        joint_vel = self._obs_joint_vel(data, info)
-        force_target_obs = self._obs_force_target(data, info)
-
-        if sensor_bundle == "baseline":
-            state = jp.concatenate([joint_pos, joint_vel, force_target_obs])
-        elif sensor_bundle == "proprio":
-            state = jp.concatenate([joint_pos, joint_vel, self._obs_motor_targets(data, info), force_target_obs])
-        else:  # "force"
-            state = jp.concatenate([joint_pos, joint_vel, self._obs_motor_targets(data, info), self._obs_force(data, info), force_target_obs])
-
+        state = self._build_obs(
+            self._config.sensor_bundle, self._task_obs_keys(), data, info
+        )
         return {"state": state, "privileged_state": self._obs_privileged(data, info)}
 
     # ------------------------------------------------------------------
-    # Obs component methods (8-DOF pinch-specific, override base 26-DOF)
+    # Pinch-specific obs component methods
     # ------------------------------------------------------------------
 
-    def _obs_joint_pos(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        angles = data.qpos[self._hand_qids]
-        info["rng"], key = jax.random.split(info["rng"])
-        noise = (
-            2 * jax.random.uniform(key, shape=angles.shape) - 1
-        ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_pos
-        return angles + noise
+    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+        forces = jp.array([
+            jp.sum(jp.linalg.norm(
+                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+                axis=1,
+            ))
+            for name in self._TIP_FORCE_SENSORS
+        ])
+        return forces / self._TIP_FORCE_SCALE
 
-    def _obs_joint_vel(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        vel = data.qvel[self._hand_dqids]
-        info["rng"], key = jax.random.split(info["rng"])
-        noise = (
-            2 * jax.random.uniform(key, shape=vel.shape) - 1
-        ) * self._config.obs_noise.level * self._config.obs_noise.scales.joint_vel
-        return vel + noise
-
-    def _obs_motor_targets(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        return info["motor_targets"]
-
-    def _obs_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """[f_thumb, f_index, total_force] / (2 * force_target), shape (3,)."""
-        norm = info["force_target"] * 2.0
-        f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
-        f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
-        total_force = self._total_contact_force(data)
-        return jp.array([f_thumb, f_index, total_force]) / norm
-
-    def _obs_force_target(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Normalized force target command, shape (1,)."""
+    def _obs_target_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+        """Normalised force target command, shape (1,)."""
         return jp.array([info["force_target"] / self._config.force_target])
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:

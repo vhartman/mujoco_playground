@@ -114,6 +114,15 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     def _task_obs_keys(self) -> tuple[str, ...]:
         return self._TASK_KEYS
 
+    def _build_obs_components(self) -> dict:
+        c = super()._build_obs_components()
+        c["goal_quat"] = obs_module.ObsComponent(
+            "goal_quat", self._obs_goal_quat, size=4,
+            description="goal orientation quaternion",
+            labels=("goal_qw", "goal_qx", "goal_qy", "goal_qz"),
+        )
+        return c
+
     def __init__(
         self,
         config: config_dict.ConfigDict = None,
@@ -146,11 +155,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._post_init()
 
     def _post_init(self) -> None:
-        obs_module.validate_spec(
-            self._config.sensor_bundle,
-            self._task_obs_keys(),
-            self._config.obs_noise.scales,
-        )
         home_key = self._mj_model.keyframe("home")
         self._init_q = jp.array(home_key.qpos, dtype=float)
         self._init_mpos = jp.array(home_key.mpos, dtype=float)
@@ -186,6 +190,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
+        self._obs_components = self._build_obs_components()
+        obs_module.validate_spec(
+            self._config.sensor_bundle,
+            self._task_obs_keys(),
+            self._obs_components,
+            self._config.obs_noise.scales,
+        )
 
     # ------------------------------------------------------------------
     # Observation
@@ -550,17 +561,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         return state.replace(data=state.data.replace(xfrc_applied=xfrc))
 
 
-# Register "goal_quat" if not already registered (pick_and_place registers it
-# when imported; this guard handles standalone use of this module).
-try:
-    obs_module.register(obs_module.ObsComponent(
-        "goal_quat",
-        DownwardsRotateZ._obs_goal_quat,
-        size=4,
-        description="goal orientation quaternion",
-    ))
-except ValueError:
-    pass  # already registered by pick_and_place
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):

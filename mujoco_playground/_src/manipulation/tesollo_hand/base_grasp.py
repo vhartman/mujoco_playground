@@ -71,6 +71,22 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
     self._xml_path = xml_path
 
+  def _build_obs_components(self) -> dict[str, "obs_module.ObsComponent"]:
+    """Return the base obs component dict with concrete sizes for this instance.
+
+    Subclasses should call super() and add their own task-specific entries.
+    """
+    n = len(self._hand_qids)
+    ntips = 3 * len(self._fingertip_names)
+    return {
+        "joint_pos":     obs_module.ObsComponent("joint_pos",     self._obs_joint_pos,     size=n,     description="hand joint positions"),
+        "joint_vel":     obs_module.ObsComponent("joint_vel",     self._obs_joint_vel,     size=n,     description="hand joint velocities"),
+        "motor_targets": obs_module.ObsComponent("motor_targets", self._obs_motor_targets, size=n,     description="current actuator targets"),
+        "motor_deltas":  obs_module.ObsComponent("motor_deltas",  self._obs_motor_deltas,  size=n,     description="motor targets minus current qpos"),
+        "fingertip_pos": obs_module.ObsComponent("fingertip_pos", self._obs_fingertip_pos, size=ntips, description="fingertip positions (world frame)"),
+        "palm_pos":      obs_module.ObsComponent("palm_pos",      self._obs_palm_pos,      size=3,     description="palm/grasp site position", labels=_PALM_LABELS),
+    }
+
   def _build_obs(
       self,
       sensor_bundle: str,
@@ -83,8 +99,8 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     info["rng"] = rng_keys[0]
     parts = []
     for i, key in enumerate(all_keys):
-      component = obs_module.get(key)
-      vec = component.fn(self, data, info)
+      comp = self._obs_components[key]
+      vec = comp.fn(data, info)
       scale = self._config.obs_noise.level * getattr(
           self._config.obs_noise.scales, key, 0.0
       )
@@ -99,7 +115,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         obs_module.resolve_bundle(self._config.sensor_bundle)
         + self._task_obs_keys()
     )
-    return sum(obs_module.get(k).resolve_size(self) for k in all_keys)
+    return sum(self._obs_components[k].size for k in all_keys)
 
   def _task_obs_keys(self) -> tuple[str, ...]:
     return ()
@@ -135,6 +151,9 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
   def get_palm_orientation(self, data: mjx.Data) -> jax.Array:
     return mjx_env.get_sensor_data(self.mj_model, data, "palm_orientation")
 
+  _TIP_FORCE_SENSORS: list[str] = []
+  _TIP_FORCE_SCALE: float = 10.0
+
   @property
   def _fingertip_names(self) -> tuple[str, ...]:
     """Active fingertip site names for this env. Override to reduce the set."""
@@ -151,6 +170,16 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
   # Obs component methods — registered below as ObsComponents so that
   # _build_obs can call them uniformly via (env, data, info) -> jax.Array.
   # ------------------------------------------------------------------
+
+  def _obs_fingertip_forces(self, data, info) -> jax.Array:
+    forces = jp.array([
+        jp.sum(jp.linalg.norm(
+            mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+            axis=1,
+        ))
+        for name in self._TIP_FORCE_SENSORS
+    ])
+    return forces / self._TIP_FORCE_SCALE
 
   def _obs_joint_pos(self, data, info) -> jax.Array:
     return data.qpos[self._hand_qids]
@@ -189,30 +218,8 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     return self._mjx_model
 
 
-# Per-element label tuples shared by the generic hand-sensor components.
-# joint_pos/vel/motor_targets/deltas all index the 26 DOFs in actuator order;
-# ACTUATOR_NAMES encodes the axis (tx/ty/rz etc.) so are more readable than the
-# raw XML joint names. fingertip_pos is 5 tips × (x, y, z).
-_XYZ = ("x", "y", "z")
-_FINGER_ANAT = ("thumb", "index", "middle", "ring", "pinky")
-_JOINT_LABELS = tuple(consts.ACTUATOR_NAMES)
-_FINGERTIP_XYZ_LABELS = tuple(f"{f}_{a}" for f in _FINGER_ANAT for a in _XYZ)
+# Per-element label tuples used in _build_obs_components().
 _PALM_LABELS = ("palm_x", "palm_y", "palm_z")
-
-# Register generic hand-sensor obs components using the methods above.
-# fn signature is (env, data, info) which matches an unbound method call.
-# DOF-dependent and fingertip-count-dependent components use a callable size
-# so envs with fewer active DOFs or fewer active fingers (e.g. 8-DOF pinch,
-# 20-DOF wrist-fixed, 2-finger pinch) report the correct obs_size without
-# needing a subclass per configuration.
-_ndof = lambda env: len(env._hand_qids)       # noqa: E731
-_ntips = lambda env: 3 * len(env._fingertip_names)  # noqa: E731
-obs_module.register(obs_module.ObsComponent("joint_pos",    TesolloHandGraspEnv._obs_joint_pos,    size=_ndof,  description="hand joint positions"))
-obs_module.register(obs_module.ObsComponent("joint_vel",    TesolloHandGraspEnv._obs_joint_vel,    size=_ndof,  description="hand joint velocities"))
-obs_module.register(obs_module.ObsComponent("motor_targets",TesolloHandGraspEnv._obs_motor_targets, size=_ndof, description="current actuator targets"))
-obs_module.register(obs_module.ObsComponent("motor_deltas", TesolloHandGraspEnv._obs_motor_deltas, size=_ndof, description="motor targets minus current qpos"))
-obs_module.register(obs_module.ObsComponent("fingertip_pos",TesolloHandGraspEnv._obs_fingertip_pos, size=_ntips, description="fingertip positions (world frame)"))
-obs_module.register(obs_module.ObsComponent("palm_pos",     TesolloHandGraspEnv._obs_palm_pos,     size=3,  description="palm/grasp site position",          labels=_PALM_LABELS))
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +322,7 @@ class GraspBase(TesolloHandGraspEnv, abc.ABC):
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
+        self._obs_components = self._build_obs_components()
 
     # ------------------------------------------------------------------
     # Abstract interface

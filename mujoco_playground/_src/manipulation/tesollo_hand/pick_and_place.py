@@ -106,6 +106,21 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
     def _task_obs_keys(self) -> tuple[str, ...]:
         return self._TASK_KEYS
 
+    def _build_obs_components(self) -> dict:
+        c = super()._build_obs_components()
+        ntips = len(self._TIP_FORCE_SENSORS)
+        c.update({
+            "last_ground_cube_pos": obs_module.ObsComponent("last_ground_cube_pos", self._obs_last_ground_cube_pos, size=3,       description="last cube position while on the floor",              labels=("last_ground_x", "last_ground_y", "last_ground_z")),
+            "goal_pos":             obs_module.ObsComponent("goal_pos",             self._obs_goal_pos,             size=3,       description="goal position",                                     labels=("goal_x", "goal_y", "goal_z")),
+            "goal_quat":            obs_module.ObsComponent("goal_quat",            self._obs_goal_quat,            size=4,       description="goal orientation quaternion",                        labels=("goal_qw", "goal_qx", "goal_qy", "goal_qz")),
+            "cube_pos":             obs_module.ObsComponent("cube_pos",             self._obs_cube_pos,             size=3,       description="current cube position",                              labels=("cube_x", "cube_y", "cube_z")),
+            "cube_to_goal":         obs_module.ObsComponent("cube_to_goal",         self._obs_cube_to_goal,         size=3,       description="vector from cube to goal",                           labels=("cube_to_goal_x", "cube_to_goal_y", "cube_to_goal_z")),
+            "fingertip_forces":     obs_module.ObsComponent("fingertip_forces",     self._obs_fingertip_forces,     size=ntips,   description="per-tip contact force magnitude vs cube, /tip_force_scale"),
+            "fingertip_force_dirs": obs_module.ObsComponent("fingertip_force_dirs", self._obs_fingertip_force_dirs, size=ntips*3, description="per-tip normalized net force direction vs cube"),
+            "total_contact_force":  obs_module.ObsComponent("total_contact_force",  self._obs_total_contact_force,  size=1,       description="sum of all hand-cube contact force magnitudes, /10N", labels=("total_contact_force",)),
+        })
+        return c
+
     def __init__(
         self,
         config: config_dict.ConfigDict = None,
@@ -138,11 +153,6 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
         self._post_init()
 
     def _post_init(self) -> None:
-        obs_module.validate_spec(
-            self._config.sensor_bundle,
-            self._task_obs_keys(),
-            self._config.obs_noise.scales,
-        )
         home_key = self._mj_model.keyframe("home")
         self._init_q = jp.array(home_key.qpos, dtype=float)
         self._init_mpos = jp.array(home_key.mpos, dtype=float)
@@ -170,6 +180,13 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
+        self._obs_components = self._build_obs_components()
+        obs_module.validate_spec(
+            self._config.sensor_bundle,
+            self._task_obs_keys(),
+            self._obs_components,
+            self._config.obs_noise.scales,
+        )
 
     # ------------------------------------------------------------------
     # Observation
@@ -570,21 +587,6 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
         return state.replace(data=state.data.replace(xfrc_applied=xfrc))
 
 
-# Per-element label tuples for the pick-and-place task obs components.
-_XYZ = ("x", "y", "z")
-_FINGER_ANAT = ("thumb", "index", "middle", "ring", "pinky")
-_FINGER_LABELS = _FINGER_ANAT
-_FINGER_XYZ_LABELS = tuple(f"{f}_{a}" for f in _FINGER_ANAT for a in _XYZ)
-
-# Register pick-and-place obs components using the class methods above.
-obs_module.register(obs_module.ObsComponent("goal_pos",             PickAndPlace._obs_goal_pos,             size=3,  description="goal position",                                     labels=("goal_x", "goal_y", "goal_z")))
-obs_module.register(obs_module.ObsComponent("goal_quat",            PickAndPlace._obs_goal_quat,            size=4,  description="goal orientation quaternion",                        labels=("goal_qw", "goal_qx", "goal_qy", "goal_qz")))
-obs_module.register(obs_module.ObsComponent("last_ground_cube_pos", PickAndPlace._obs_last_ground_cube_pos, size=3,  description="last cube position while on the floor",              labels=("last_ground_x", "last_ground_y", "last_ground_z")))
-obs_module.register(obs_module.ObsComponent("cube_pos",             PickAndPlace._obs_cube_pos,             size=3,  description="current cube position",                              labels=("cube_x", "cube_y", "cube_z")))
-obs_module.register(obs_module.ObsComponent("cube_to_goal",         PickAndPlace._obs_cube_to_goal,         size=3,  description="vector from cube to goal",                           labels=("cube_to_goal_x", "cube_to_goal_y", "cube_to_goal_z")))
-obs_module.register(obs_module.ObsComponent("fingertip_forces",     PickAndPlace._obs_fingertip_forces,     size=5,  description="per-tip contact force magnitude vs cube, /10N",      labels=_FINGER_LABELS))
-obs_module.register(obs_module.ObsComponent("fingertip_force_dirs", PickAndPlace._obs_fingertip_force_dirs, size=15, description="per-tip normalized net force direction vs cube",     labels=_FINGER_XYZ_LABELS))
-obs_module.register(obs_module.ObsComponent("total_contact_force",  PickAndPlace._obs_total_contact_force,  size=1,  description="sum of all hand-cube contact force magnitudes, /10N", labels=("total_contact_force",)))
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):

@@ -12,10 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Observation component registry for Tesollo hand environments.
+"""Observation DSL and component descriptor for Tesollo hand environments.
 
-Infrastructure only — no component registrations live here.
-Each environment class registers its own _obs_* methods after its class body.
+obs.py owns two things:
+
+1. ObsComponent — a plain dataclass describing one named obs slice (key, bound
+   callable, concrete size, description, optional per-element labels).  Each env
+   builds its own ``_obs_components: dict[str, ObsComponent]`` in _post_init();
+   there is no global registry.
+
+2. resolve_bundle / sensor-bundle DSL — a pure string → tuple[str, ...] parser
+   that expands a '+'-joined bundle spec into an ordered list of obs key names.
+   The baseline group (joint_pos, joint_vel) is always first.
 """
 
 import dataclasses
@@ -26,50 +34,23 @@ from typing import Callable
 @dataclasses.dataclass(frozen=True)
 class ObsComponent:
     key: str
-    fn: Callable                          # (env, data, info) -> jax.Array
-    size: int | Callable                  # int, or (env) -> int for DOF-dependent components
+    fn: Callable                          # bound method: (data, info) -> jax.Array
+    size: int                             # concrete element count, known at build time
     description: str
-    labels: tuple[str, ...] | None = None # per-element names; only valid when size is a plain int
+    labels: tuple[str, ...] | None = None # per-element names; len must equal size
 
-    def resolve_size(self, env) -> int:
-        """Return the concrete element count for the given env instance."""
-        return self.size(env) if callable(self.size) else self.size
-
-
-_REGISTRY: dict[str, "ObsComponent"] = {}
-
-
-def register(component: ObsComponent) -> ObsComponent:
-    if component.key in _REGISTRY:
-        raise ValueError(f"Obs key {component.key!r} already registered.")
-    if component.labels is not None:
-        if callable(component.size):
+    def __post_init__(self):
+        if self.labels is not None and len(self.labels) != self.size:
             raise ValueError(
-                f"Obs key {component.key!r}: static labels cannot be paired with "
-                "a callable size — size is unknown at registration time."
+                f"Obs key {self.key!r}: got {len(self.labels)} labels "
+                f"but size is {self.size}."
             )
-        if len(component.labels) != component.size:
-            raise ValueError(
-                f"Obs key {component.key!r}: got {len(component.labels)} labels "
-                f"but size is {component.size}."
-            )
-    _REGISTRY[component.key] = component
-    return component
 
-
-def get(key: str) -> ObsComponent:
-    if key not in _REGISTRY:
-        raise KeyError(f"Unknown obs key {key!r}. Registered: {sorted(_REGISTRY)}")
-    return _REGISTRY[key]
-
-
-def element_labels(key: str, env=None) -> tuple[str, ...]:
-    """Per-element labels for a component; defaults to '<key>[i]' when unset."""
-    c = get(key)
-    if c.labels:
-        return c.labels
-    n = c.resolve_size(env) if env is not None else (c.size if not callable(c.size) else 0)
-    return tuple(f"{key}[{i}]" for i in range(n))
+    def element_labels(self) -> tuple[str, ...]:
+        """Per-element label strings, falling back to '<key>[i]' when unset."""
+        if self.labels:
+            return self.labels
+        return tuple(f"{self.key}[{i}]" for i in range(self.size))
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +66,7 @@ def element_labels(key: str, env=None) -> tuple[str, ...]:
 #   force.magnitude         fingertip_forces
 #   force.full              fingertip_forces, fingertip_force_dirs
 #
-# A group may appear at most once. Example: "proprio.target+force.full".
+# A group may appear at most once. Example: "proprio.target+force.magnitude".
 # ---------------------------------------------------------------------------
 
 _BASELINE_KEYS: tuple[str, ...] = ("joint_pos", "joint_vel")
@@ -148,10 +129,20 @@ def resolve_bundle(sensor_bundle: str) -> tuple[str, ...]:
     return tuple(keys)
 
 
-def validate_spec(sensor_bundle: str, task_keys: tuple[str, ...], noise_scales) -> None:
+def validate_spec(
+    sensor_bundle: str,
+    task_keys: tuple[str, ...],
+    obs_components: dict,
+    noise_scales,
+) -> None:
+    """Check that all keys in bundle+task are present in obs_components."""
     all_keys = resolve_bundle(sensor_bundle) + task_keys
-    for key in all_keys:
-        get(key)
+    missing = [k for k in all_keys if k not in obs_components]
+    if missing:
+        raise KeyError(
+            f"Obs keys {missing} not found in env obs_components. "
+            f"Available: {sorted(obs_components)}"
+        )
     stale_noise_keys = set(noise_scales.keys()) - set(all_keys)
     if stale_noise_keys:
         warnings.warn(

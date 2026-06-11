@@ -32,8 +32,3 @@ ACTUATOR_NAMES = [
     "dg_2_j1_rx", "dg_2_j2_ry", "dg_2_j3_ry", "dg_2_j4_ry",
 ]
 
-SENSOR_BUNDLES = {
-    "baseline": ("joint_pos", "joint_vel", "force_target"),
-    "proprio":  ("joint_pos", "joint_vel", "motor_targets", "force_target"),
-    "force":    ("joint_pos", "joint_vel", "motor_targets", "fingertip_forces", "force_target"),
-}
