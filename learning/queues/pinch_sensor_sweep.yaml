@@ -1,0 +1,22 @@
+defaults:
+  flags:
+    log_training_metrics: true
+    training_metrics_steps: 4_000_000
+    num_timesteps: 500_000_000
+    use_wandb: true
+
+sweep:
+  env_names:
+    - TesolloCubePinch
+  params:
+    sensor_bundle:
+      values:
+        - baseline
+        - proprio.delta
+        - proprio.target
+        - force.magnitude
+        - force.full
+        - proprio.delta+force.magnitude
+        - proprio.delta+force.full
+        - proprio.target+force.magnitude
+        - proprio.target+force.full
