@@ -386,7 +386,7 @@ def brax_ppo_config(
         value_obs_key="privileged_state",
     )
     rl_config.num_resets_per_eval = 1
-  elif env_name == "TesolloPinch":
+  elif env_name == "TesolloCubePinch":
     rl_config.num_timesteps = 500_000_000
     rl_config.num_evals = 50
     rl_config.num_minibatches = 16*2
