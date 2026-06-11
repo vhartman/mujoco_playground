@@ -78,7 +78,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
       data,
       info: dict,
   ) -> jax.Array:
-    all_keys = obs_module.SENSOR_BUNDLES[sensor_bundle] + task_keys
+    all_keys = obs_module.resolve_bundle(sensor_bundle) + task_keys
     rng_keys = jax.random.split(info["rng"], len(all_keys) + 1)
     info["rng"] = rng_keys[0]
     parts = []
@@ -96,7 +96,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
   @functools.cached_property
   def obs_size(self) -> int:
     all_keys = (
-        obs_module.SENSOR_BUNDLES[self._config.sensor_bundle]
+        obs_module.resolve_bundle(self._config.sensor_bundle)
         + self._task_obs_keys()
     )
     return sum(obs_module.get(k).size for k in all_keys)

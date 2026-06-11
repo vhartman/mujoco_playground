@@ -48,7 +48,7 @@ def default_config() -> config_dict.ConfigDict:
         episode_length=120,
         target_hold_time=1.0,
         target_radius=0.008,
-        sensor_bundle="proprio",
+        sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(

@@ -66,13 +66,17 @@ def _param_label(key, value):
     """Short label fragment for a param.
 
     Examples:
-        'pid_gains.finger_kp', 3.0   -> 'kp3'
-        'sensor_bundle', 'proprio'   -> 'sb_proprio'
-        'obs_noise.level', 2.0       -> 'level2'
+        'pid_gains.finger_kp', 3.0                   -> 'kp3'
+        'sensor_bundle', 'force.full'                -> 'sb_forcefull'
+        'sensor_bundle', 'proprio.target+force.magnitude' -> 'sb_propriotarget_forcemagnitude'
+        'obs_noise.level', 2.0                       -> 'level2'
     """
     short = _KEY_ALIASES.get(key, key.split(".")[-1].replace("finger_", ""))
     if isinstance(value, str):
-        return f"{short}_{value}"
+        # Sanitize the sensor-bundle DSL ('.'/'+') so it is filename- and
+        # wandb-safe: '+' (group separator) -> '_', '.' (group.type) dropped.
+        clean = value.replace("+", "_").replace(".", "")
+        return f"{short}_{clean}"
     return f"{short}{value:g}"
 
 

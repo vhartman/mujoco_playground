@@ -59,21 +59,84 @@ def element_labels(key: str) -> tuple[str, ...]:
     return c.labels or tuple(f"{key}[{i}]" for i in range(c.size))
 
 
-SENSOR_BUNDLES: dict[str, tuple[str, ...]] = {
-    "baseline":      ("joint_pos", "joint_vel"),
-    "proprio":       ("joint_pos", "joint_vel", "motor_targets"),
-    "force":         ("joint_pos", "joint_vel", "fingertip_forces"),
-    "force_vec":     ("joint_pos", "joint_vel", "fingertip_forces", "fingertip_force_dirs"),
-    "force_proprio": ("joint_pos", "joint_vel", "motor_targets", "fingertip_forces"),
+# ---------------------------------------------------------------------------
+# Compositional sensor-bundle DSL
+#
+# A bundle is a '+'-joined set of sensor groups. The "baseline" group
+# (joint_pos, joint_vel) is always included. Each other group selects exactly
+# one representation type:
+#
+#   baseline                joint_pos, joint_vel                 (always on)
+#   proprio.delta           motor_deltas
+#   proprio.target          motor_targets
+#   force.magnitude         fingertip_forces
+#   force.full              fingertip_forces, fingertip_force_dirs
+#
+# A group may appear at most once. Example: "proprio.target+force.full".
+# ---------------------------------------------------------------------------
+
+_BASELINE_KEYS: tuple[str, ...] = ("joint_pos", "joint_vel")
+
+# group -> {type -> obs component keys the (group, type) pair expands to}.
+_SENSOR_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
+    "proprio": {
+        "delta":  ("motor_deltas",),
+        "target": ("motor_targets",),
+    },
+    "force": {
+        "magnitude": ("fingertip_forces",),
+        "full":      ("fingertip_forces", "fingertip_force_dirs"),
+    },
 }
+
+# Order in which groups contribute to the observation vector (after baseline).
+_GROUP_ORDER: tuple[str, ...] = ("proprio", "force")
+
+
+def resolve_bundle(sensor_bundle: str) -> tuple[str, ...]:
+    """Expand a '+'-composed bundle spec into an ordered tuple of obs keys.
+
+    "baseline" is always included first. Each remaining token is
+    "<group>.<type>" (e.g. "force.full"); a group may be selected at most once.
+    Raises ValueError on a malformed token, an unknown group/type, or a group
+    given more than once.
+    """
+    selected: dict[str, str] = {}
+    for tok in (t.strip() for t in sensor_bundle.split("+")):
+        if not tok or tok == "baseline":
+            continue
+        group, sep, type_ = tok.partition(".")
+        if not sep:
+            raise ValueError(
+                f"Malformed sensor-bundle token {tok!r} in {sensor_bundle!r}: "
+                "expected 'baseline' or '<group>.<type>' (e.g. 'force.full')."
+            )
+        if group not in _SENSOR_GROUPS:
+            raise ValueError(
+                f"Unknown sensor group {group!r} in {sensor_bundle!r}. "
+                f"Valid groups: {sorted(_SENSOR_GROUPS)} (plus 'baseline')."
+            )
+        if type_ not in _SENSOR_GROUPS[group]:
+            raise ValueError(
+                f"Unknown type {type_!r} for group {group!r} in {sensor_bundle!r}. "
+                f"Valid types: {sorted(_SENSOR_GROUPS[group])}."
+            )
+        if group in selected:
+            raise ValueError(
+                f"Group {group!r} selected more than once in {sensor_bundle!r}; "
+                "choose a single type per group."
+            )
+        selected[group] = type_
+
+    keys: list[str] = list(_BASELINE_KEYS)
+    for group in _GROUP_ORDER:
+        if group in selected:
+            keys.extend(_SENSOR_GROUPS[group][selected[group]])
+    return tuple(keys)
 
 
 def validate_spec(sensor_bundle: str, task_keys: tuple[str, ...], noise_scales) -> None:
-    if sensor_bundle not in SENSOR_BUNDLES:
-        raise ValueError(
-            f"Unknown sensor_bundle {sensor_bundle!r}. Valid: {sorted(SENSOR_BUNDLES)}"
-        )
-    all_keys = SENSOR_BUNDLES[sensor_bundle] + task_keys
+    all_keys = resolve_bundle(sensor_bundle) + task_keys
     for key in all_keys:
         get(key)
     stale_noise_keys = set(noise_scales.keys()) - set(all_keys)

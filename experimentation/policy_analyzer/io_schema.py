@@ -75,7 +75,7 @@ def build_io_schema(
       [0, env.obs_size) exactly and the output groups tile [0, env.action_size).
     """
     sensor_bundle = sensor_bundle or env._config.sensor_bundle
-    obs_keys = obs_module.SENSOR_BUNDLES[sensor_bundle] + env._task_obs_keys()
+    obs_keys = obs_module.resolve_bundle(sensor_bundle) + env._task_obs_keys()
 
     input_groups = []
     start = 0

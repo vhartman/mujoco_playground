@@ -53,7 +53,7 @@ def default_config() -> config_dict.ConfigDict:
         ema_alpha=1.0,
         episode_length=110,
         target_hold_time=0.25,
-        sensor_bundle="proprio",
+        sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
