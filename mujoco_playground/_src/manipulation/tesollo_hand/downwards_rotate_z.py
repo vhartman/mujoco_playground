@@ -31,6 +31,7 @@ from typing import Any, Dict, Optional, Union
 import jax
 import jax.numpy as jp
 from ml_collections import config_dict
+import mujoco
 from mujoco import mjx
 from mujoco.mjx._src import math
 import numpy as np
@@ -150,19 +151,72 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             self._mj_model.body_mass[cube_body_id] = cfg_cube_mass
             self._mj_model.body_inertia[cube_body_id] *= scale
             model_dirty = True
-        # Constrain wrist translation range to a physically plausible workspace.
-        # x/y: ±1 m; z: [0, 1] m (hand cannot go below its initial height).
-        _TX = [("rj_wrist_0_1", "wrist_tx", -1.0, 1.0),
-               ("rj_wrist_0_2", "wrist_ty", -1.0, 1.0),
-               ("rj_wrist_0_3", "wrist_tz",  0.0, 1.0)]
-        for jname, aname, lo, hi in _TX:
-            self._mj_model.jnt_range[self._mj_model.joint(jname).id] = [lo, hi]
-            self._mj_model.actuator_ctrlrange[self._mj_model.actuator(aname).id] = [lo, hi]
+        # Confine the hand base to a physical workspace box around the cube,
+        # expressed in the GLOBAL frame and relative to the cube position (the
+        # cube is fixed at x=y=0): +/-1 m laterally (x, y) and [0, 1] m in
+        # height above the cube (z).
+        #
+        # The hand base 'rh' translates via three orthogonal slide joints, but
+        # the downward mounting permutes/offsets the joint-local axes w.r.t. the
+        # global frame (e.g. rj_wrist_0_1 actually drives global Z, inverted).
+        # So we derive each joint's global axis + offset from the compiled model
+        # and invert the desired global box into per-joint qpos limits, instead
+        # of assuming joint-local == global.
+        self._constrain_wrist_translation(
+            global_box=np.array([[-1.0, 1.0],   # global x relative to cube
+                                 [-1.0, 1.0],   # global y relative to cube
+                                 [0.0, 1.0]]),  # global z relative to cube
+        )
         model_dirty = True
 
         if model_dirty:
             self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
+
+    def _constrain_wrist_translation(self, global_box: np.ndarray) -> None:
+        """Limit the 3 wrist slide joints to a global-frame box around the cube.
+
+        global_box is a (3, 2) array of [lo, hi] offsets, in metres, applied to
+        the cube's global (x, y, z) position. The wrist slides are global-axis-
+        aligned translations of the hand base, but the downward hand mounting
+        permutes/offsets their joint-local axes, so the desired global box is
+        mapped back to joint qpos limits by probing the compiled model.
+        """
+        slides = ["rj_wrist_0_1", "rj_wrist_0_2", "rj_wrist_0_3"]
+        m = self._mj_model
+        probe = mujoco.MjData(m)
+        rh = m.body("rh").id
+        cube = m.body("cube").id
+        qadr = {j: m.jnt_qposadr[m.joint(j).id] for j in slides}
+        # joint id -> actuator id, to keep ctrlrange in sync with jnt_range.
+        act_of = {int(m.actuator_trnid[a, 0]): a for a in range(m.nu)}
+
+        def hand_xpos(overrides: dict) -> np.ndarray:
+            probe.qpos[:] = m.keyframe("home").qpos
+            for j, v in overrides.items():
+                probe.qpos[qadr[j]] = v
+            mujoco.mj_forward(m, probe)
+            return probe.xpos[rh].copy()
+
+        zero = {j: 0.0 for j in slides}
+        p0 = hand_xpos(zero)                  # hand base position at all slides = 0
+        cube_pos = probe.xpos[cube].copy()    # cube global position (static at x=y=0)
+        for j in slides:
+            disp = hand_xpos({**zero, j: 1.0}) - p0  # global displacement / unit qpos
+            g = int(np.argmax(np.abs(disp)))         # global axis index (0=x, 1=y, 2=z)
+            sign = float(np.sign(disp[g]))
+            lo_g = cube_pos[g] + global_box[g, 0]    # desired global range on this axis
+            hi_g = cube_pos[g] + global_box[g, 1]
+            # global_coord = p0[g] + sign * q  ->  q = sign * (global_coord - p0[g])
+            qa = sign * (lo_g - p0[g])
+            qb = sign * (hi_g - p0[g])
+            lo, hi = sorted((qa, qb))
+            jid = m.joint(j).id
+            m.jnt_range[jid] = [lo, hi]
+            m.jnt_limited[jid] = 1
+            aid = act_of.get(jid)
+            if aid is not None:
+                m.actuator_ctrlrange[aid] = [lo, hi]
 
     def _post_init(self) -> None:
         home_key = self._mj_model.keyframe("home")
