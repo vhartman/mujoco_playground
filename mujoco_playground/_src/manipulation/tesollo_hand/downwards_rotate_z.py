@@ -163,9 +163,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         # and invert the desired global box into per-joint qpos limits, instead
         # of assuming joint-local == global.
         self._constrain_wrist_translation(
-            global_box=np.array([[-1.0, 1.0],   # global x, centred on cube
-                                 [-1.0, 1.0],   # global y, centred on cube
-                                 [0.0, 1.0]]),  # global z, absolute height
+            global_box=np.array([[-0.25, 0.25],  # global x, centred on cube
+                                 [-0.25, 0.25],  # global y, centred on cube
+                                 [0.0, 1.0]]),   # global z, absolute height
             cube_relative_axes=(0, 1),          # x, y relative to cube; z absolute
         )
         model_dirty = True
