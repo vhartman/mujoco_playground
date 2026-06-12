@@ -78,7 +78,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     """
     n = len(self._hand_qids)
     ntips = 3 * len(self._fingertip_names)
-    return {
+    components = {
         "joint_pos":     obs_module.ObsComponent("joint_pos",     self._obs_joint_pos,     size=n,     description="hand joint positions"),
         "joint_vel":     obs_module.ObsComponent("joint_vel",     self._obs_joint_vel,     size=n,     description="hand joint velocities"),
         "motor_targets": obs_module.ObsComponent("motor_targets", self._obs_motor_targets, size=n,     description="current actuator targets"),
@@ -86,6 +86,13 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         "fingertip_pos": obs_module.ObsComponent("fingertip_pos", self._obs_fingertip_pos, size=ntips, description="fingertip positions (world frame)"),
         "palm_pos":      obs_module.ObsComponent("palm_pos",      self._obs_palm_pos,      size=3,     description="palm/grasp site position", labels=_PALM_LABELS),
     }
+    if self._TIP_FORCE_SENSORS:
+        nforce = len(self._TIP_FORCE_SENSORS)
+        components.update({
+            "fingertip_forces":     obs_module.ObsComponent("fingertip_forces",     self._obs_fingertip_forces,     size=nforce,   description="per-tip contact force magnitude vs cube, /tip_force_scale"),
+            "fingertip_force_dirs": obs_module.ObsComponent("fingertip_force_dirs", self._obs_fingertip_force_dirs, size=nforce*3, description="per-tip normalized net force direction vs cube"),
+        })
+    return components
 
   def _build_obs(
       self,
@@ -180,6 +187,17 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         for name in self._TIP_FORCE_SENSORS
     ])
     return forces / self._TIP_FORCE_SCALE
+
+  def _obs_fingertip_force_dirs(self, data, info) -> jax.Array:
+    dirs = []
+    for name in self._TIP_FORCE_SENSORS:
+        net = jp.sum(
+            mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+            axis=0,
+        )
+        magnitude = jp.linalg.norm(net)
+        dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
+    return jp.concatenate(dirs)
 
   def _obs_joint_pos(self, data, info) -> jax.Array:
     return data.qpos[self._hand_qids]

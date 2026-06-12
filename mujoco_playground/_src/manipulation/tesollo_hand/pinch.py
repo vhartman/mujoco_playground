@@ -64,7 +64,8 @@ def default_config() -> config_dict.ConfigDict:
                 joint_pos=0.001,
                 joint_vel=0.01,
                 motor_targets=0.0,
-                force=0.0,
+                fingertip_forces=0.0,
+                fingertip_force_dirs=0.0,
             ),
         ),
         reward_config=config_dict.create(
@@ -244,16 +245,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
     # Pinch-specific obs component methods
     # ------------------------------------------------------------------
-
-    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        forces = jp.array([
-            jp.sum(jp.linalg.norm(
-                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                axis=1,
-            ))
-            for name in self._TIP_FORCE_SENSORS
-        ])
-        return forces / self._TIP_FORCE_SCALE
 
     def _obs_target_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         """Normalised force target command, shape (1,)."""

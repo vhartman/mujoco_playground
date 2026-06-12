@@ -108,15 +108,12 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
 
     def _build_obs_components(self) -> dict:
         c = super()._build_obs_components()
-        ntips = len(self._TIP_FORCE_SENSORS)
         c.update({
             "last_ground_cube_pos": obs_module.ObsComponent("last_ground_cube_pos", self._obs_last_ground_cube_pos, size=3,       description="last cube position while on the floor",              labels=("last_ground_x", "last_ground_y", "last_ground_z")),
             "goal_pos":             obs_module.ObsComponent("goal_pos",             self._obs_goal_pos,             size=3,       description="goal position",                                     labels=("goal_x", "goal_y", "goal_z")),
             "goal_quat":            obs_module.ObsComponent("goal_quat",            self._obs_goal_quat,            size=4,       description="goal orientation quaternion",                        labels=("goal_qw", "goal_qx", "goal_qy", "goal_qz")),
             "cube_pos":             obs_module.ObsComponent("cube_pos",             self._obs_cube_pos,             size=3,       description="current cube position",                              labels=("cube_x", "cube_y", "cube_z")),
             "cube_to_goal":         obs_module.ObsComponent("cube_to_goal",         self._obs_cube_to_goal,         size=3,       description="vector from cube to goal",                           labels=("cube_to_goal_x", "cube_to_goal_y", "cube_to_goal_z")),
-            "fingertip_forces":     obs_module.ObsComponent("fingertip_forces",     self._obs_fingertip_forces,     size=ntips,   description="per-tip contact force magnitude vs cube, /tip_force_scale"),
-            "fingertip_force_dirs": obs_module.ObsComponent("fingertip_force_dirs", self._obs_fingertip_force_dirs, size=ntips*3, description="per-tip normalized net force direction vs cube"),
             "total_contact_force":  obs_module.ObsComponent("total_contact_force",  self._obs_total_contact_force,  size=1,       description="sum of all hand-cube contact force magnitudes, /10N", labels=("total_contact_force",)),
         })
         return c
@@ -457,27 +454,6 @@ class PickAndPlace(tesollo_hand_base.TesolloHandGraspEnv):
         "rl_dg_4_tip_cube_force",
         "rl_dg_5_tip_cube_force",
     ]
-
-    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        forces = jp.array([
-            jp.sum(jp.linalg.norm(
-                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                axis=1,
-            ))
-            for name in self._TIP_FORCE_SENSORS
-        ])
-        return forces / self._TIP_FORCE_SCALE
-
-    def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        dirs = []
-        for name in self._TIP_FORCE_SENSORS:
-            net = jp.sum(
-                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                axis=0,
-            )
-            magnitude = jp.linalg.norm(net)
-            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
-        return jp.concatenate(dirs)
 
     def _obs_total_contact_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         forces = mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1, 3)

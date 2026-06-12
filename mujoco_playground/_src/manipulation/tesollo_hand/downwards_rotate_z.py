@@ -434,27 +434,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         quat_diff = math.normalize(quat_diff)
         return 2.0 * jp.asin(jp.clip(jp.linalg.norm(quat_diff[1:]), max=1.0))
 
-    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        forces = jp.array([
-            jp.sum(jp.linalg.norm(
-                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                axis=1,
-            ))
-            for name in self._TIP_FORCE_SENSORS
-        ])
-        return forces / self._TIP_FORCE_SCALE
-
-    def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        dirs = []
-        for name in self._TIP_FORCE_SENSORS:
-            net = jp.sum(
-                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                axis=0,
-            )
-            magnitude = jp.linalg.norm(net)
-            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
-        return jp.concatenate(dirs)
-
     def _obs_goal_quat(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         return info["goal_quat"]
 
