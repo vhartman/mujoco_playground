@@ -163,9 +163,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         # and invert the desired global box into per-joint qpos limits, instead
         # of assuming joint-local == global.
         self._constrain_wrist_translation(
-            global_box=np.array([[-1.0, 1.0],   # global x relative to cube
-                                 [-1.0, 1.0],   # global y relative to cube
-                                 [0.0, 1.0]]),  # global z relative to cube
+            global_box=np.array([[-1.0, 1.0],   # global x, centred on cube
+                                 [-1.0, 1.0],   # global y, centred on cube
+                                 [0.0, 1.0]]),  # global z, absolute height
+            cube_relative_axes=(0, 1),          # x, y relative to cube; z absolute
         )
         model_dirty = True
 
@@ -173,14 +174,20 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
 
-    def _constrain_wrist_translation(self, global_box: np.ndarray) -> None:
-        """Limit the 3 wrist slide joints to a global-frame box around the cube.
+    def _constrain_wrist_translation(
+        self, global_box: np.ndarray, cube_relative_axes: tuple[int, ...] = ()
+    ) -> None:
+        """Limit the 3 wrist slide joints to a global-frame box.
 
-        global_box is a (3, 2) array of [lo, hi] offsets, in metres, applied to
-        the cube's global (x, y, z) position. The wrist slides are global-axis-
-        aligned translations of the hand base, but the downward hand mounting
-        permutes/offsets their joint-local axes, so the desired global box is
-        mapped back to joint qpos limits by probing the compiled model.
+        global_box is a (3, 2) array of [lo, hi] limits, in metres, for the hand
+        base in the global (x, y, z) frame. Axes listed in cube_relative_axes are
+        offset by the cube's global position (so e.g. x/y can track the cube);
+        the remaining axes are interpreted as absolute global coordinates.
+
+        The wrist slides are global-axis-aligned translations of the hand base,
+        but the downward hand mounting permutes/offsets their joint-local axes,
+        so the desired global box is mapped back to joint qpos limits by probing
+        the compiled model.
         """
         slides = ["rj_wrist_0_1", "rj_wrist_0_2", "rj_wrist_0_3"]
         m = self._mj_model
@@ -205,8 +212,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             disp = hand_xpos({**zero, j: 1.0}) - p0  # global displacement / unit qpos
             g = int(np.argmax(np.abs(disp)))         # global axis index (0=x, 1=y, 2=z)
             sign = float(np.sign(disp[g]))
-            lo_g = cube_pos[g] + global_box[g, 0]    # desired global range on this axis
-            hi_g = cube_pos[g] + global_box[g, 1]
+            center = cube_pos[g] if g in cube_relative_axes else 0.0
+            lo_g = center + global_box[g, 0]         # desired global range on this axis
+            hi_g = center + global_box[g, 1]
             # global_coord = p0[g] + sign * q  ->  q = sign * (global_coord - p0[g])
             qa = sign * (lo_g - p0[g])
             qb = sign * (hi_g - p0[g])
