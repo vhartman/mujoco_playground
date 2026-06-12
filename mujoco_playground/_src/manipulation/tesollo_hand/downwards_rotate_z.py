@@ -150,6 +150,16 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             self._mj_model.body_mass[cube_body_id] = cfg_cube_mass
             self._mj_model.body_inertia[cube_body_id] *= scale
             model_dirty = True
+        # Constrain wrist translation range to a physically plausible workspace.
+        # x/y: ±1 m; z: [0, 1] m (hand cannot go below its initial height).
+        _TX = [("rj_wrist_0_1", "wrist_tx", -1.0, 1.0),
+               ("rj_wrist_0_2", "wrist_ty", -1.0, 1.0),
+               ("rj_wrist_0_3", "wrist_tz",  0.0, 1.0)]
+        for jname, aname, lo, hi in _TX:
+            self._mj_model.jnt_range[self._mj_model.joint(jname).id] = [lo, hi]
+            self._mj_model.actuator_ctrlrange[self._mj_model.actuator(aname).id] = [lo, hi]
+        model_dirty = True
+
         if model_dirty:
             self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
