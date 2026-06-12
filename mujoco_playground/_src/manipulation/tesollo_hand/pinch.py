@@ -20,7 +20,6 @@ __all__ = [
     "domain_randomize",
 ]
 
-import functools
 from typing import Any, Dict, Optional, Union
 
 import jax
@@ -49,7 +48,7 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.5,
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=120,
+        episode_length=80,
         # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
         sensor_bundle="proprio.target",
         # Target total contact force from hand on cube sides, in Newtons.

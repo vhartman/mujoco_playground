@@ -388,14 +388,14 @@ def brax_ppo_config(
     rl_config.num_resets_per_eval = 1
   elif env_name == "TesolloCubePinch":
     rl_config.num_timesteps = 500_000_000
-    rl_config.num_evals = 50
-    rl_config.num_minibatches = 16*2
+    rl_config.num_evals = 10
+    rl_config.num_minibatches = 64
     rl_config.unroll_length = 40
     rl_config.num_updates_per_batch = 4
     rl_config.discounting = 0.995
     rl_config.learning_rate = 3e-4
     rl_config.entropy_cost = 1e-2
-    rl_config.num_envs = 4096*2
+    rl_config.num_envs = 8192
     rl_config.batch_size = 256
     rl_config.network_factory.distribution_type="normal",
     rl_config.network_factory = config_dict.create(

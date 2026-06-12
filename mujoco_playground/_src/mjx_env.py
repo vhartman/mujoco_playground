@@ -272,34 +272,6 @@ class MjxEnv(abc.ABC):
     return int(round(self.dt / self.sim_dt))
 
   @property
-  def theoretical_reward_maxes(self) -> Dict[str, float]:
-    """Unattainable per-episode reward ceiling for each reward term.
-
-    The ceiling is the reward a term would accrue if its raw component were
-    maxed out at *every* step of the episode -- generally unreachable, but a
-    useful reference line for the per-term ``reward/<term>`` plots.
-
-    Generic default: a raw reward term is assumed to lie in ``[0, 1]`` per step
-    (the playground ``reward.tolerance`` convention), so its best per-step
-    contribution is its scale; penalties (negative scale) cap at 0. Brax sums
-    the ``reward/<term>`` metrics over the episode, so the ceiling is
-    ``max(scale, 0) * episode_length``. Returns ``{}`` for envs without reward
-    scales. Envs whose raw terms are not in ``[0, 1]`` (e.g. a sum over
-    fingertips) should override this.
-    """
-    reward_config = self._config.get("reward_config", None)
-    if reward_config is None:
-      return {}
-    scales = reward_config.get("scales", None)
-    episode_length = self._config.get("episode_length", None)
-    if scales is None or episode_length is None:
-      return {}
-    return {
-        term: max(float(scale), 0.0) * int(episode_length)
-        for term, scale in scales.items()
-    }
-
-  @property
   def observation_size(self) -> ObservationSize:
     abstract_state = jax.eval_shape(self.reset, jax.random.PRNGKey(0))
     obs = abstract_state.obs
