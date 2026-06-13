@@ -18,6 +18,7 @@ import datetime
 import functools
 import json
 import os
+import sys
 import tempfile
 import time
 import warnings
@@ -45,6 +46,8 @@ from mujoco_playground.config import locomotion_params
 from mujoco_playground.config import manipulation_params
 import tensorboardX
 import wandb
+
+import early_stop
 
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -574,6 +577,18 @@ def main(argv):
 
   times = [time.monotonic()]
 
+  # Abort runs that diverge unrecoverably so the next seed can start sooner.
+  # The reward/KL/v_loss heuristics rely on episode/* metrics, which brax only
+  # emits when log_training_metrics is enabled; the NaN/Inf guard works either
+  # way. See learning/early_stop.py.
+  early_stopper = early_stop.EarlyStopper(ppo_params.num_timesteps)
+  if not _LOG_TRAINING_METRICS.value:
+    print(
+        "[early-stop] log_training_metrics is off; divergence detection is"
+        " limited to the NaN/Inf guard. Pass --log_training_metrics for full"
+        " KL / v_loss / reward-collapse detection."
+    )
+
   def progress(num_steps, metrics):
     times.append(time.monotonic())
 
@@ -594,6 +609,13 @@ def main(argv):
             f"{num_steps}: mean episode"
             f" reward={metrics['episode/sum_reward']:.3f}"
         )
+
+    # Abort the run if it has diverged unrecoverably (checked after logging so
+    # the triggering metrics still land in W&B / TensorBoard).
+    if not _PLAY_ONLY.value:
+      reason = early_stopper.update(num_steps, metrics)
+      if reason is not None:
+        raise early_stop.EarlyStopException(reason)
 
   # Load evaluation environment.
   eval_env = None
@@ -645,12 +667,20 @@ def main(argv):
       _video_logger(current_step, make_policy, params)
 
   # Train or load the model
-  make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
-      environment=env,
-      progress_fn=progress,
-      policy_params_fn=policy_params_fn,
-      eval_env=eval_env,
-  )
+  try:
+    make_inference_fn, params, _ = train_fn(  # pylint: disable=no-value-for-parameter
+        environment=env,
+        progress_fn=progress,
+        policy_params_fn=policy_params_fn,
+        eval_env=eval_env,
+    )
+  except early_stop.EarlyStopException as e:
+    print(f"\n[early-stop] Aborting run: {e}")
+    if _USE_WANDB.value and not _PLAY_ONLY.value:
+      wandb.run.summary["early_stop_reason"] = str(e)
+      wandb.finish(exit_code=1)
+    # Non-zero exit so a sweep runner treats this seed as failed and moves on.
+    sys.exit(1)
 
   print("Done training.")
   if len(times) > 1:
