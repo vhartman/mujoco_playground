@@ -110,22 +110,31 @@ def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
     param_value_lists = [_expand_param(params[k]) for k in param_keys]
     combos = [dict(zip(param_keys, combo)) for combo in itertools.product(*param_value_lists)]
 
+    # Optional replication: `seeds: [0, 1, 2]` multiplies every param combo
+    # across seeds, setting the --seed flag and appending an -s{seed} suffix.
+    # Absent -> single run per combo at the train script's default seed.
+    seeds = sweep.get("seeds")
+
     runs = []
     idx = start_idx
     for env_name in env_names:
         prefix = _env_prefix(env_name)
         for param_dict in combos:
             param_suffix = "_".join(_param_label(k, v) for k, v in param_dict.items())
-            suffix = f"{prefix}_{param_suffix}"
-            flags = {**default_flags, "env_name": env_name, "suffix": suffix}
-            env_overrides = {**default_overrides, **param_dict}
-            runs.append({
-                "idx": idx,
-                "script": default_script,
-                "flags": flags,
-                "env_overrides": env_overrides,
-            })
-            idx += 1
+            for seed in (seeds if seeds is not None else [None]):
+                suffix = f"{prefix}_{param_suffix}"
+                flags = {**default_flags, "env_name": env_name, "suffix": suffix}
+                if seed is not None:
+                    flags["seed"] = seed
+                    flags["suffix"] = f"{suffix}_s{seed}"
+                env_overrides = {**default_overrides, **param_dict}
+                runs.append({
+                    "idx": idx,
+                    "script": default_script,
+                    "flags": flags,
+                    "env_overrides": env_overrides,
+                })
+                idx += 1
     return runs
 
 
@@ -250,6 +259,7 @@ def build_resume_runs(
         flags = spec["flags"]
         flags["load_checkpoint_path"] = str(ckpt_dir)
         flags["num_timesteps"] = resume_steps
+        flags["early_stop"] = False
         orig_suffix = flags.get("suffix")
         flags["suffix"] = f"{orig_suffix}_cont" if orig_suffix else "cont"
 

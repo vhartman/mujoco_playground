@@ -180,6 +180,12 @@ _ENV_OVERRIDES_FILE = flags.DEFINE_string(
     "Path to a YAML file of flat-dotted env-config overrides "
     "(e.g. 'obs_noise.level: 2.0'). Applied on top of the env's default_config.",
 )
+_EARLY_STOP = flags.DEFINE_boolean(
+    "early_stop",
+    True,
+    "Abort runs that diverge unrecoverably (NaN/Inf, KL collapse, reward collapse)."
+    " Requires --log_training_metrics.",
+)
 
 
 def get_rl_config(env_name: str) -> config_dict.ConfigDict:
@@ -612,7 +618,7 @@ def main(argv):
 
     # Abort the run if it has diverged unrecoverably (checked after logging so
     # the triggering metrics still land in W&B / TensorBoard).
-    if not _PLAY_ONLY.value:
+    if not _PLAY_ONLY.value and _EARLY_STOP.value:
       reason = early_stopper.update(num_steps, metrics)
       if reason is not None:
         raise early_stop.EarlyStopException(reason)

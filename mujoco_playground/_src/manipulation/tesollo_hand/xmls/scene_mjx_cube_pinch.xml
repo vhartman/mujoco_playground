@@ -70,10 +70,15 @@
     <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c"/>
     <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c"/>
 
-    <!-- contact forces: thumb and index only for the pinch task. -->
+    <!-- contact forces: thumb and index only for the pinch task. Each finger
+         touches the cube through two geoms (tip sphere + box pad), so both are
+         sensed and summed in the env; the whole-subtree cube_force sensor is
+         kept for offline probes but is no longer used by the reward/obs. -->
     <contact name="cube_force" geom1="cube" subtree2="rh" num="32" data="force"/>
     <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_1_tip_2_cube_force" geom1="rl_dg_1_tip_2" geom2="cube" num="4" data="force"/>
     <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_2_tip_2_cube_force" geom1="rl_dg_2_tip_2" geom2="cube" num="4" data="force"/>
   </sensor>
 
   <keyframe>

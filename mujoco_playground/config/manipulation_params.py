@@ -393,8 +393,11 @@ def brax_ppo_config(
     rl_config.unroll_length = 40
     rl_config.num_updates_per_batch = 4
     rl_config.discounting = 0.995
-    rl_config.learning_rate = 3e-4
+    rl_config.learning_rate = 1e-4
     rl_config.entropy_cost = 1e-2
+    # Clip global grad norm: the pinch critic has blown up (v_loss ~1e4, reward
+    # collapse) on some seeds with no clipping. Matches the other Tesollo envs.
+    rl_config.max_grad_norm = 1.0
     rl_config.num_envs = 8192
     rl_config.batch_size = 256
     rl_config.network_factory.distribution_type="normal",

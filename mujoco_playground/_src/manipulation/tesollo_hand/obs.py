@@ -94,7 +94,17 @@ def resolve_bundle(sensor_bundle: str) -> tuple[str, ...]:
     "<group>.<type>" (e.g. "force.full"); a group may be selected at most once.
     Raises ValueError on a malformed token, an unknown group/type, or a group
     given more than once.
+
+    Special cases (whole-spec tokens, no '+' composition):
+      "none"     -> EMPTY proprioceptive state; policy sees only the task keys
+                    (e.g. target_force). Sanity check for solving with no proprio.
+      "pos_only" -> joint_pos only, NO joint_vel; isolates q from q_dot.
     """
+    if sensor_bundle.strip() == "none":
+        return ()
+    if sensor_bundle.strip() == "pos_only":
+        return ("joint_pos",)
+
     selected: dict[str, str] = {}
     for tok in (t.strip() for t in sensor_bundle.split("+")):
         if not tok or tok == "baseline":

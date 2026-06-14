@@ -51,18 +51,40 @@ def default_config() -> config_dict.ConfigDict:
         episode_length=80,
         # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
         sensor_bundle="proprio.target",
-        # Target total contact force from hand on cube sides, in Newtons.
-        force_target=10.0,
-        # Range [min, max] for randomizing force_target on each reset.
-        force_target_range=[5.0, 15.0],
-        # Force must stay within ±force_tolerance N of target for success_hold_time seconds.
-        force_tolerance=1.0,
-        success_hold_time=1.0,
+        # Range [min, max] (N) for randomizing the per-episode target contact
+        # force. The target is fed to the policy as raw Newtons; the PPO running
+        # observation normalizer standardises it, so no manual scaling is needed.
+        # Kept inside the ~6.2 N static grip ceiling (see
+        # learning/probe_pinch_force_q.py) so every target is physically
+        # holdable; lower bound keeps both tips engaged past the 0.5 N/tip gate.
+        force_target_range=[2.0, 5.0],
+        # Force must stay within ±force_tolerance N of target for success_hold_time
+        # seconds before the per-step success bonus is paid. Tuned from a trained
+        # baseline rollout (experimentation/pinch_static_exploration/
+        # tune_success_params.py): the old 0.3 N / 1.0 s criterion was met on
+        # ~0.1% of steps (useless as a dependent variable). 0.75 N / 0.5 s puts a
+        # competent base_clean policy well above a 30% success-step rate while
+        # staying a meaningful band (±0.75 N on a 2-5 N target) and a real hold.
+        force_tolerance=0.75,
+        success_hold_time=0.5,
         obs_noise=config_dict.create(
             level=0.0,
             scales=config_dict.create(
                 joint_pos=0.001,
                 joint_vel=0.01,
+                motor_targets=0.0,
+                fingertip_forces=0.0,
+                fingertip_force_dirs=0.0,
+            ),
+            # Per-episode constant offset per channel (sampled once at reset).
+            # Unlike `scales` (per-step white noise) a bias does not average
+            # out, so it shifts the policy's state estimate for the whole
+            # episode. A joint_pos bias corrupts baseline's only force readout
+            # (force = g(q)) while leaving proprio.target's clean motor_targets
+            # route intact -- the intended baseline vs proprio separation.
+            bias_scales=config_dict.create(
+                joint_pos=0.0,
+                joint_vel=0.0,
                 motor_targets=0.0,
                 fingertip_forces=0.0,
                 fingertip_force_dirs=0.0,
@@ -92,6 +114,17 @@ def default_config() -> config_dict.ConfigDict:
             finger_kv=0.0,
             kp_per_actuator=[],
             kv_per_actuator=[],
+        ),
+        # Sweep contact compliance at the fingertips by overriding the solimp
+        # impedance-ramp width on the active-finger tip geoms. Larger width =>
+        # softer contact, more force-dependent penetration, so joint angle q
+        # encodes the contact force (baseline can read it off q). Smaller width
+        # => near-rigid, q saturates at the surface and force decouples from q,
+        # so motor_targets (proprio) becomes the informative signal. The XML
+        # default width is 1e-4.
+        tip_solimp=config_dict.create(
+            enable=False,
+            width=1e-4,
         ),
         use_ctrl_delta=False,
         impl="warp",
@@ -132,6 +165,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
 
         if self._config.pid_gains.enable:
             self._apply_pid_gains()
+        if self._config.tip_solimp.enable:
+            self._apply_tip_solimp()
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
 
@@ -178,6 +213,22 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self._mj_model.actuator_biasprm[:, 1] = -np.array(kp)
         self._mj_model.actuator_biasprm[:, 2] = -np.array(kv)
 
+    # Sphere + box pad geoms of the two active fingers. The force reward sums
+    # each finger's tip-sphere and box-pad contact sensors, so both geoms of
+    # each finger carry measured force and both must be retuned here.
+    _TIP_CONTACT_GEOMS: tuple[str, ...] = (
+        "rl_dg_1_tip", "rl_dg_1_tip_2",
+        "rl_dg_2_tip", "rl_dg_2_tip_2",
+    )
+
+    def _apply_tip_solimp(self) -> None:
+        """Override the solimp impedance-ramp width on the fingertip contact
+        geoms, sweeping contact compliance from soft to near-rigid."""
+        width = self._config.tip_solimp.width
+        for name in self._TIP_CONTACT_GEOMS:
+            gid = self._mj_model.geom(name).id
+            self._mj_model.geom_solimp[gid, 2] = width
+
     # ------------------------------------------------------------------
     # Properties required by TesolloHandGraspEnv
     # ------------------------------------------------------------------
@@ -200,6 +251,17 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
 
     _TASK_KEYS: tuple[str, ...] = ("target_force",)
 
+    # Per-finger contact-force sensors. Each active finger exerts force on the
+    # cube through two tip geoms — the rounded tip sphere and the flat box pad —
+    # so both are summed to recover the force the finger actually applies. The
+    # force reward, the per-finger contact gate, and the oracle force
+    # observation are all built from these same sensors, so they measure one
+    # consistent quantity (the whole-hand `cube_force` subtree sensor is unused).
+    _FINGER_FORCE_SENSORS: tuple[tuple[str, ...], ...] = (
+        ("rl_dg_1_tip_cube_force", "rl_dg_1_tip_2_cube_force"),  # thumb
+        ("rl_dg_2_tip_cube_force", "rl_dg_2_tip_2_cube_force"),  # index
+    )
+    # One entry per finger; its length sets the fingertip_forces obs size (2).
     _TIP_FORCE_SENSORS: list[str] = [
         "rl_dg_1_tip_cube_force",
         "rl_dg_2_tip_cube_force",
@@ -215,7 +277,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             "target_force": obs_module.ObsComponent(
                 "target_force", self._obs_target_force,
                 size=1,
-                description="randomised force target, normalised by config.force_target",
+                description="randomised force target, raw Newtons (PPO normalizes obs)",
                 labels=("target_force",),
             ),
         })
@@ -247,24 +309,55 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
 
     def _obs_target_force(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Normalised force target command, shape (1,)."""
-        return jp.array([info["force_target"] / self._config.force_target])
+        """Raw force target command in Newtons, shape (1,). Standardised by the
+        PPO running-observation normalizer, so no manual scaling is applied."""
+        return jp.array([info["force_target"]])
+
+    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+        """Per-finger contact-force magnitude (thumb, index), each summed over the
+        finger's tip-sphere and box-pad sensors, scaled by 1/_TIP_FORCE_SCALE.
+
+        Overrides the base per-sensor version so the oracle force observation
+        includes the pad and matches the rewarded `effective_force`."""
+        forces = jp.array([
+            self._finger_contact_force(data, group)
+            for group in self._FINGER_FORCE_SENSORS
+        ])
+        return forces / self._TIP_FORCE_SCALE
+
+    def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
+        """Per-finger normalized net contact-force direction, summing the tip
+        sphere and box pad of each finger before normalizing."""
+        dirs = []
+        for group in self._FINGER_FORCE_SENSORS:
+            net = jp.sum(
+                jp.stack([
+                    jp.sum(
+                        mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+                        axis=0,
+                    )
+                    for name in group
+                ]),
+                axis=0,
+            )
+            magnitude = jp.linalg.norm(net)
+            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
+        return jp.concatenate(dirs)
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Ground-truth privileged critic state (no noise).
+        """Ground-truth privileged critic state (no noise). The cube is static
+        (no freejoint), so no cube pose/velocity terms are included.
 
-        q(8) + qdot(8) + cube_pos(3) + cube_linvel(3) + cube_angvel(3)
-        + fingertips_global(6) + motor_targets(8) + force_target(1) = 40
+        q(8) + qdot(8) + fingertips_global(6) + motor_targets(8)
+        + force_target(1) + fingertip_forces(2) = 33
         """
         return jp.concatenate([
             data.qpos[self._hand_qids],
             data.qvel[self._hand_dqids],
-            self.get_cube_position(data),
-            self.get_cube_linvel(data),
-            self.get_cube_angvel(data),
             self.get_fingertip_global_positions(data),
             info["motor_targets"],
-            jp.array([info["force_target"] / self._config.force_target]),
+            jp.array([info["force_target"]]),
+            self._obs_fingertip_forces(data, info),
         ])
 
     # ------------------------------------------------------------------
@@ -272,7 +365,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        rng, pos_rng, pert1, pert2, pert3, force_rng = jax.random.split(rng, 6)
+        rng, pos_rng, pert1, pert2, pert3, force_rng, bias_rng = jax.random.split(rng, 7)
 
         qpos = jp.clip(
             self._default_pose + 0.05 * jax.random.normal(pos_rng, (consts.N_ACTIVE,)),
@@ -333,12 +426,15 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
             "pert_dir": jp.zeros(6, dtype=float),
             "last_pert_step": jp.array([-jp.inf], dtype=float),
+            "obs_bias": self._sample_obs_bias(
+                bias_rng, self._config.sensor_bundle, self._task_obs_keys()
+            ),
         }
 
         metrics = {}
         for k in self._config.reward_config.scales.keys():
-            metrics[f"reward/{k}"] = jp.zeros(())
-        metrics["reward/success"] = jp.zeros((), dtype=float)
+            metrics[f"reward/{k}_per_step"] = jp.zeros(())
+        metrics["reward/success_per_step"] = jp.zeros((), dtype=float)
         metrics["consecutive_success_steps"] = jp.zeros(())
         metrics["steps_since_last_success"] = 0
         metrics["success_count"] = 0
@@ -368,8 +464,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
-        f_thumb = self._fingertip_force(data, "rl_dg_1_tip_cube_force")
-        f_index = self._fingertip_force(data, "rl_dg_2_tip_cube_force")
+        f_thumb = self._finger_contact_force(data, self._FINGER_FORCE_SENSORS[0])
+        f_index = self._finger_contact_force(data, self._FINGER_FORCE_SENSORS[1])
         contact_gate = jp.clip(jp.minimum(f_thumb, f_index) / 0.5, 0.0, 1.0)
         effective_force = self._total_contact_force(data) * contact_gate
         force_target = state.info["force_target"]
@@ -402,27 +498,30 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
 
         obs = self._get_obs(data, state.info)
-        rewards = self._get_reward(data, action, state.info, effective_force)
+        raw_rewards = self._get_reward(data, action, state.info, effective_force)
+        scaled_rewards = {
+            k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()
+        }
 
         # Weighted sum of the two normalized reward components plus penalties,
-        # then a per-step bonus whenever the force is within tolerance.
-        sc = self._config.reward_config.scales
+        # plus a per-step success bonus paid on every step once the force has been
+        # held within tolerance for the required hold time (`success`). Both parts
+        # are scaled by dt so the bonus stays commensurate with the shaped terms
+        # regardless of control rate.
         rew = (
-            sc.cube_force * rewards["cube_force"]
-            + sc.fingertip_pos_per_tip * rewards["fingertip_pos_per_tip"]
-            + sc.action_rate * rewards["action_rate"]
-            + sc.joint_vel * rewards["joint_vel"]
+            sum(scaled_rewards.values())
+            + success * self._config.reward_config.success_reward
         ) * self.dt
-        rew += in_tolerance * self._config.reward_config.success_reward
 
         state.info["step"] += 1
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
-        state.metrics["reward/success"] = success.astype(float)
-        state.metrics["reward/cube_force"] = rewards["cube_force"]
-        state.metrics["reward/fingertip_pos_per_tip"] = rewards["fingertip_pos_per_tip"]
-        state.metrics["reward/action_rate"] = rewards["action_rate"]
-        state.metrics["reward/joint_vel"] = rewards["joint_vel"]
+        # Log the unscaled, per-step raw reward components (each in [0, 1] for the
+        # normalized terms) so the dashboard reads the actual component value
+        # rather than a scale- and dt-weighted quantity.
+        state.metrics["reward/success_per_step"] = success.astype(float)
+        for k, v in raw_rewards.items():
+            state.metrics[f"reward/{k}_per_step"] = v
         state.metrics["f_thumb"] = f_thumb
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
@@ -481,12 +580,27 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         }
 
     def _total_contact_force(self, data: mjx.Data) -> jax.Array:
-        forces = mjx_env.get_sensor_data(self.mj_model, data, "cube_force").reshape(-1, 3)
-        return jp.sum(jp.linalg.norm(forces, axis=1))
+        """Total cube contact-force magnitude (N), summed over both fingers'
+        tip-sphere and box-pad sensors. Replaces the whole-hand `cube_force`
+        subtree sensor so the rewarded force equals the sum of the per-finger
+        forces the policy/critic observe."""
+        return sum(
+            self._finger_contact_force(data, group)
+            for group in self._FINGER_FORCE_SENSORS
+        )
 
-    def _fingertip_force(self, data: mjx.Data, sensor_name: str) -> jax.Array:
-        f = mjx_env.get_sensor_data(self.mj_model, data, sensor_name).reshape(-1, 3)
-        return jp.sum(jp.linalg.norm(f, axis=1))
+    def _finger_contact_force(
+        self, data: mjx.Data, sensor_names: tuple[str, ...]
+    ) -> jax.Array:
+        """Contact-force magnitude (N) a single finger exerts on the cube, summed
+        over its tip-sphere and box-pad contact sensors."""
+        return sum(
+            jp.sum(jp.linalg.norm(
+                mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
+                axis=1,
+            ))
+            for name in sensor_names
+        )
 
     def _cost_action_rate(
         self, act: jax.Array, last_act: jax.Array, last_last_act: jax.Array

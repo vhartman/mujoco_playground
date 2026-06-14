@@ -52,8 +52,9 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.5,
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=110,
-        target_hold_time=0.25,
+        episode_length=120,
+        ori_tolerance_rad=6.0 * jp.pi / 180.0,
+        target_hold_time=0.5,
         sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
             level=1.0,
@@ -73,7 +74,7 @@ def default_config() -> config_dict.ConfigDict:
                 action_rate=-0.5,
                 cube_on_floor=-0.5,
             ),
-            success_reward=5.0,
+            success_reward=2.0,
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -86,6 +87,7 @@ def default_config() -> config_dict.ConfigDict:
         scene=config_dict.create(
             cube_mass=0.108,
         ),
+        constrain_wrist_translation=False,
         impl="warp",
         nconmax=200 * 8192,
         njmax=2200,
@@ -102,7 +104,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
     _TASK_KEYS: tuple[str, ...] = ("goal_quat",)
     _TIP_FORCE_SCALE: float = 10.0
-    _ORI_TOLERANCE_RAD: float = 3.0 * jp.pi / 180.0
     _VEL_TOLERANCE: float = 0.3
     _TIP_FORCE_SENSORS: list[str] = [
         "rl_dg_1_tip_cube_force",
@@ -151,25 +152,17 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             self._mj_model.body_mass[cube_body_id] = cfg_cube_mass
             self._mj_model.body_inertia[cube_body_id] *= scale
             model_dirty = True
-        # Confine the hand base to a physical workspace box around the cube,
-        # expressed in the GLOBAL frame and relative to the cube position (the
-        # cube is fixed at x=y=0): +/-1 m laterally (x, y) and [0, 1] m in
-        # height above the cube (z).
-        #
-        # The hand base 'rh' translates via three orthogonal slide joints, but
-        # the downward mounting permutes/offsets the joint-local axes w.r.t. the
-        # global frame (e.g. rj_wrist_0_1 actually drives global Z, inverted).
-        # So we derive each joint's global axis + offset from the compiled model
-        # and invert the desired global box into per-joint qpos limits, instead
-        # of assuming joint-local == global.
-        self._constrain_wrist_translation(
-            global_box=np.array([[-0.25, 0.25],  # global x, centred on cube
-                                 [-0.25, 0.25],  # global y, centred on cube
-                                 [0.0, 1.0]]),   # global z, absolute height
-            cube_relative_axes=(0, 1),          # x, y relative to cube; z absolute
-        )
-        model_dirty = True
-
+        # Snapshot pre-constraint ctrlrange so _joint_max_vel is not affected
+        # by the narrower actuator range set by _constrain_wrist_translation.
+        self._xml_ctrlrange = self._mj_model.actuator_ctrlrange.copy()
+        if self._config.constrain_wrist_translation:
+            self._constrain_wrist_translation(
+                global_box=np.array([[-0.25, 0.25],  # global x, centred on cube
+                                     [-0.25, 0.25],  # global y, centred on cube
+                                     [0.0, 1.0]]),   # global z, absolute height
+                cube_relative_axes=(0, 1),
+            )
+            model_dirty = True
         if model_dirty:
             self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
@@ -246,10 +239,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         # when the floor bears the cube's full weight the penalty saturates at 1.
         g = float(np.linalg.norm(self._mj_model.opt.gravity))
         self._cube_weight = float(self._cube_mass) * g
-        ctrl_span = (
-            self._mj_model.actuator_ctrlrange[:, 1]
-            - self._mj_model.actuator_ctrlrange[:, 0]
-        )
+        ctrl_span = self._xml_ctrlrange[:, 1] - self._xml_ctrlrange[:, 0]
         self._joint_max_vel = jp.array(ctrl_span)
         non_hand_bodies = {"world", "cube", "goal"}
         self._hand_geom_ids = jp.array([
@@ -349,6 +339,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
             "pert_dir": jp.zeros(6, dtype=float),
             "last_pert_step": jp.array([-jp.inf], dtype=float),
+            "ori_error": jp.zeros(()),
         }
 
         metrics = {}
@@ -356,7 +347,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             metrics[f"reward/{k}_per_step"] = jp.zeros(())
         metrics["reward/success_per_step"] = jp.zeros((), dtype=float)
         metrics["success_count"] = jp.zeros((), dtype=float)
-        metrics["floor_support_fraction"] = jp.zeros((), dtype=float)
+        metrics["floor_support_fraction_per_step"] = jp.zeros((), dtype=float)
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -379,8 +370,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         cube_off_floor = ~self._cube_in_contact_with_floor(data)
         ori_error = self._cube_orientation_error(data)
-        at_goal = cube_off_floor & (ori_error < self._ORI_TOLERANCE_RAD)
+        at_goal = cube_off_floor & (ori_error < self.config.ori_tolerance_rad)
 
+        state.info["ori_error"] = ori_error
         state.info["at_target_step_counter"] = jp.where(
             at_goal,
             state.info["at_target_step_counter"] + 1,
@@ -408,9 +400,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["reward/success_per_step"] = success.astype(float)
         for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}_per_step"] = v
-        state.metrics["floor_support_fraction"] = self._cube_floor_support_fraction(data)
+        state.metrics["floor_support_fraction_per_step"] = self._cube_floor_support_fraction(data)
 
         rew = sum(scaled_rewards.values()) * self.dt
+        rew += self._config.reward_config.success_reward * success.astype(float) * self.dt
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
@@ -463,7 +456,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         action: jax.Array,
     ) -> dict[str, jax.Array]:
         cube_pos = self.get_cube_position(data)
-        cube_ori_error = self._cube_orientation_error(data)
+        cube_ori_error = info["ori_error"]
         floor_support_fraction = self._cube_floor_support_fraction(data)
         # Smooth lift gate in [0, 1]: 0 while the cube rests fully on the floor,
         # ramping to 1 as the hand takes its weight. Replaces a hard on/off
@@ -484,7 +477,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             # the cube has been lifted off the floor, so the policy can't farm
             # orientation reward while the cube is still resting on the ground.
             "cube_ori": lift_gate
-            * self.r_cube_orientation(cube_ori_error, self._ORI_TOLERANCE_RAD),
+            * self.r_cube_orientation(cube_ori_error, self.config.ori_tolerance_rad),
             "joint_vel": self.r_joint_vel(
                 data.qvel[self._hand_dqids], self._joint_max_vel, self._VEL_TOLERANCE
             ),

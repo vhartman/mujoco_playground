@@ -104,6 +104,9 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
     all_keys = obs_module.resolve_bundle(sensor_bundle) + task_keys
     rng_keys = jax.random.split(info["rng"], len(all_keys) + 1)
     info["rng"] = rng_keys[0]
+    # Per-episode constant bias (sampled once in reset, see _sample_obs_bias).
+    # Absent for envs that never populate it -> no bias added.
+    obs_bias = info.get("obs_bias", {})
     parts = []
     for i, key in enumerate(all_keys):
       comp = self._obs_components[key]
@@ -113,8 +116,37 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
       )
       if scale > 0.0:
         vec = vec + scale * jax.random.normal(rng_keys[i + 1], vec.shape)
+      bias = obs_bias.get(key)
+      if bias is not None:
+        vec = vec + bias
       parts.append(vec)
     return jp.concatenate(parts)
+
+  def _sample_obs_bias(
+      self, rng, sensor_bundle: str, task_keys: tuple[str, ...]
+  ) -> dict:
+    """Per-episode constant observation bias, one offset per observed channel.
+
+    Sampled once at reset and added to every step's obs (see _build_obs).
+    Unlike the per-step white noise in obs_noise.scales, a constant offset is
+    not zero-mean over the episode, so it does not average out: it shifts the
+    policy's state estimate by a fixed, unobservable amount for the whole
+    episode. Scaled by obs_noise.level * obs_noise.bias_scales[key]; channels
+    with bias_scale 0 contribute an exact-zero offset. Returns {} when the env
+    config has no bias_scales block.
+    """
+    cfg = self._config.obs_noise
+    bias_scales = getattr(cfg, "bias_scales", None)
+    if bias_scales is None:
+      return {}
+    all_keys = obs_module.resolve_bundle(sensor_bundle) + task_keys
+    rng_keys = jax.random.split(rng, len(all_keys))
+    bias = {}
+    for rk, key in zip(rng_keys, all_keys):
+      scale = cfg.level * getattr(bias_scales, key, 0.0)
+      size = self._obs_components[key].size
+      bias[key] = scale * jax.random.normal(rk, (size,))
+    return bias
 
   @functools.cached_property
   def obs_size(self) -> int:
