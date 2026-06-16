@@ -46,6 +46,12 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.05,
         sim_dt=0.01,
         action_scale=0.5,
+        # How the policy output is written into the actuator targets:
+        #   "delta"    -> active_ctrl = data.ctrl + action_scale * action  (incremental)
+        #   "absolute" -> action in [-1, 1] maps directly onto the actuator
+        #                 ctrl range (joint position targets); action_scale unused
+        # Only the ctrl computation changes; all logged metrics/info are identical.
+        action_mode="delta",
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=80,
@@ -421,6 +427,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             "last_last_act": jp.zeros(consts.N_ACTIVE),
             "motor_targets": data.ctrl,
             "force_target": force_target,
+            "force_error": jp.zeros(()),
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
@@ -454,8 +461,14 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         if self._config.pert_config.enable:
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
-        delta = action * self._config.action_scale
-        active_ctrl = jp.clip(state.data.ctrl + delta, self._lowers, self._uppers)
+        if self._config.action_mode == "delta":
+            active_ctrl = state.data.ctrl + action * self._config.action_scale
+        elif self._config.action_mode == "absolute":
+            # tanh-squashed action in [-1, 1] -> actuator ctrl range
+            active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
+        else:
+            raise ValueError(f"unknown action_mode: {self._config.action_mode!r}")
+        active_ctrl = jp.clip(active_ctrl, self._lowers, self._uppers)
         motor_targets = (
             self._config.ema_alpha * active_ctrl
             + (1 - self._config.ema_alpha) * state.info["motor_targets"]
@@ -469,6 +482,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         contact_gate = jp.clip(jp.minimum(f_thumb, f_index) / 0.5, 0.0, 1.0)
         effective_force = self._total_contact_force(data) * contact_gate
         force_target = state.info["force_target"]
+        state.info["force_error"] = effective_force - force_target
         in_tolerance = (
             (effective_force >= force_target - self._config.force_tolerance)
             & (effective_force <= force_target + self._config.force_tolerance)
