@@ -23,12 +23,6 @@ _PRESET_XML = {
     # ),
 }
 
-# _PRESET_RL = {
-#     "force": CubePinchForce,
-#     "proprio": CubePinchProprio,
-#     "baseline": CubePinchBaseline,
-# }
-
 _RL_ENV_MODULE_ROOT = "mujoco_playground._src.manipulation.tesollo_hand"
 
 

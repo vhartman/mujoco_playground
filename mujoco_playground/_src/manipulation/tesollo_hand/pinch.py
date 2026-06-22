@@ -20,6 +20,7 @@ __all__ = [
     "domain_randomize",
 ]
 
+import logging
 from typing import Any, Dict, Optional, Union
 
 import jax
@@ -47,7 +48,7 @@ def default_config() -> config_dict.ConfigDict:
         sim_dt=0.01,
         action_scale=0.5,
         action_mode="delta",
-        remove_cube=False,
+        ghost_cube=False,
         cube_size_scale=1.0,
         cube_pos_offset=[0.0, 0.0],
         weld_cube=True,
@@ -135,7 +136,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         # Call the MjxEnv grandparent directly so we can build the reduced
         # scene from an XML string rather than a fixed file path.
         mjx_env.MjxEnv.__init__(self, config, config_overrides)
-        _ACTIVE_DR_SPEC.update({k: list(v) for k, v in self._config.domain_rand.items()})
+        _cube_dr_spec.update({k: list(v) for k, v in self._config.domain_rand.items()})
         self._model_assets = tesollo_hand_base.get_assets()
         self._mj_spec = pinch_scene_reduced.build_pinch_spec(weld_cube=self._config.weld_cube)
         self._mj_model = self._mj_spec.compile()
@@ -144,8 +145,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self._mj_model.vis.global_.offheight = 2160
         self._xml_path = consts.SCENE_XML.as_posix()
 
-        if self._config.remove_cube:
-            _ghost_alpha = 0.12
+        if self._config.ghost_cube:
+            _ghost_alpha = 0.32
             _cube_bid = self._mj_model.body("cube").id
             for _g in range(self._mj_model.ngeom):
                 if self._mj_model.geom_bodyid[_g] != _cube_bid:
@@ -357,10 +358,10 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        rng, pos_rng, pert1, pert2, pert3, force_rng, bias_rng = jax.random.split(rng, 7)
+        rng, pert1, pert2, pert3, force_rng, bias_rng = jax.random.split(rng, 6)
 
         hand_q = jp.clip(
-            self._default_pose + 0.05 * jax.random.normal(pos_rng, (consts.N_ACTIVE,)),
+            self._default_pose,
             self._lowers,
             self._uppers,
         )
@@ -649,9 +650,20 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         return state.replace(data=state.data.replace(xfrc_applied=xfrc))
 
 
-def domain_randomize(model: mjx.Model, rng: jax.Array):
-    mj_model = CubePinch().mj_model
-    cube_body_id = mj_model.body("cube").id
+_cube_dr_spec: dict[str, list[float]] = {
+    "cube_size": [1.0, 1.0],
+    "cube_pos": [0.0, 0.0],
+    "cube_mass": [1.0, 1.0],
+}
+
+
+def _get_scene_ids():
+    """Lightweight ID lookup from a throwaway scene compile (no CubePinch)."""
+    mj_model = pinch_scene_reduced.build_pinch_spec(weld_cube=True).compile()
+    cube_bid = mj_model.body("cube").id
+    cube_gids = np.array(
+        [g for g in range(mj_model.ngeom) if mj_model.geom_bodyid[g] == cube_bid]
+    )
     hand_qids = mjx_env.get_qpos_ids(mj_model, consts.JOINT_NAMES)
     hand_body_names = [
         "rl_dg_1_1", "rl_dg_1_2", "rl_dg_1_3", "rl_dg_1_4",
@@ -661,136 +673,149 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     silicone_geom_ids = [
         mj_model.geom(g).id for g in ["rl_dg_1_tip", "rl_dg_2_tip"]
     ]
-
-    @jax.vmap
-    def rand(rng):
-        rng, key = jax.random.split(rng)
-        silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=2.0)
-        geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(silicone_friction)
-
-        rng, key1, key2 = jax.random.split(rng, 3)
-        dmass = jax.random.uniform(key1, minval=0.5, maxval=1.5)
-        body_inertia = model.body_inertia.at[cube_body_id].set(
-            model.body_inertia[cube_body_id] * dmass
-        )
-        dpos = jax.random.uniform(key2, (3,), minval=-5e-3, maxval=5e-3)
-        body_ipos = model.body_ipos.at[cube_body_id].set(
-            model.body_ipos[cube_body_id] + dpos
-        )
-
-        rng, key = jax.random.split(rng)
-        qpos0 = model.qpos0.at[hand_qids].set(
-            model.qpos0[hand_qids]
-            + jax.random.uniform(key, shape=(consts.N_ACTIVE,), minval=-0.05, maxval=0.05)
-        )
-
-        rng, key = jax.random.split(rng)
-        frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
-            key, shape=(consts.N_ACTIVE,), minval=0.5, maxval=2.0
-        )
-        dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
-
-        rng, key = jax.random.split(rng)
-        armature = model.dof_armature[hand_qids] * jax.random.uniform(
-            key, shape=(consts.N_ACTIVE,), minval=1.0, maxval=1.05
-        )
-        dof_armature = model.dof_armature.at[hand_qids].set(armature)
-
-        rng, key = jax.random.split(rng)
-        dmass = jax.random.uniform(key, shape=(len(hand_body_ids),), minval=0.9, maxval=1.1)
-        body_mass = model.body_mass.at[hand_body_ids].set(
-            model.body_mass[hand_body_ids] * dmass
-        )
-
-        rng, key = jax.random.split(rng)
-        kp = model.actuator_gainprm[:, 0] * jax.random.uniform(
-            key, (model.nu,), minval=0.8, maxval=1.2
-        )
-        actuator_gainprm = model.actuator_gainprm.at[:, 0].set(kp)
-        actuator_biasprm = model.actuator_biasprm.at[:, 1].set(-kp)
-
-        rng, key = jax.random.split(rng)
-        kd = model.dof_damping[hand_qids] * jax.random.uniform(
-            key, (consts.N_ACTIVE,), minval=0.8, maxval=1.2
-        )
-        dof_damping = model.dof_damping.at[hand_qids].set(kd)
-
-        return (
-            geom_friction, body_mass, body_inertia, body_ipos, qpos0,
-            dof_frictionloss, dof_armature, dof_damping, actuator_gainprm, actuator_biasprm,
-        )
-
-    (
-        geom_friction, body_mass, body_inertia, body_ipos, qpos0,
-        dof_frictionloss, dof_armature, dof_damping, actuator_gainprm, actuator_biasprm,
-    ) = rand(rng)
-
-    in_axes = jax.tree_util.tree_map(lambda x: None, model)
-    in_axes = in_axes.tree_replace({
-        "geom_friction": 0, "body_mass": 0, "body_inertia": 0, "body_ipos": 0,
-        "qpos0": 0, "dof_frictionloss": 0, "dof_armature": 0, "dof_damping": 0,
-        "actuator_gainprm": 0, "actuator_biasprm": 0,
-    })
-    model = model.tree_replace({
-        "geom_friction": geom_friction, "body_mass": body_mass,
-        "body_inertia": body_inertia, "body_ipos": body_ipos, "qpos0": qpos0,
-        "dof_frictionloss": dof_frictionloss, "dof_armature": dof_armature,
-        "dof_damping": dof_damping, "actuator_gainprm": actuator_gainprm,
-        "actuator_biasprm": actuator_biasprm,
-    })
-    return model, in_axes
+    return cube_bid, cube_gids, hand_qids, hand_body_ids, silicone_geom_ids
 
 
-_ACTIVE_DR_SPEC = {"cube_size": [1.0, 1.0], "cube_pos": [0.0, 0.0], "cube_mass": [1.0, 1.0]}
-
-
-def randomize_cube(model: mjx.Model, rng: jax.Array):
-    """Config-driven per-env DR for the force-sensing experiments. Randomizes
-    whichever of cube_size / cube_pos / cube_mass are enabled (lo!=hi) in
-    _ACTIVE_DR_SPEC. Size scales every cube geom and keeps it resting on the floor;
-    pos jitters the cube origin in xy; mass scales the cube body's mass+inertia.
-    Enabled per run via the --domain_randomization train flag.
+def domain_randomize(model: mjx.Model, rng: jax.Array):
+    """Per-env domain randomization for hand dynamics and (optionally) cube
+    geometry.  Cube size/pos/mass branches are controlled by _cube_dr_spec
+    (populated from config.domain_rand at env construction time); they trace
+    away when lo==hi so there is no runtime cost when disabled.
     """
-    spec = _ACTIVE_DR_SPEC
+    cube_bid, cube_gids, hand_qids, hand_body_ids, silicone_geom_ids = (
+        _get_scene_ids()
+    )
+
+    spec = _cube_dr_spec
     (size_lo, size_hi) = spec["cube_size"]
     (pos_lo, pos_hi) = spec["cube_pos"]
     (mass_lo, mass_hi) = spec["cube_mass"]
-    do_size, do_pos, do_mass = size_lo != size_hi, pos_lo != pos_hi, mass_lo != mass_hi
+    do_size = size_lo != size_hi
+    do_pos = pos_lo != pos_hi
+    do_mass = mass_lo != mass_hi
 
-    mj_model = CubePinch().mj_model
-    cube_bid = mj_model.body("cube").id
-    cube_geom_ids = np.array(
-        [g for g in range(mj_model.ngeom) if mj_model.geom_bodyid[g] == cube_bid]
-    )
-    base_hz = float(mj_model.geom_size[cube_geom_ids[0], 2])
+    _log = logging.getLogger(__name__)
+    randomized_keys: dict[str, str] = {}
+
+    # @jax.vmap
+    # def rand_hand(rng):
+    #     rng, key = jax.random.split(rng)
+    #     silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=2.0)
+    #     geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(silicone_friction)
+    #
+    #     rng, key1, key2 = jax.random.split(rng, 3)
+    #     dmass = jax.random.uniform(key1, minval=0.5, maxval=1.5)
+    #     body_inertia = model.body_inertia.at[cube_bid].set(
+    #         model.body_inertia[cube_bid] * dmass
+    #     )
+    #     dpos = jax.random.uniform(key2, (3,), minval=-5e-3, maxval=5e-3)
+    #     body_ipos = model.body_ipos.at[cube_bid].set(
+    #         model.body_ipos[cube_bid] + dpos
+    #     )
+    #
+    #     rng, key = jax.random.split(rng)
+    #     qpos0 = model.qpos0.at[hand_qids].set(
+    #         model.qpos0[hand_qids]
+    #         + jax.random.uniform(key, shape=(consts.N_ACTIVE,), minval=-0.05, maxval=0.05)
+    #     )
+    #
+    #     rng, key = jax.random.split(rng)
+    #     frictionloss = model.dof_frictionloss[hand_qids] * jax.random.uniform(
+    #         key, shape=(consts.N_ACTIVE,), minval=0.5, maxval=2.0
+    #     )
+    #     dof_frictionloss = model.dof_frictionloss.at[hand_qids].set(frictionloss)
+    #
+    #     rng, key = jax.random.split(rng)
+    #     armature = model.dof_armature[hand_qids] * jax.random.uniform(
+    #         key, shape=(consts.N_ACTIVE,), minval=1.0, maxval=1.05
+    #     )
+    #     dof_armature = model.dof_armature.at[hand_qids].set(armature)
+    #
+    #     rng, key = jax.random.split(rng)
+    #     dm = jax.random.uniform(key, shape=(len(hand_body_ids),), minval=0.9, maxval=1.1)
+    #     body_mass = model.body_mass.at[hand_body_ids].set(
+    #         model.body_mass[hand_body_ids] * dm
+    #     )
+    #
+    #     rng, key = jax.random.split(rng)
+    #     kp = model.actuator_gainprm[:, 0] * jax.random.uniform(
+    #         key, (model.nu,), minval=0.8, maxval=1.2
+    #     )
+    #     actuator_gainprm = model.actuator_gainprm.at[:, 0].set(kp)
+    #     actuator_biasprm = model.actuator_biasprm.at[:, 1].set(-kp)
+    #
+    #     rng, key = jax.random.split(rng)
+    #     kd = model.dof_damping[hand_qids] * jax.random.uniform(
+    #         key, (consts.N_ACTIVE,), minval=0.8, maxval=1.2
+    #     )
+    #     dof_damping = model.dof_damping.at[hand_qids].set(kd)
+    #
+    #     return (
+    #         geom_friction, body_mass, body_inertia, body_ipos, qpos0,
+    #         dof_frictionloss, dof_armature, dof_damping,
+    #         actuator_gainprm, actuator_biasprm,
+    #     )
 
     @jax.vmap
     def rand(rng):
-        geom_size, body_pos = model.geom_size, model.body_pos
-        body_mass, body_inertia = model.body_mass, model.body_inertia
+        geom_size = model.geom_size
+        body_pos = model.body_pos
+        body_mass = model.body_mass
+        body_inertia = model.body_inertia
         if do_size:
             rng, k = jax.random.split(rng)
             s = jax.random.uniform(k, (), minval=size_lo, maxval=size_hi)
-            geom_size = geom_size.at[cube_geom_ids].set(geom_size[cube_geom_ids] * s)
-            body_pos = body_pos.at[cube_bid, 2].set(s * base_hz)
+            geom_size = geom_size.at[cube_gids].set(geom_size[cube_gids] * s)
+            body_pos = body_pos.at[cube_bid, 2].set(geom_size[cube_gids[0], 2])
         if do_pos:
             rng, k = jax.random.split(rng)
             dxy = jax.random.uniform(k, (2,), minval=pos_lo, maxval=pos_hi)
-            body_pos = body_pos.at[cube_bid, :2].set(model.body_pos[cube_bid, :2] + dxy)
+            body_pos = body_pos.at[cube_bid, :2].set(
+                model.body_pos[cube_bid, :2] + dxy
+            )
         if do_mass:
             rng, k = jax.random.split(rng)
             m = jax.random.uniform(k, (), minval=mass_lo, maxval=mass_hi)
             body_mass = body_mass.at[cube_bid].set(model.body_mass[cube_bid] * m)
-            body_inertia = body_inertia.at[cube_bid].set(model.body_inertia[cube_bid] * m)
+            body_inertia = body_inertia.at[cube_bid].set(
+                model.body_inertia[cube_bid] * m
+            )
         return geom_size, body_pos, body_mass, body_inertia
 
+    if do_size:
+        randomized_keys["geom_size"] = f"[{size_lo}, {size_hi}]"
+    if do_pos:
+        randomized_keys["body_pos"] = f"[{pos_lo}, {pos_hi}]"
+    if do_mass:
+        randomized_keys["body_mass"] = f"[{mass_lo}, {mass_hi}]"
+        randomized_keys["body_inertia"] = f"[{mass_lo}, {mass_hi}]"
+
+    if randomized_keys:
+        _log.debug(
+            "domain_randomize: %s",
+            ", ".join(f"{k}={v}" for k, v in randomized_keys.items()),
+        )
+    else:
+        _log.debug("domain_randomize: no keys randomized (all ranges degenerate)")
+
     geom_size, body_pos, body_mass, body_inertia = rand(rng)
+
+    replace_dict = {}
+    axes_dict = {}
+    if do_size:
+        replace_dict["geom_size"] = geom_size
+        axes_dict["geom_size"] = 0
+    if do_pos or do_size:
+        replace_dict["body_pos"] = body_pos
+        axes_dict["body_pos"] = 0
+    if do_mass:
+        replace_dict["body_mass"] = body_mass
+        replace_dict["body_inertia"] = body_inertia
+        axes_dict["body_mass"] = 0
+        axes_dict["body_inertia"] = 0
+
     in_axes = jax.tree_util.tree_map(lambda x: None, model)
-    in_axes = in_axes.tree_replace(
-        {"geom_size": 0, "body_pos": 0, "body_mass": 0, "body_inertia": 0}
-    )
-    model = model.tree_replace({
-        "geom_size": geom_size, "body_pos": body_pos,
-        "body_mass": body_mass, "body_inertia": body_inertia,
-    })
+    if replace_dict:
+        in_axes = in_axes.tree_replace(axes_dict)
+        model = model.tree_replace(replace_dict)
     return model, in_axes

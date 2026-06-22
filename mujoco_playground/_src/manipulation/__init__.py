@@ -121,7 +121,7 @@ _randomizer = {
     "TesolloGrasp": tesollo_grasp.domain_randomize,
     "TesolloPickAndPlace": tesollo_pick_and_place.domain_randomize,
     "TesolloDownwardsRotateZ": tesollo_downwards_rotate_z.domain_randomize,
-    "TesolloCubePinch": tesollo_pinch.randomize_cube,
+    "TesolloCubePinch": tesollo_pinch.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 

@@ -63,7 +63,7 @@ def main():
         suffix = run_name.split("-", 2)[-1]
         out_path = out_dir / f"{short}__{suffix}.mp4"
         try:
-            env_name, cfg = rl.load_env_cfg(run_dir, remove_cube=True)
+            env_name, cfg = rl.load_env_cfg(run_dir, ghost_cube=True)
             env, inf = rl.restore_policy(env_name, cfg, ckpt, deterministic=True)
             states = rollout_states(env, inf, int(cfg.episode_length), jax.random.PRNGKey(1))
             fps = 1.0 / env.dt / RENDER_EVERY

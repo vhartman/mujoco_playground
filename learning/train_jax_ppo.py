@@ -606,11 +606,6 @@ def main(argv):
   )
 
   times = [time.monotonic()]
-
-  # Abort runs that diverge unrecoverably so the next seed can start sooner.
-  # The reward/KL/v_loss heuristics rely on episode/* metrics, which brax only
-  # emits when log_training_metrics is enabled; the NaN/Inf guard works either
-  # way. See learning/early_stop.py.
   early_stopper = early_stop.EarlyStopper(ppo_params.num_timesteps)
   if not _LOG_TRAINING_METRICS.value:
     print(

@@ -40,7 +40,7 @@ DROP_INFO = {
 
 def load_env_cfg(run_dir: Path, **overrides):
     """(env_name, cfg) from a run's saved checkpoints/config.json, plus optional
-    config overrides (e.g. remove_cube=True, cube_size_scale=1.1)."""
+    config overrides (e.g. ghost_cube=True, cube_size_scale=1.1)."""
     env_name = run_dir.name.split("-")[0]
     cfg = registry.get_default_config(env_name)
     for k, v in json.load(open(run_dir / "checkpoints" / "config.json")).items():
