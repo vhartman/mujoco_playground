@@ -63,33 +63,6 @@ def load_model(env_arg: str, impl: str = "warp") -> mujoco.MjModel:
     return m
 
 
-def _apply_dr_to_spec(spec: mujoco.MjSpec, m_ref: mujoco.MjModel,
-                      geom_size: np.ndarray, body_pos: np.ndarray):
-    """Write DR'd cube geom sizes and body position back into the spec.
-
-    m_ref is the current compiled model, used only for name→id lookups.
-    """
-    cube_bid = m_ref.body("cube").id
-    for body in spec.bodies:
-        if body.name != "cube":
-            continue
-        body.pos = body_pos[cube_bid]
-        for geom in body.geoms:
-            if geom.type == mujoco.mjtGeom.mjGEOM_BOX and geom.name:
-                geom.size = geom_size[m_ref.geom(geom.name).id]
-            elif geom.type == mujoco.mjtGeom.mjGEOM_MESH:
-                mesh_gid = next(
-                    g for g in range(m_ref.ngeom)
-                    if m_ref.geom_bodyid[g] == cube_bid
-                    and m_ref.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
-                )
-                for mesh in spec.meshes:
-                    if mesh.name == "cube_mesh":
-                        mesh.scale = geom_size[mesh_gid]
-                        break
-        break
-
-
 def make_key_callback(m, data, env=None, randomize_fn=None):
     """P: print qpos. R: call env.reset() and update the viewer (only when env is provided).
 
@@ -146,14 +119,7 @@ def make_key_callback(m, data, env=None, randomize_fn=None):
                             tuple(idx): f"{old[tuple(idx)]:.4f} -> {new[tuple(idx)]:.4f}"
                             for idx in idxs[:8]
                         }
-                _apply_dr_to_spec(env._mj_spec, m, new_geom_size, new_body_pos)
-                m_new = env._mj_spec.compile()
-                m.geom_size[:] = m_new.geom_size
-                m.body_pos[:] = m_new.body_pos
-                m.body_mass[:] = m_new.body_mass
-                m.body_inertia[:] = m_new.body_inertia
-                m.mesh_vert[:] = m_new.mesh_vert
-                m.mesh_normal[:] = m_new.mesh_normal
+                env.sync_mj_model_meshes()
                 pending_mesh_update[0] = True
                 if changed:
                     print("--- domain_randomize ---")

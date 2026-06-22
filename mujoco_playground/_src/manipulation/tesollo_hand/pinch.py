@@ -242,6 +242,50 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def mjx_model(self) -> mjx.Model:
         return self._mjx_model
 
+    def sync_mj_model_meshes(self) -> None:
+        """Recompile the spec so mj_model meshes match the current mjx_model's
+        cube geom sizes.  Call before render() when domain randomization has
+        changed geom_size on the MJX model."""
+        mjx_geom_size = np.array(self._mjx_model.geom_size)
+        mjx_body_pos = np.array(self._mjx_model.body_pos)
+        cube_bid = self._mj_model.body("cube").id
+        if (np.allclose(self._mj_model.geom_size, mjx_geom_size)
+                and np.allclose(self._mj_model.body_pos, mjx_body_pos)):
+            return
+        for body in self._mj_spec.bodies:
+            if body.name != "cube":
+                continue
+            body.pos = mjx_body_pos[cube_bid]
+            for geom in body.geoms:
+                if geom.type == mujoco.mjtGeom.mjGEOM_BOX and geom.name:
+                    geom.size = mjx_geom_size[self._mj_model.geom(geom.name).id]
+                elif geom.type == mujoco.mjtGeom.mjGEOM_MESH:
+                    mesh_gid = next(
+                        g for g in range(self._mj_model.ngeom)
+                        if self._mj_model.geom_bodyid[g] == cube_bid
+                        and self._mj_model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+                    )
+                    for mesh in self._mj_spec.meshes:
+                        if mesh.name == "cube_mesh":
+                            mesh.scale = mjx_geom_size[mesh_gid]
+                            break
+            break
+        m_new = self._mj_spec.compile()
+        self._mj_model.geom_size[:] = m_new.geom_size
+        self._mj_model.body_pos[:] = m_new.body_pos
+        self._mj_model.body_mass[:] = m_new.body_mass
+        self._mj_model.body_inertia[:] = m_new.body_inertia
+        self._mj_model.mesh_vert[:] = m_new.mesh_vert
+        self._mj_model.mesh_normal[:] = m_new.mesh_normal
+
+    def render(self, trajectory, height=240, width=320, camera=None,
+               scene_option=None, modify_scene_fns=None):
+        self.sync_mj_model_meshes()
+        return mjx_env.render_array(
+            self._mj_model, trajectory, height, width, camera,
+            scene_option=scene_option, modify_scene_fns=modify_scene_fns,
+        )
+
     _TASK_KEYS: tuple[str, ...] = ("target_force",)
 
     _FINGER_FORCE_SENSORS: tuple[tuple[str, ...], ...] = (
