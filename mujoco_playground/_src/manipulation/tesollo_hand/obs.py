@@ -99,11 +99,14 @@ def resolve_bundle(sensor_bundle: str) -> tuple[str, ...]:
       "none"     -> EMPTY proprioceptive state; policy sees only the task keys
                     (e.g. target_force). Sanity check for solving with no proprio.
       "pos_only" -> joint_pos only, NO joint_vel; isolates q from q_dot.
+      "vel_only" -> joint_vel only, NO joint_pos; isolates q_dot from q.
     """
     if sensor_bundle.strip() == "none":
         return ()
     if sensor_bundle.strip() == "pos_only":
         return ("joint_pos",)
+    if sensor_bundle.strip() == "vel_only":
+        return ("joint_vel",)
 
     selected: dict[str, str] = {}
     for tok in (t.strip() for t in sensor_bundle.split("+")):

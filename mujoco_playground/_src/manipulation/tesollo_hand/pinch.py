@@ -46,31 +46,22 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.05,
         sim_dt=0.01,
         action_scale=0.5,
-        # How the policy output is written into the actuator targets:
-        #   "delta"    -> active_ctrl = data.ctrl + action_scale * action  (incremental)
-        #   "absolute" -> action in [-1, 1] maps directly onto the actuator
-        #                 ctrl range (joint position targets); action_scale unused
-        # Only the ctrl computation changes; all logged metrics/info are identical.
         action_mode="delta",
+        remove_cube=False,
+        cube_size_scale=1.0,
+        cube_pos_offset=[0.0, 0.0],
+        weld_cube=True,
+        domain_rand=config_dict.create(
+            cube_size=[1.0, 1.0],
+            cube_pos=[0.0, 0.0],
+            cube_mass=[1.0, 1.0],
+        ),
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=80,
         # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
         sensor_bundle="proprio.target",
-        # Range [min, max] (N) for randomizing the per-episode target contact
-        # force. The target is fed to the policy as raw Newtons; the PPO running
-        # observation normalizer standardises it, so no manual scaling is needed.
-        # Kept inside the ~6.2 N static grip ceiling (see
-        # learning/probe_pinch_force_q.py) so every target is physically
-        # holdable; lower bound keeps both tips engaged past the 0.5 N/tip gate.
         force_target_range=[2.0, 5.0],
-        # Force must stay within ±force_tolerance N of target for success_hold_time
-        # seconds before the per-step success bonus is paid. Tuned from a trained
-        # baseline rollout (experimentation/pinch_static_exploration/
-        # tune_success_params.py): the old 0.3 N / 1.0 s criterion was met on
-        # ~0.1% of steps (useless as a dependent variable). 0.75 N / 0.5 s puts a
-        # competent base_clean policy well above a 30% success-step rate while
-        # staying a meaningful band (±0.75 N on a 2-5 N target) and a real hold.
         force_tolerance=0.75,
         success_hold_time=0.5,
         obs_noise=config_dict.create(
@@ -82,12 +73,6 @@ def default_config() -> config_dict.ConfigDict:
                 fingertip_forces=0.0,
                 fingertip_force_dirs=0.0,
             ),
-            # Per-episode constant offset per channel (sampled once at reset).
-            # Unlike `scales` (per-step white noise) a bias does not average
-            # out, so it shifts the policy's state estimate for the whole
-            # episode. A joint_pos bias corrupts baseline's only force readout
-            # (force = g(q)) while leaving proprio.target's clean motor_targets
-            # route intact -- the intended baseline vs proprio separation.
             bias_scales=config_dict.create(
                 joint_pos=0.0,
                 joint_vel=0.0,
@@ -121,17 +106,6 @@ def default_config() -> config_dict.ConfigDict:
             kp_per_actuator=[],
             kv_per_actuator=[],
         ),
-        # Sweep contact compliance at the fingertips by overriding the solimp
-        # impedance-ramp width on the active-finger tip geoms. Larger width =>
-        # softer contact, more force-dependent penetration, so joint angle q
-        # encodes the contact force (baseline can read it off q). Smaller width
-        # => near-rigid, q saturates at the surface and force decouples from q,
-        # so motor_targets (proprio) becomes the informative signal. The XML
-        # default width is 1e-4.
-        tip_solimp=config_dict.create(
-            enable=False,
-            width=1e-4,
-        ),
         use_ctrl_delta=False,
         impl="warp",
         nconmax=200 * 8192,
@@ -161,18 +135,46 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         # Call the MjxEnv grandparent directly so we can build the reduced
         # scene from an XML string rather than a fixed file path.
         mjx_env.MjxEnv.__init__(self, config, config_overrides)
+        _ACTIVE_DR_SPEC.update({k: list(v) for k, v in self._config.domain_rand.items()})
         self._model_assets = tesollo_hand_base.get_assets()
-        self._mj_spec = pinch_scene_reduced.build_pinch_spec()
+        self._mj_spec = pinch_scene_reduced.build_pinch_spec(weld_cube=self._config.weld_cube)
         self._mj_model = self._mj_spec.compile()
         self._mj_model.opt.timestep = self._config.sim_dt
         self._mj_model.vis.global_.offwidth = 3840
         self._mj_model.vis.global_.offheight = 2160
         self._xml_path = consts.SCENE_XML.as_posix()
 
+        if self._config.remove_cube:
+            _ghost_alpha = 0.12
+            _cube_bid = self._mj_model.body("cube").id
+            for _g in range(self._mj_model.ngeom):
+                if self._mj_model.geom_bodyid[_g] != _cube_bid:
+                    continue
+                self._mj_model.geom_contype[_g] = 0
+                self._mj_model.geom_conaffinity[_g] = 0
+                self._mj_model.geom_rgba[_g, 3] = _ghost_alpha
+                _mid = self._mj_model.geom_matid[_g]
+                if _mid >= 0:
+                    self._mj_model.mat_rgba[_mid, 3] = _ghost_alpha
+
+        if self._config.cube_size_scale != 1.0:
+            _scale = float(self._config.cube_size_scale)
+            _cube_bid = self._mj_model.body("cube").id
+            for _g in range(self._mj_model.ngeom):
+                if self._mj_model.geom_bodyid[_g] == _cube_bid:
+                    self._mj_model.geom_size[_g] *= _scale
+            self._mj_model.body_pos[_cube_bid, 2] = self._mj_model.geom_size[
+                self._mj_model.geom("cube").id, 2
+            ]
+
+        if any(self._config.cube_pos_offset):
+            _cb = self._mj_model.body("cube").id
+            self._mj_model.body_pos[_cb, :2] += np.array(
+                self._config.cube_pos_offset, dtype=float
+            )
+
         if self._config.pid_gains.enable:
             self._apply_pid_gains()
-        if self._config.tip_solimp.enable:
-            self._apply_tip_solimp()
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._post_init()
 
@@ -187,7 +189,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self._cube_body_id = self._mj_model.body("cube").id
         self._cube_half_size = float(self._mj_model.geom_size[self._cube_geom_id, 0])
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
-        self._default_pose = self._init_q
+        self._default_pose = self._init_q[self._hand_qids]
         # Cube freejoint removed; get fixed world position via forward kinematics.
         _init_data = mujoco.MjData(self._mj_model)
         mujoco.mj_forward(self._mj_model, _init_data)
@@ -218,22 +220,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self._mj_model.actuator_gainprm[:, 0] = np.array(kp)
         self._mj_model.actuator_biasprm[:, 1] = -np.array(kp)
         self._mj_model.actuator_biasprm[:, 2] = -np.array(kv)
-
-    # Sphere + box pad geoms of the two active fingers. The force reward sums
-    # each finger's tip-sphere and box-pad contact sensors, so both geoms of
-    # each finger carry measured force and both must be retuned here.
-    _TIP_CONTACT_GEOMS: tuple[str, ...] = (
-        "rl_dg_1_tip", "rl_dg_1_tip_2",
-        "rl_dg_2_tip", "rl_dg_2_tip_2",
-    )
-
-    def _apply_tip_solimp(self) -> None:
-        """Override the solimp impedance-ramp width on the fingertip contact
-        geoms, sweeping contact compliance from soft to near-rigid."""
-        width = self._config.tip_solimp.width
-        for name in self._TIP_CONTACT_GEOMS:
-            gid = self._mj_model.geom(name).id
-            self._mj_model.geom_solimp[gid, 2] = width
 
     # ------------------------------------------------------------------
     # Properties required by TesolloHandGraspEnv
@@ -373,17 +359,18 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng, pos_rng, pert1, pert2, pert3, force_rng, bias_rng = jax.random.split(rng, 7)
 
-        qpos = jp.clip(
+        hand_q = jp.clip(
             self._default_pose + 0.05 * jax.random.normal(pos_rng, (consts.N_ACTIVE,)),
             self._lowers,
             self._uppers,
         )
+        qpos = self._init_q.at[self._hand_qids].set(hand_q)
         qvel = jp.zeros(self._mj_model.nv)
 
         data = mjx_env.make_data(
             self._mj_model,
             qpos=qpos,
-            ctrl=qpos,
+            ctrl=hand_q,
             qvel=qvel,
             impl=self._mjx_model.impl.value,
             nconmax=self._config.nconmax,
@@ -463,8 +450,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
 
         if self._config.action_mode == "delta":
             active_ctrl = state.data.ctrl + action * self._config.action_scale
+        elif self._config.action_mode == "delta_pose":
+            active_ctrl = state.data.qpos[self._hand_qids] + action * self._config.action_scale
         elif self._config.action_mode == "absolute":
-            # tanh-squashed action in [-1, 1] -> actuator ctrl range
             active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
         else:
             raise ValueError(f"unknown action_mode: {self._config.action_mode!r}")
@@ -547,8 +535,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     def _get_termination(
         self, data: mjx.Data
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
-        cube_xy = self.get_cube_position(data)[:2]
-        drift = jp.linalg.norm(cube_xy - self._init_cube_pos[:2]) > 0.15
+        cube_pos = self.get_cube_position(data)
+        drift = jp.linalg.norm(cube_pos[:2] - self._init_cube_pos[:2]) > 0.15
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         tip_on_ground = jp.any(tips[:, 2] < 0.005)
@@ -749,5 +737,60 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         "dof_frictionloss": dof_frictionloss, "dof_armature": dof_armature,
         "dof_damping": dof_damping, "actuator_gainprm": actuator_gainprm,
         "actuator_biasprm": actuator_biasprm,
+    })
+    return model, in_axes
+
+
+_ACTIVE_DR_SPEC = {"cube_size": [1.0, 1.0], "cube_pos": [0.0, 0.0], "cube_mass": [1.0, 1.0]}
+
+
+def randomize_cube(model: mjx.Model, rng: jax.Array):
+    """Config-driven per-env DR for the force-sensing experiments. Randomizes
+    whichever of cube_size / cube_pos / cube_mass are enabled (lo!=hi) in
+    _ACTIVE_DR_SPEC. Size scales every cube geom and keeps it resting on the floor;
+    pos jitters the cube origin in xy; mass scales the cube body's mass+inertia.
+    Enabled per run via the --domain_randomization train flag.
+    """
+    spec = _ACTIVE_DR_SPEC
+    (size_lo, size_hi) = spec["cube_size"]
+    (pos_lo, pos_hi) = spec["cube_pos"]
+    (mass_lo, mass_hi) = spec["cube_mass"]
+    do_size, do_pos, do_mass = size_lo != size_hi, pos_lo != pos_hi, mass_lo != mass_hi
+
+    mj_model = CubePinch().mj_model
+    cube_bid = mj_model.body("cube").id
+    cube_geom_ids = np.array(
+        [g for g in range(mj_model.ngeom) if mj_model.geom_bodyid[g] == cube_bid]
+    )
+    base_hz = float(mj_model.geom_size[cube_geom_ids[0], 2])
+
+    @jax.vmap
+    def rand(rng):
+        geom_size, body_pos = model.geom_size, model.body_pos
+        body_mass, body_inertia = model.body_mass, model.body_inertia
+        if do_size:
+            rng, k = jax.random.split(rng)
+            s = jax.random.uniform(k, (), minval=size_lo, maxval=size_hi)
+            geom_size = geom_size.at[cube_geom_ids].set(geom_size[cube_geom_ids] * s)
+            body_pos = body_pos.at[cube_bid, 2].set(s * base_hz)
+        if do_pos:
+            rng, k = jax.random.split(rng)
+            dxy = jax.random.uniform(k, (2,), minval=pos_lo, maxval=pos_hi)
+            body_pos = body_pos.at[cube_bid, :2].set(model.body_pos[cube_bid, :2] + dxy)
+        if do_mass:
+            rng, k = jax.random.split(rng)
+            m = jax.random.uniform(k, (), minval=mass_lo, maxval=mass_hi)
+            body_mass = body_mass.at[cube_bid].set(model.body_mass[cube_bid] * m)
+            body_inertia = body_inertia.at[cube_bid].set(model.body_inertia[cube_bid] * m)
+        return geom_size, body_pos, body_mass, body_inertia
+
+    geom_size, body_pos, body_mass, body_inertia = rand(rng)
+    in_axes = jax.tree_util.tree_map(lambda x: None, model)
+    in_axes = in_axes.tree_replace(
+        {"geom_size": 0, "body_pos": 0, "body_mass": 0, "body_inertia": 0}
+    )
+    model = model.tree_replace({
+        "geom_size": geom_size, "body_pos": body_pos,
+        "body_mass": body_mass, "body_inertia": body_inertia,
     })
     return model, in_axes

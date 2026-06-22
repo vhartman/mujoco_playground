@@ -19,3 +19,4 @@ experimentation/*.csv
 experimentation/*.ipynb
 analysis/
 *.npz
+*.parquet

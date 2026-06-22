@@ -49,16 +49,23 @@ _BODIES_TO_BAKE = [
 ]
 
 
-def build_pinch_spec() -> mujoco.MjSpec:
+def build_pinch_spec(weld_cube: bool = True) -> mujoco.MjSpec:
     """Return a reduced MjSpec for the pinch task.
 
-    Bakes the wrist and frozen-finger poses from the 'home' keyframe, removes
-    the cube freejoint (fixing it in place), and strips all joints/actuators
-    that are not thumb (dg_1) or index (dg_2).
+    Bakes the wrist and frozen-finger poses from the 'home' keyframe and strips
+    all joints/actuators that are not thumb (dg_1) or index (dg_2). When
+    ``weld_cube`` is True (default) the cube freejoint is removed and its home
+    pose baked (static squeeze); when False the cube keeps its freejoint and is a
+    free rigid body the policy must actively hold.
     """
+    joints_to_remove = list(_JOINTS_TO_REMOVE)
+    bodies_to_bake = list(_BODIES_TO_BAKE)
+    if not weld_cube:
+        joints_to_remove.remove("cube_freejoint")
+        bodies_to_bake.remove("cube")
     return SceneBuilder(consts.SCENE_XML).build_spec(
         keyframe_name="home",
-        bodies_to_bake=_BODIES_TO_BAKE,
-        joints_to_remove=_JOINTS_TO_REMOVE,
+        bodies_to_bake=bodies_to_bake,
+        joints_to_remove=joints_to_remove,
         actuators_to_remove=_ACTUATORS_TO_REMOVE,
     )
