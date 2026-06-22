@@ -103,6 +103,7 @@ def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
     env_names = sweep["env_names"]
     default_flags = defaults.get("flags", {})
     default_overrides = defaults.get("env_overrides", {})
+    default_eval_overrides = defaults.get("eval_env_overrides", {})
     default_script = defaults.get("script", "learning/train_jax_ppo.py")
 
     params = sweep.get("params", {})
@@ -133,6 +134,7 @@ def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
                     "script": default_script,
                     "flags": flags,
                     "env_overrides": env_overrides,
+                    "eval_env_overrides": dict(default_eval_overrides),
                 })
                 idx += 1
     return runs
@@ -147,15 +149,19 @@ def parse_queue(path: pathlib.Path) -> list[dict]:
     default_script = defaults.get("script", "learning/train_jax_ppo.py")
     default_flags = defaults.get("flags", {})
     default_overrides = defaults.get("env_overrides", {})
+    default_eval_overrides = defaults.get("eval_env_overrides", {})
 
     runs = []
     for i, entry in enumerate(raw.get("runs", [])):
         flags = {**default_flags, **entry.get("flags", {})}
         env_overrides = {**default_overrides, **entry.get("env_overrides", {})}
+        eval_env_overrides = {**default_eval_overrides, **entry.get("eval_env_overrides", {})}
         script = entry.get("script", default_script)
         if "env_name" not in flags:
             raise ValueError(f"Run {i} is missing required 'env_name' flag.")
-        runs.append({"idx": i, "script": script, "flags": flags, "env_overrides": env_overrides})
+        runs.append({"idx": i, "script": script, "flags": flags,
+                     "env_overrides": env_overrides,
+                     "eval_env_overrides": eval_env_overrides})
 
     if "sweep" in raw:
         runs.extend(_expand_sweep(raw["sweep"], defaults, start_idx=len(runs)))
@@ -280,7 +286,8 @@ def build_resume_runs(
 # Subprocess execution
 # ---------------------------------------------------------------------------
 
-def _build_argv(script: str, flags: dict, overrides_file=None) -> list[str]:
+def _build_argv(script: str, flags: dict, overrides_file=None,
+                eval_overrides_file=None) -> list[str]:
     argv = [sys.executable, "-u", script]
     for k, v in flags.items():
         if isinstance(v, bool):
@@ -291,6 +298,8 @@ def _build_argv(script: str, flags: dict, overrides_file=None) -> list[str]:
             argv.append(f"--{k}={v}")
     if overrides_file:
         argv.append(f"--env_overrides_file={overrides_file}")
+    if eval_overrides_file:
+        argv.append(f"--eval_env_overrides_file={eval_overrides_file}")
     return argv
 
 
@@ -314,7 +323,13 @@ def run_one(run: dict, log_dir: pathlib.Path) -> dict:
         with open(overrides_path, "w") as f:
             yaml.dump(_flatten(run["env_overrides"]), f, default_flow_style=False)
 
-    argv = _build_argv(run["script"], run["flags"], overrides_path)
+    eval_overrides_path = None
+    if run.get("eval_env_overrides"):
+        eval_overrides_path = log_dir / f"{label}-eval-overrides.yaml"
+        with open(eval_overrides_path, "w") as f:
+            yaml.dump(_flatten(run["eval_env_overrides"]), f, default_flow_style=False)
+
+    argv = _build_argv(run["script"], run["flags"], overrides_path, eval_overrides_path)
 
     print(f"\n{'='*70}")
     print(f"[{idx:02d}] {label}")
@@ -404,6 +419,11 @@ def main():
         "--yes", "-y", action="store_true",
         help="Skip the interactive confirmation prompt.",
     )
+    parser.add_argument(
+        "--num-envs", type=int, default=None, metavar="N",
+        help="Override num_envs for every run (e.g. the cockpit sizes this to the "
+             "target GPU's free VRAM). Any nconmax env-override is scaled with it.",
+    )
     args = parser.parse_args()
 
     if args.resume is not None:
@@ -431,6 +451,18 @@ def main():
         runs = parse_queue(queue_path)
         run_label = queue_path.stem
         source_desc = str(queue_path)
+
+    if args.num_envs is not None:
+        for r in runs:
+            old = r["flags"].get("num_envs")
+            r["flags"]["num_envs"] = args.num_envs
+            # Keep a present nconmax override proportional to num_envs (contact
+            # buffer is sized per-env; mismatched nconmax overflows or wastes VRAM).
+            if old and "nconmax" in r["env_overrides"]:
+                r["env_overrides"]["nconmax"] = int(
+                    r["env_overrides"]["nconmax"] * args.num_envs / old
+                )
+        print(f"[override] num_envs -> {args.num_envs} for all runs")
 
     active = [r for r in runs if r["idx"] >= args.start_from]
 

@@ -20,3 +20,4 @@ experimentation/*.ipynb
 analysis/
 *.npz
 *.parquet
+learning/individual_runs/

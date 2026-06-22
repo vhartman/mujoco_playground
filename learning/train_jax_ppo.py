@@ -180,11 +180,31 @@ _ENV_OVERRIDES_FILE = flags.DEFINE_string(
     "Path to a YAML file of flat-dotted env-config overrides "
     "(e.g. 'obs_noise.level: 2.0'). Applied on top of the env's default_config.",
 )
+_EVAL_ENV_OVERRIDES_FILE = flags.DEFINE_string(
+    "eval_env_overrides_file",
+    None,
+    "Path to a YAML file of flat-dotted overrides applied to the EVAL env on top of"
+    " the train overrides. Use to evaluate the real task while training on a proxy"
+    " (e.g. 'curriculum.enable: false' to eval at full difficulty under a curriculum).",
+)
 _EARLY_STOP = flags.DEFINE_boolean(
     "early_stop",
     True,
     "Abort runs that diverge unrecoverably (NaN/Inf, KL collapse, reward collapse)."
     " Requires --log_training_metrics.",
+)
+_NUM_RESETS_PER_EVAL = flags.DEFINE_integer(
+    "num_resets_per_eval",
+    None,
+    "Override ppo num_resets_per_eval. Set 0 to keep training envs (and any per-env"
+    " curriculum state) across evals instead of resetting them to the initial state.",
+)
+_FULL_RESET = flags.DEFINE_boolean(
+    "full_reset",
+    False,
+    "Re-run env.reset() on every episode end (instead of reverting to the cached"
+    " first state), so per-episode quantities (e.g. a curriculum target) are"
+    " resampled. Curriculum state is preserved via the wrapper's preserve_info.",
 )
 
 
@@ -469,6 +489,8 @@ def main(argv):
     ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
   if _TRAINING_METRICS_STEPS.present:
     ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
+  if _NUM_RESETS_PER_EVAL.present:
+    ppo_params.num_resets_per_eval = _NUM_RESETS_PER_EVAL.value
 
   flag_overrides = _collect_flag_overrides()
 
@@ -577,7 +599,9 @@ def main(argv):
       seed=_SEED.value,
       restore_checkpoint_path=restore_checkpoint_path,
       save_checkpoint_path=ckpt_path,
-      wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
+      wrap_env_fn=None if _VISION.value else functools.partial(
+          wrapper.wrap_for_brax_training, full_reset=_FULL_RESET.value
+      ),
       num_eval_envs=num_eval_envs,
   )
 
@@ -623,10 +647,22 @@ def main(argv):
       if reason is not None:
         raise early_stop.EarlyStopException(reason)
 
-  # Load evaluation environment.
+  # Load evaluation environment. Build it from a FRESH default config (env_cfg was
+  # mutated in place by the train env's config_overrides) so eval overrides can
+  # differ from training -- e.g. disabling a training-only curriculum so eval
+  # measures the real, full-difficulty task instead of the easiest level.
   eval_env = None
   if not _VISION.value:
-    eval_env = registry.load(_ENV_NAME.value, config=env_cfg)
+    eval_overrides = dict(env_overrides or {})
+    if _EVAL_ENV_OVERRIDES_FILE.value:
+      with open(_EVAL_ENV_OVERRIDES_FILE.value, "r", encoding="utf-8") as f:
+        eval_overrides.update(yaml.safe_load(f) or {})
+    eval_cfg = registry.get_default_config(_ENV_NAME.value)
+    if _IMPL.present:
+      eval_cfg["impl"] = _IMPL.value
+    eval_env = registry.load(
+        _ENV_NAME.value, config=eval_cfg, config_overrides=eval_overrides
+    )
   num_envs = 1
   if _VISION.value:
     num_envs = env_cfg.vision_config.render_batch_size

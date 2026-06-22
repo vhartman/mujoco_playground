@@ -21,7 +21,10 @@ never recovers -- and lets the training loop abort early.
 
 Detection is deliberately conservative so that *transient* spikes (which
 recover) are not caught; only a sustained, post-divergence reward collapse
-triggers a stop.
+triggers a stop. Crucially, the divergence latch is *cleared* once KL/v_loss are
+healthy again for a few logs, so a reward dip while KL is healthy -- a curriculum
+advancing to a harder level, or ordinary exploration -- never trips a stop. We
+stop when things are currently unstable, not when the policy is exploring.
 
 All signals are read from the ``episode/*`` metric namespace, which brax
 populates with both episode metrics (``episode/sum_reward``) and PPO-loss
@@ -53,6 +56,14 @@ COLLAPSE_FRAC = 0.5
 # Number of consecutive training-metric logs that must show a post-divergence
 # collapse before aborting. Any recovery resets this streak.
 PATIENCE = 3
+
+# Number of consecutive HEALTHY logs (no KL/v_loss explosion) that clear a
+# latched divergence. Without this, a single early transient spike would latch
+# `diverged` forever, so any *later* reward dip -- e.g. a curriculum advancing to
+# a harder level, or ordinary exploration -- would trip the collapse check even
+# though KL is completely healthy. We only stop when things are *currently*
+# unstable, not when the policy is merely exploring.
+RECOVERY_PATIENCE = 3
 
 # Fraction of num_timesteps to skip before the KL / v_loss / reward heuristics
 # may fire. The NaN/Inf guard is always active, regardless of warmup.
@@ -86,17 +97,20 @@ class EarlyStopper:
       collapse_frac=COLLAPSE_FRAC,
       patience=PATIENCE,
       warmup_frac=WARMUP_FRAC,
+      recovery_patience=RECOVERY_PATIENCE,
   ):
     self._warmup_steps = warmup_frac * total_timesteps
     self._kl_ceiling = kl_ceiling
     self._vloss_ratio = vloss_ratio
     self._collapse_frac = collapse_frac
     self._patience = patience
+    self._recovery_patience = recovery_patience
 
     self._init_reward = None
     self._best_reward = None
     self._vloss_baseline = None  # EMA of v_loss while training is healthy
-    self._diverged = False  # latched once an explosion is seen
+    self._diverged = False  # set on explosion, cleared after sustained health
+    self._healthy_streak = 0  # consecutive logs with no explosion
     self._collapse_streak = 0
 
   def update(self, num_steps, metrics):
@@ -140,9 +154,18 @@ class EarlyStopper:
 
     if exploded:
       self._diverged = True
-    elif vloss is not None:
-      # Only track the baseline while healthy, so it doesn't chase a spike.
-      self._vloss_baseline = self._ema(self._vloss_baseline, float(vloss))
+      self._healthy_streak = 0
+    else:
+      # Sustained health clears a latched divergence: a long-ago transient spike
+      # must not keep `diverged` armed while KL/v_loss are now fine. This is what
+      # stops curriculum/exploration reward dips from tripping the collapse check.
+      self._healthy_streak += 1
+      if self._healthy_streak >= self._recovery_patience:
+        self._diverged = False
+        self._collapse_streak = 0
+      if vloss is not None:
+        # Only track the baseline while healthy, so it doesn't chase a spike.
+        self._vloss_baseline = self._ema(self._vloss_baseline, float(vloss))
 
     # 3) Confirm a sustained reward collapse, gated on prior divergence.
     collapsed = False
@@ -159,7 +182,16 @@ class EarlyStopper:
 
     self._collapse_streak = self._collapse_streak + 1 if collapsed else 0
 
-    if self._collapse_streak >= self._patience:
+    # Final gate, per the directive "stop when unstable, not when exploring":
+    # NEVER fire while KL is currently healthy. A latched divergence + reward dip
+    # with healthy current KL is a curriculum advancing to a harder band (reward
+    # legitimately drops) or ordinary exploration -- not instability. Only stop a
+    # policy that is *currently* unstable (KL still above the ceiling). This is
+    # robust to the failure mode where intermittent v_loss blips (the critic
+    # re-adapting each time the curriculum hardens) keep `diverged` armed while
+    # the reward sits lower at the harder level with KL perfectly healthy.
+    kl_currently_unstable = kl is not None and float(kl) > self._kl_ceiling
+    if self._collapse_streak >= self._patience and kl_currently_unstable:
       return (
           "divergence + sustained reward collapse: episode/sum_reward="
           f"{reward:.3f} vs best={self._best_reward:.3f} for"
