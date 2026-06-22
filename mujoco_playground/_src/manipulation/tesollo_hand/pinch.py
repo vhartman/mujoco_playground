@@ -53,7 +53,7 @@ def default_config() -> config_dict.ConfigDict:
         cube_pos_offset=[0.0, 0.0],
         weld_cube=True,
         domain_rand=config_dict.create(
-            cube_size=[0.85, 0.851],
+            cube_size=[0.85, 1.15],
             cube_pos=[0.0, 0.0],
             cube_mass=[1.0, 1.0],
         ),
