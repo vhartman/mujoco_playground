@@ -53,8 +53,11 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=120,
-        ori_tolerance_rad=6.0 * jp.pi / 180.0,
-        target_hold_time=0.5,
+        ori_tolerance_rad=3.0 * jp.pi / 180.0,
+        curriculum=config_dict.create(
+            enable=False,
+            band_width=float(np.deg2rad(5.0)),
+        ),
         sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
             level=1.0,
@@ -75,6 +78,7 @@ def default_config() -> config_dict.ConfigDict:
                 cube_on_floor=-0.5,
             ),
             success_reward=2.0,
+            ori_reward_margin_rad=float(np.deg2rad(17.0)),
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -252,6 +256,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
+        self._max_level = (
+            int(np.floor(np.pi / self._config.curriculum.band_width + 1e-9)) - 1
+        )
         self._obs_components = self._build_obs_components()
         obs_module.validate_spec(
             self._config.sensor_bundle,
@@ -284,9 +291,17 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         )
         start_pos = jp.array([start_pos[0], start_pos[1], self._cube_init[2]])
 
-        rng, goal_rot_rng = jax.random.split(rng)
-        goal_angle = jax.random.uniform(goal_rot_rng, minval=-jp.pi, maxval=jp.pi)
-        goal_quat = jp.array([jp.cos(goal_angle / 2), 0.0, 0.0, jp.sin(goal_angle / 2)])
+        rng, sign_rng, frac_rng = jax.random.split(rng, 3)
+        goal_sign = jp.where(jax.random.bernoulli(sign_rng), 1.0, -1.0)
+        goal_frac = jax.random.uniform(frac_rng, minval=0.0, maxval=1.0)
+        level = jp.zeros((), dtype=jp.int32)
+        if self._config.curriculum.enable:
+            goal_quat = self._curriculum_goal_quat(level, goal_frac, goal_sign)
+        else:
+            full_angle = jp.pi * (2.0 * goal_frac - 1.0)
+            goal_quat = jp.array(
+                [jp.cos(full_angle / 2), 0.0, 0.0, jp.sin(full_angle / 2)]
+            )
 
         qpos = self._init_q.at[self._cube_qids[:3]].set(start_pos)
         qvel = jp.zeros(self.mj_model.nv)
@@ -327,13 +342,17 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         info = {
             "rng": rng,
             "step": 0,
-            "steps_since_last_success": 0,
-            "success_count": 0,
-            "at_target_step_counter": jp.zeros((), dtype=jp.int32),
+            "reached_this_episode": jp.zeros((), dtype=bool),
             "motor_targets": data.ctrl,
             "action_delta": jp.zeros(self.mj_model.nu),
             "last_action": jp.zeros(self.mj_model.nu),
             "goal_quat": goal_quat,
+            "goal_sign": goal_sign,
+            "goal_frac": goal_frac,
+            "AutoResetWrapper_preserve_info": {
+                "level_pos": jp.zeros((), dtype=jp.int32),
+                "level_neg": jp.zeros((), dtype=jp.int32),
+            },
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
             "pert_vel": jp.array([pert_lin] * 3 + [pert_ang] * 3),
@@ -346,8 +365,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         for k in self._config.reward_config.scales.keys():
             metrics[f"reward/{k}_per_step"] = jp.zeros(())
         metrics["reward/success_per_step"] = jp.zeros((), dtype=float)
-        metrics["success_count"] = jp.zeros((), dtype=float)
         metrics["floor_support_fraction_per_step"] = jp.zeros((), dtype=float)
+        metrics["curriculum/level_pos"] = jp.zeros((), dtype=float)
+        metrics["curriculum/level_neg"] = jp.zeros((), dtype=float)
+        metrics["curriculum/goal_angle"] = jp.abs(2.0 * jp.arctan2(goal_quat[3], goal_quat[0]))
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -368,18 +389,41 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
-        cube_off_floor = ~self._cube_in_contact_with_floor(data)
-        ori_error = self._cube_orientation_error(data)
-        at_goal = cube_off_floor & (ori_error < self.config.ori_tolerance_rad)
+        curr = state.info["AutoResetWrapper_preserve_info"]
+        if self._config.curriculum.enable:
+            sign_pos = state.info["goal_sign"] > 0
+            current_level = jp.where(sign_pos, curr["level_pos"], curr["level_neg"])
+            goal_quat = self._curriculum_goal_quat(
+                current_level, state.info["goal_frac"], state.info["goal_sign"]
+            )
+            state.info["goal_quat"] = goal_quat
+        else:
+            goal_quat = state.info["goal_quat"]
+
+        cube_lifted = self._cube_floor_support_fraction(data) == 0.0
+        ori_error = self._cube_orientation_error(data, goal_quat)
+        at_goal = cube_lifted & (ori_error < self._config.ori_tolerance_rad)
 
         state.info["ori_error"] = ori_error
-        state.info["at_target_step_counter"] = jp.where(
-            at_goal,
-            state.info["at_target_step_counter"] + 1,
-            jp.zeros((), dtype=jp.int32),
+
+        reached = state.info["reached_this_episode"] | at_goal
+        state.info["reached_this_episode"] = reached
+        if self._config.curriculum.enable:
+            is_last_step = (state.info["step"] + 1) >= self._config.episode_length
+            up = reached & (current_level < self._max_level)
+            down = jp.logical_not(reached) & (current_level > 0)
+            delta = jp.where(up, 1, jp.where(down, -1, 0)).astype(jp.int32)
+            new_level = jp.where(is_last_step, current_level + delta, current_level)
+            curr = {
+                "level_pos": jp.where(sign_pos, new_level, curr["level_pos"]),
+                "level_neg": jp.where(sign_pos, curr["level_neg"], new_level),
+            }
+            state.info["AutoResetWrapper_preserve_info"] = curr
+        state.metrics["curriculum/level_pos"] = curr["level_pos"].astype(float)
+        state.metrics["curriculum/level_neg"] = curr["level_neg"].astype(float)
+        state.metrics["curriculum/goal_angle"] = jp.abs(
+            2.0 * jp.arctan2(goal_quat[3], goal_quat[0])
         )
-        hold_steps = jp.asarray(self._config.target_hold_time / self.dt, dtype=jp.int32)
-        success = state.info["at_target_step_counter"] > hold_steps
 
         done = self._get_termination(data)
         obs = self._get_obs(data, state.info)
@@ -387,23 +431,14 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         state.info["last_action"] = action
         scaled_rewards = {k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()}
 
-        state.info["steps_since_last_success"] = jp.where(
-            success, 0, state.info["steps_since_last_success"] + 1
-        )
-        state.info["success_count"] = jp.where(
-            done,
-            jp.zeros((), dtype=jp.int32),
-            jp.where(success, state.info["success_count"] + 1, state.info["success_count"]),
-        )
-        state.metrics["success_count"] = success.astype(float)
         state.info["step"] += 1
-        state.metrics["reward/success_per_step"] = success.astype(float)
+        state.metrics["reward/success_per_step"] = at_goal.astype(float)
         for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}_per_step"] = v
         state.metrics["floor_support_fraction_per_step"] = self._cube_floor_support_fraction(data)
 
         rew = sum(scaled_rewards.values()) * self.dt
-        rew += self._config.reward_config.success_reward * success.astype(float) * self.dt
+        rew += self._config.reward_config.success_reward * at_goal.astype(float) * self.dt
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
@@ -434,15 +469,11 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         return jp.mean((wrist_qvel / jp.maximum(max_velocity, 1e-6)) ** 2)
 
     @staticmethod
-    def r_cube_orientation(ori_error: jax.Array, tolerance_rad: float) -> jax.Array:
-        return reward.tolerance(ori_error, (0, tolerance_rad), margin=1.0, sigmoid="gaussian")
+    def r_cube_orientation(ori_error: jax.Array, margin_rad: float) -> jax.Array:
+        return reward.tolerance(ori_error, (0.0, 0.0), margin=margin_rad, sigmoid="gaussian")
 
     @staticmethod
     def r_cube_on_floor(floor_support_fraction: jax.Array) -> jax.Array:
-        # Continuous penalty in [0, 1]: the fraction of the cube's weight that
-        # the floor is currently supporting (vertical cube-floor contact force
-        # normalized by the cube's weight). Zero when the cube is fully held by
-        # the hand, growing to 1 as it comes to rest on the floor.
         return floor_support_fraction
 
     @staticmethod
@@ -477,7 +508,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             # the cube has been lifted off the floor, so the policy can't farm
             # orientation reward while the cube is still resting on the ground.
             "cube_ori": lift_gate
-            * self.r_cube_orientation(cube_ori_error, self.config.ori_tolerance_rad),
+            * self.r_cube_orientation(
+                cube_ori_error, self._config.reward_config.ori_reward_margin_rad
+            ),
             "joint_vel": self.r_joint_vel(
                 data.qvel[self._hand_dqids], self._joint_max_vel, self._VEL_TOLERANCE
             ),
@@ -492,10 +525,19 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     # Observation helpers
     # ------------------------------------------------------------------
 
-    def _cube_orientation_error(self, data: mjx.Data) -> jax.Array:
+    def _curriculum_goal_quat(
+        self, level: jax.Array, goal_frac: jax.Array, goal_sign: jax.Array
+    ) -> jax.Array:
+        band = self._config.curriculum.band_width
+        mag = jp.minimum((level.astype(float) + goal_frac) * band, jp.pi)
+        angle = goal_sign * mag
+        return jp.array([jp.cos(angle / 2.0), 0.0, 0.0, jp.sin(angle / 2.0)])
+
+    def _cube_orientation_error(
+        self, data: mjx.Data, goal_quat: jax.Array
+    ) -> jax.Array:
         cube_ori = self.get_cube_orientation(data)
-        cube_goal_ori = self.get_cube_goal_orientation(data)
-        quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
+        quat_diff = math.quat_mul(cube_ori, math.quat_inv(goal_quat))
         quat_diff = math.normalize(quat_diff)
         return 2.0 * jp.asin(jp.clip(jp.linalg.norm(quat_diff[1:]), max=1.0))
 
@@ -519,39 +561,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     # ------------------------------------------------------------------
     # Contact helpers
     # ------------------------------------------------------------------
-
-    def _contact_geoms(self, data: mjx.Data) -> tuple[jax.Array, jax.Array]:
-        impl = data._impl
-        if hasattr(impl, 'contact'):
-            return impl.contact.geom1, impl.contact.geom2
-        else:
-            g = impl.contact__geom
-            return g[:, 0], g[:, 1]
-
-    def _contact_dist(self, data: mjx.Data) -> jax.Array:
-        impl = data._impl
-        if hasattr(impl, 'contact'):
-            return impl.contact.dist
-        return impl.contact__dist
-
-    def _cube_floor_contact_mask(self, data: mjx.Data) -> jax.Array:
-        """Boolean mask over contacts that are active cube-floor touch points.
-
-        A contact slot counts only when it is a cube-floor geom pair *and* the
-        geoms are actually penetrating (``dist < 0``), which excludes the padded
-        / inactive slots in the fixed-size MJX contact buffer.
-        """
-        g1, g2 = self._contact_geoms(data)
-        dist = self._contact_dist(data)
-        floor_id, cube_id = self._floor_geom_id, self._cube_geom_id
-        is_pair = (
-            ((g1 == floor_id) & (g2 == cube_id))
-            | ((g1 == cube_id) & (g2 == floor_id))
-        )
-        return is_pair & (dist < 0.0)
-
-    def _cube_in_contact_with_floor(self, data: mjx.Data) -> jax.Array:
-        return jp.any(self._cube_floor_contact_mask(data))
 
     def _cube_floor_support_fraction(self, data: mjx.Data) -> jax.Array:
         """Fraction (in [0, 1]) of the cube's weight borne by the floor.

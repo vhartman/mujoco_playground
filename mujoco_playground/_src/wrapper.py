@@ -202,8 +202,9 @@ class BraxAutoResetWrapper(Wrapper):
       next_info = jax.tree.map(where_done, reset_state.info, state.info)
       next_info[done_count_key] = state.info[done_count_key]
 
-      if 'steps' in next_info:
-        next_info['steps'] = state.info['steps']
+      for k in ('steps', 'truncation', 'episode_done', 'episode_metrics'):
+        if k in next_info:
+          next_info[k] = state.info[k]
       preserve_info_key = f'{self._info_key}_preserve_info'
       if preserve_info_key in next_info:
         next_info[preserve_info_key] = state.info[preserve_info_key]
