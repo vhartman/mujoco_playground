@@ -46,8 +46,6 @@ def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.05,
         sim_dt=0.01,
-        action_scale=0.5,
-        action_mode="delta",
         ghost_cube=False,
         cube_size_scale=1.0,
         cube_pos_offset=[0.0, 0.0],
@@ -487,14 +485,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         if self._config.pert_config.enable:
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
-        if self._config.action_mode == "delta":
-            active_ctrl = state.data.ctrl + action * self._config.action_scale
-        elif self._config.action_mode == "delta_pose":
-            active_ctrl = state.data.qpos[self._hand_qids] + action * self._config.action_scale
-        elif self._config.action_mode == "absolute":
-            active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
-        else:
-            raise ValueError(f"unknown action_mode: {self._config.action_mode!r}")
+        # Absolute joint-position targets: action in [-1, 1] maps linearly onto the
+        # full actuator ctrl range, so the policy can command any reachable target.
+        active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
         active_ctrl = jp.clip(active_ctrl, self._lowers, self._uppers)
         motor_targets = (
             self._config.ema_alpha * active_ctrl
