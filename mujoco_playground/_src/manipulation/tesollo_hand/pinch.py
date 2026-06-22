@@ -53,7 +53,7 @@ def default_config() -> config_dict.ConfigDict:
         cube_pos_offset=[0.0, 0.0],
         weld_cube=True,
         domain_rand=config_dict.create(
-            cube_size=[1.0, 1.0],
+            cube_size=[0.85, 0.851],
             cube_pos=[0.0, 0.0],
             cube_mass=[1.0, 1.0],
         ),
@@ -244,12 +244,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
 
     _TASK_KEYS: tuple[str, ...] = ("target_force",)
 
-    # Per-finger contact-force sensors. Each active finger exerts force on the
-    # cube through two tip geoms — the rounded tip sphere and the flat box pad —
-    # so both are summed to recover the force the finger actually applies. The
-    # force reward, the per-finger contact gate, and the oracle force
-    # observation are all built from these same sensors, so they measure one
-    # consistent quantity (the whole-hand `cube_force` subtree sensor is unused).
     _FINGER_FORCE_SENSORS: tuple[tuple[str, ...], ...] = (
         ("rl_dg_1_tip_cube_force", "rl_dg_1_tip_2_cube_force"),  # thumb
         ("rl_dg_2_tip_cube_force", "rl_dg_2_tip_2_cube_force"),  # index
