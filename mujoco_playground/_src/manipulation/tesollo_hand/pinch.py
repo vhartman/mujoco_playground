@@ -124,7 +124,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     Observation layout is controlled by config.sensor_bundle:
       "baseline"                       → joint_pos(8) + joint_vel(8) + target_force(1) = 17
       "proprio.target"                 → + motor_targets(8)                             = 25
-      "proprio.target+force.magnitude" → + motor_targets(8) + fingertip_forces(2)      = 27
+      "proprio.target+force.magnitude" → + motor_targets(8) + fingertip_forces(4)      = 29
     """
 
     def __init__(
@@ -293,11 +293,14 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         ("rl_dg_1_tip_cube_force", "rl_dg_1_tip_2_cube_force"),  # thumb
         ("rl_dg_2_tip_cube_force", "rl_dg_2_tip_2_cube_force"),  # index
     )
-    # One entry per finger; its length sets the fingertip_forces obs size (2).
-    _TIP_FORCE_SENSORS: list[str] = [
-        "rl_dg_1_tip_cube_force",
-        "rl_dg_2_tip_cube_force",
-    ]
+    # All four per-geom cube-contact sensors (thumb tip+pad, index tip+pad),
+    # flattened from _FINGER_FORCE_SENSORS so there is a single source of truth.
+    # Its length sets the fingertip_forces obs size (4): each tip geom is its own
+    # channel rather than summed per finger.
+    # NOTE: with the current geometry the box-pad (tip_2) geoms sit recessed
+    # behind the spheres and read ~0 in a pinch, so two of these channels are
+    # near-zero until the pads are repositioned (geometry left unchanged for now).
+    _TIP_FORCE_SENSORS: list[str] = [s for g in _FINGER_FORCE_SENSORS for s in g]
     _TIP_FORCE_SCALE: float = 10.0
 
     def _task_obs_keys(self) -> tuple[str, ...]:
@@ -359,44 +362,23 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         omega = 2.0 * jp.pi / self._config.force_target_period
         return mid + amp * jp.sin(omega * step * self._config.ctrl_dt + phase)
 
-    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Per-finger contact-force magnitude (thumb, index), each summed over the
-        finger's tip-sphere and box-pad sensors, scaled by 1/_TIP_FORCE_SCALE.
-
-        Overrides the base per-sensor version so the oracle force observation
-        includes the pad and matches the rewarded `effective_force`."""
-        forces = jp.array([
-            self._finger_contact_force(data, group)
-            for group in self._FINGER_FORCE_SENSORS
-        ])
-        return forces / self._TIP_FORCE_SCALE
-
-    def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Per-finger normalized net contact-force direction, summing the tip
-        sphere and box pad of each finger before normalizing."""
-        dirs = []
-        for group in self._FINGER_FORCE_SENSORS:
-            net = jp.sum(
-                jp.stack([
-                    jp.sum(
-                        mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                        axis=0,
-                    )
-                    for name in group
-                ]),
-                axis=0,
-            )
-            magnitude = jp.linalg.norm(net)
-            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
-        return jp.concatenate(dirs)
+    # fingertip_forces / fingertip_force_dirs now use the base-class per-sensor
+    # implementations over _TIP_FORCE_SENSORS (the 4 individual tip geoms). The
+    # reward still groups them per finger via _FINGER_FORCE_SENSORS (see step).
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         """Ground-truth privileged critic state (no noise). The cube is static
-        (no freejoint), so no cube pose/velocity terms are included.
+        (no freejoint), but its per-env DR'd half-size and world pose/orientation
+        are exposed so the critic sees the unobserved cube-size latent directly.
+
+        Under the DR vmap wrapper ``self._mjx_model`` is the per-env randomized
+        model at step time, so ``geom_size`` reflects this env's cube size.
 
         q(8) + qdot(8) + fingertips_global(6) + motor_targets(8)
-        + force_target(1) + fingertip_forces(2) = 33
+        + force_target(1) + fingertip_forces(4)
+        + cube_size(1) + cube_pos(3) + cube_quat(4) = 43
         """
+        cube_size = self._mjx_model.geom_size[self._cube_geom_id, 0]
         return jp.concatenate([
             data.qpos[self._hand_qids],
             data.qvel[self._hand_dqids],
@@ -404,6 +386,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             info["motor_targets"],
             jp.array([info["force_target"]]),
             self._obs_fingertip_forces(data, info),
+            jp.array([cube_size]),
+            self.get_cube_position(data),
+            self.get_cube_orientation(data),
         ])
 
     # ------------------------------------------------------------------
@@ -582,9 +567,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         obs = self._get_obs(data, state.info)
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
-        # Log the unscaled, per-step raw reward components (each in [0, 1] for the
-        # normalized terms) so the dashboard reads the actual component value
-        # rather than a scale- and dt-weighted quantity.
         state.metrics["reward/success_per_step"] = success.astype(float)
         for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}_per_step"] = v
