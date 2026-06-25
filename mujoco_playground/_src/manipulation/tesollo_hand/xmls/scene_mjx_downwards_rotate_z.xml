@@ -24,12 +24,12 @@
   </worldbody>
 
   <actuator>
-    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.07 0.07"/>
+    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.1 0.1"/>
+    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.2 0.1"/>
 
-    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-0.1 0.1"/>
-    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-0.3 0.3"/>
+    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-0.2 0.2"/>
+    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-0.1 0.3"/>
     <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-0.2 0.2"/>
 
     <position kp="3" name="dg_1_j1_rx" joint="rj_dg_1_1" ctrlrange="-0.383972 0.890118"/>
@@ -95,14 +95,14 @@
     <key name="home"
       qpos="
       0.0 0.0 0.035 1 0 0 0
-      0.02 0 -0.05 0 0.38 0
+      0.02 0 -0.05 0 0.3 0
       0.06 -1.56 0.0 0.0
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
       0.1 0.47 1.1 0.5"
       ctrl="
-      0.02 0 -0.05 0 0.38 0
+      0.02 0 -0.05 0 0.3 0
       0.06 -1.56 0.0 0.0
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
