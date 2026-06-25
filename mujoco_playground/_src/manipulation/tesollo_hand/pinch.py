@@ -46,8 +46,6 @@ def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.05,
         sim_dt=0.01,
-        action_scale=0.5,
-        action_mode="delta",
         ghost_cube=False,
         cube_size_scale=1.0,
         cube_pos_offset=[0.0, 0.0],
@@ -56,6 +54,7 @@ def default_config() -> config_dict.ConfigDict:
             cube_size=[0.85, 1.15],
             cube_pos=[0.0, 0.0],
             cube_mass=[1.0, 1.0],
+            actuator_kp=[1.0, 1.0],
         ),
         action_repeat=1,
         ema_alpha=1.0,
@@ -63,6 +62,8 @@ def default_config() -> config_dict.ConfigDict:
         # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
         sensor_bundle="proprio.target",
         force_target_range=[2.0, 5.0],
+        force_target_sinusoid=False,
+        force_target_period=2.0,  # seconds per cycle of the target sinusoid
         force_tolerance=0.75,
         success_hold_time=0.5,
         obs_noise=config_dict.create(
@@ -123,7 +124,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
     Observation layout is controlled by config.sensor_bundle:
       "baseline"                       → joint_pos(8) + joint_vel(8) + target_force(1) = 17
       "proprio.target"                 → + motor_targets(8)                             = 25
-      "proprio.target+force.magnitude" → + motor_targets(8) + fingertip_forces(2)      = 27
+      "proprio.target+force.magnitude" → + motor_targets(8) + fingertip_forces(4)      = 29
     """
 
     def __init__(
@@ -292,11 +293,14 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         ("rl_dg_1_tip_cube_force", "rl_dg_1_tip_2_cube_force"),  # thumb
         ("rl_dg_2_tip_cube_force", "rl_dg_2_tip_2_cube_force"),  # index
     )
-    # One entry per finger; its length sets the fingertip_forces obs size (2).
-    _TIP_FORCE_SENSORS: list[str] = [
-        "rl_dg_1_tip_cube_force",
-        "rl_dg_2_tip_cube_force",
-    ]
+    # All four per-geom cube-contact sensors (thumb tip+pad, index tip+pad),
+    # flattened from _FINGER_FORCE_SENSORS so there is a single source of truth.
+    # Its length sets the fingertip_forces obs size (4): each tip geom is its own
+    # channel rather than summed per finger.
+    # NOTE: with the current geometry the box-pad (tip_2) geoms sit recessed
+    # behind the spheres and read ~0 in a pinch, so two of these channels are
+    # near-zero until the pads are repositioned (geometry left unchanged for now).
+    _TIP_FORCE_SENSORS: list[str] = [s for g in _FINGER_FORCE_SENSORS for s in g]
     _TIP_FORCE_SCALE: float = 10.0
 
     def _task_obs_keys(self) -> tuple[str, ...]:
@@ -344,44 +348,37 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         PPO running-observation normalizer, so no manual scaling is applied."""
         return jp.array([info["force_target"]])
 
-    def _obs_fingertip_forces(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Per-finger contact-force magnitude (thumb, index), each summed over the
-        finger's tip-sphere and box-pad sensors, scaled by 1/_TIP_FORCE_SCALE.
+    def _force_target_at(self, step: jax.Array, phase: jax.Array) -> jax.Array:
+        """Sinusoidal force target (N) at a given step, spanning force_target_range.
 
-        Overrides the base per-sensor version so the oracle force observation
-        includes the pad and matches the rewarded `effective_force`."""
-        forces = jp.array([
-            self._finger_contact_force(data, group)
-            for group in self._FINGER_FORCE_SENSORS
-        ])
-        return forces / self._TIP_FORCE_SCALE
+        target(t) = mid + amp * sin(2π t / period + phase), with t = step * ctrl_dt.
+        mid/amp are derived from force_target_range so the sine touches both ends;
+        the per-episode `phase` (sampled on reset) prevents the policy from
+        memorizing a fixed step→target schedule.
+        """
+        lo, hi = self._config.force_target_range
+        mid = 0.5 * (lo + hi)
+        amp = 0.5 * (hi - lo)
+        omega = 2.0 * jp.pi / self._config.force_target_period
+        return mid + amp * jp.sin(omega * step * self._config.ctrl_dt + phase)
 
-    def _obs_fingertip_force_dirs(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        """Per-finger normalized net contact-force direction, summing the tip
-        sphere and box pad of each finger before normalizing."""
-        dirs = []
-        for group in self._FINGER_FORCE_SENSORS:
-            net = jp.sum(
-                jp.stack([
-                    jp.sum(
-                        mjx_env.get_sensor_data(self.mj_model, data, name).reshape(-1, 3),
-                        axis=0,
-                    )
-                    for name in group
-                ]),
-                axis=0,
-            )
-            magnitude = jp.linalg.norm(net)
-            dirs.append(jp.where(magnitude > 1e-3, net / magnitude, jp.zeros(3)))
-        return jp.concatenate(dirs)
+    # fingertip_forces / fingertip_force_dirs now use the base-class per-sensor
+    # implementations over _TIP_FORCE_SENSORS (the 4 individual tip geoms). The
+    # reward still groups them per finger via _FINGER_FORCE_SENSORS (see step).
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         """Ground-truth privileged critic state (no noise). The cube is static
-        (no freejoint), so no cube pose/velocity terms are included.
+        (no freejoint), but its per-env DR'd half-size and world pose/orientation
+        are exposed so the critic sees the unobserved cube-size latent directly.
+
+        Under the DR vmap wrapper ``self._mjx_model`` is the per-env randomized
+        model at step time, so ``geom_size`` reflects this env's cube size.
 
         q(8) + qdot(8) + fingertips_global(6) + motor_targets(8)
-        + force_target(1) + fingertip_forces(2) = 33
+        + force_target(1) + fingertip_forces(4)
+        + cube_size(1) + cube_pos(3) + cube_quat(4) = 43
         """
+        cube_size = self._mjx_model.geom_size[self._cube_geom_id, 0]
         return jp.concatenate([
             data.qpos[self._hand_qids],
             data.qvel[self._hand_dqids],
@@ -389,6 +386,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             info["motor_targets"],
             jp.array([info["force_target"]]),
             self._obs_fingertip_forces(data, info),
+            jp.array([cube_size]),
+            self.get_cube_position(data),
+            self.get_cube_orientation(data),
         ])
 
     # ------------------------------------------------------------------
@@ -437,10 +437,20 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             maxval=self._config.pert_config.angular_velocity_pert[1],
         )
 
-        force_target = jax.random.uniform(
-            force_rng,
-            minval=self._config.force_target_range[0],
-            maxval=self._config.force_target_range[1],
+        force_rng, phase_rng = jax.random.split(force_rng)
+        force_phase = jp.where(
+            self._config.force_target_sinusoid,
+            jax.random.uniform(phase_rng, minval=0.0, maxval=2.0 * jp.pi),
+            0.0,
+        )
+        force_target = jp.where(
+            self._config.force_target_sinusoid,
+            self._force_target_at(0, force_phase),
+            jax.random.uniform(
+                force_rng,
+                minval=self._config.force_target_range[0],
+                maxval=self._config.force_target_range[1],
+            ),
         )
 
         info = {
@@ -453,6 +463,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             "last_last_act": jp.zeros(consts.N_ACTIVE),
             "motor_targets": data.ctrl,
             "force_target": force_target,
+            "force_phase": force_phase,
             "force_error": jp.zeros(()),
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
@@ -487,14 +498,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         if self._config.pert_config.enable:
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
-        if self._config.action_mode == "delta":
-            active_ctrl = state.data.ctrl + action * self._config.action_scale
-        elif self._config.action_mode == "delta_pose":
-            active_ctrl = state.data.qpos[self._hand_qids] + action * self._config.action_scale
-        elif self._config.action_mode == "absolute":
-            active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
-        else:
-            raise ValueError(f"unknown action_mode: {self._config.action_mode!r}")
+        # Absolute joint-position targets: action in [-1, 1] maps linearly onto the
+        # full actuator ctrl range, so the policy can command any reachable target.
+        active_ctrl = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
         active_ctrl = jp.clip(active_ctrl, self._lowers, self._uppers)
         motor_targets = (
             self._config.ema_alpha * active_ctrl
@@ -538,7 +544,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["termination/nan"] = term_reasons["nan"].astype(float)
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
 
-        obs = self._get_obs(data, state.info)
         raw_rewards = self._get_reward(data, action, state.info, effective_force)
         scaled_rewards = {
             k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()
@@ -555,18 +560,22 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         ) * self.dt
 
         state.info["step"] += 1
+        if self._config.force_target_sinusoid:
+            state.info["force_target"] = self._force_target_at(
+                state.info["step"], state.info["force_phase"]
+            )
+        obs = self._get_obs(data, state.info)
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
-        # Log the unscaled, per-step raw reward components (each in [0, 1] for the
-        # normalized terms) so the dashboard reads the actual component value
-        # rather than a scale- and dt-weighted quantity.
         state.metrics["reward/success_per_step"] = success.astype(float)
         for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}_per_step"] = v
         state.metrics["f_thumb"] = f_thumb
         state.metrics["f_index"] = f_index
         state.metrics["effective_force"] = effective_force
-        state.metrics["force_target"] = state.info["force_target"]
+        # Log the target this step's force was scored against (the pre-advance
+        # value), so effective_force and force_target line up in the dashboard.
+        state.metrics["force_target"] = force_target
 
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
@@ -692,6 +701,7 @@ _cube_dr_spec: dict[str, list[float]] = {
     "cube_size": [1.0, 1.0],
     "cube_pos": [0.0, 0.0],
     "cube_mass": [1.0, 1.0],
+    "actuator_kp": [1.0, 1.0],
 }
 
 
@@ -728,9 +738,11 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     (size_lo, size_hi) = spec["cube_size"]
     (pos_lo, pos_hi) = spec["cube_pos"]
     (mass_lo, mass_hi) = spec["cube_mass"]
+    (kp_lo, kp_hi) = spec["actuator_kp"]
     do_size = size_lo != size_hi
     do_pos = pos_lo != pos_hi
     do_mass = mass_lo != mass_hi
+    do_kp = kp_lo != kp_hi
 
     _log = logging.getLogger(__name__)
     randomized_keys: dict[str, str] = {}
@@ -800,6 +812,14 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         body_pos = model.body_pos
         body_mass = model.body_mass
         body_inertia = model.body_inertia
+        actuator_gainprm = model.actuator_gainprm
+        actuator_biasprm = model.actuator_biasprm
+        if do_kp:
+            rng, k = jax.random.split(rng)
+            s = jax.random.uniform(k, (), minval=kp_lo, maxval=kp_hi)
+            kp = model.actuator_gainprm[:, 0] * s
+            actuator_gainprm = actuator_gainprm.at[:, 0].set(kp)
+            actuator_biasprm = actuator_biasprm.at[:, 1].set(-kp)
         if do_size:
             rng, k = jax.random.split(rng)
             s = jax.random.uniform(k, (), minval=size_lo, maxval=size_hi)
@@ -818,7 +838,10 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
             body_inertia = body_inertia.at[cube_bid].set(
                 model.body_inertia[cube_bid] * m
             )
-        return geom_size, body_pos, body_mass, body_inertia
+        return (
+            geom_size, body_pos, body_mass, body_inertia,
+            actuator_gainprm, actuator_biasprm,
+        )
 
     if do_size:
         randomized_keys["geom_size"] = f"[{size_lo}, {size_hi}]"
@@ -827,6 +850,9 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     if do_mass:
         randomized_keys["body_mass"] = f"[{mass_lo}, {mass_hi}]"
         randomized_keys["body_inertia"] = f"[{mass_lo}, {mass_hi}]"
+    if do_kp:
+        randomized_keys["actuator_gainprm"] = f"[{kp_lo}, {kp_hi}]"
+        randomized_keys["actuator_biasprm"] = f"[{kp_lo}, {kp_hi}]"
 
     if randomized_keys:
         _log.debug(
@@ -836,7 +862,10 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     else:
         _log.debug("domain_randomize: no keys randomized (all ranges degenerate)")
 
-    geom_size, body_pos, body_mass, body_inertia = rand(rng)
+    (
+        geom_size, body_pos, body_mass, body_inertia,
+        actuator_gainprm, actuator_biasprm,
+    ) = rand(rng)
 
     replace_dict = {}
     axes_dict = {}
@@ -851,6 +880,11 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         replace_dict["body_inertia"] = body_inertia
         axes_dict["body_mass"] = 0
         axes_dict["body_inertia"] = 0
+    if do_kp:
+        replace_dict["actuator_gainprm"] = actuator_gainprm
+        replace_dict["actuator_biasprm"] = actuator_biasprm
+        axes_dict["actuator_gainprm"] = 0
+        axes_dict["actuator_biasprm"] = 0
 
     in_axes = jax.tree_util.tree_map(lambda x: None, model)
     if replace_dict:

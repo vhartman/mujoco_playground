@@ -180,13 +180,6 @@ _ENV_OVERRIDES_FILE = flags.DEFINE_string(
     "Path to a YAML file of flat-dotted env-config overrides "
     "(e.g. 'obs_noise.level: 2.0'). Applied on top of the env's default_config.",
 )
-_EVAL_ENV_OVERRIDES_FILE = flags.DEFINE_string(
-    "eval_env_overrides_file",
-    None,
-    "Path to a YAML file of flat-dotted overrides applied to the EVAL env on top of"
-    " the train overrides. Use to evaluate the real task while training on a proxy"
-    " (e.g. 'curriculum.enable: false' to eval at full difficulty under a curriculum).",
-)
 _EARLY_STOP = flags.DEFINE_boolean(
     "early_stop",
     True,
@@ -642,19 +635,23 @@ def main(argv):
       if reason is not None:
         raise early_stop.EarlyStopException(reason)
 
-  # Load evaluation environment. Build it from a FRESH default config (env_cfg was
-  # mutated in place by the train env's config_overrides) so eval overrides can
-  # differ from training -- e.g. disabling a training-only curriculum so eval
-  # measures the real, full-difficulty task instead of the easiest level.
+  # Load evaluation environment from a FRESH default config (env_cfg was mutated
+  # in place by the train env's config_overrides). A training-only curriculum is
+  # auto-disabled on the eval env so eval measures the real, full-range task: the
+  # eval env is reset fresh with no persisted level, so leaving curriculum on
+  # would pin eval to the easiest level forever.
   eval_env = None
   if not _VISION.value:
     eval_overrides = dict(env_overrides or {})
-    if _EVAL_ENV_OVERRIDES_FILE.value:
-      with open(_EVAL_ENV_OVERRIDES_FILE.value, "r", encoding="utf-8") as f:
-        eval_overrides.update(yaml.safe_load(f) or {})
     eval_cfg = registry.get_default_config(_ENV_NAME.value)
     if _IMPL.present:
       eval_cfg["impl"] = _IMPL.value
+    if (
+        "curriculum" in eval_cfg
+        and eval_overrides.get("curriculum.enable", eval_cfg["curriculum"]["enable"])
+    ):
+      eval_overrides["curriculum.enable"] = False
+      print("[eval] curriculum auto-disabled for eval env (full-range eval).")
     eval_env = registry.load(
         _ENV_NAME.value, config=eval_cfg, config_overrides=eval_overrides
     )

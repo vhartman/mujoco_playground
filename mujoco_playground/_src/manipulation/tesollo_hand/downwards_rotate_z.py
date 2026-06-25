@@ -50,13 +50,23 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.05,
         sim_dt=0.01,
         action_scale=0.5,
+        action_mode="absolute",  # "absolute" (target = action mapped to ctrl range, default) or "delta" (incremental)
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=120,
         ori_tolerance_rad=3.0 * jp.pi / 180.0,
+        # Largest goal-rotation magnitude (rad). Bounds the no-curriculum sample
+        # range to [-max_target_angle, +max_target_angle] and sets the curriculum
+        # top level (see _max_level / _curriculum_goal_quat).
+        max_target_angle=float(np.deg2rad(90.0)),
+        target_hold_time=0.25,
         curriculum=config_dict.create(
             enable=False,
             band_width=float(np.deg2rad(5.0)),
+            # Promote-only: advance one level after this many CONSECUTIVE mastered
+            # (held-success) episodes at the current level; a failed episode
+            # resets the streak. Never demote.
+            promote_after=5,
         ),
         sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
@@ -78,7 +88,7 @@ def default_config() -> config_dict.ConfigDict:
                 cube_on_floor=-0.5,
             ),
             success_reward=2.0,
-            ori_reward_margin_rad=float(np.deg2rad(17.0)),
+            ori_reward_margin_rad=float(np.deg2rad(30.0)),
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -256,8 +266,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
         self._geom = consts.SceneGeometry.from_mj_model(self._mj_model)
+        # Top curriculum level: the highest band whose lower edge is still below
+        # max_target_angle, so (max_level + 1) * band_width covers the full range.
         self._max_level = (
-            int(np.floor(np.pi / self._config.curriculum.band_width + 1e-9)) - 1
+            int(np.floor(
+                self._config.max_target_angle / self._config.curriculum.band_width
+                + 1e-9
+            )) - 1
         )
         self._obs_components = self._build_obs_components()
         obs_module.validate_spec(
@@ -298,7 +313,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         if self._config.curriculum.enable:
             goal_quat = self._curriculum_goal_quat(level, goal_frac, goal_sign)
         else:
-            full_angle = jp.pi * (2.0 * goal_frac - 1.0)
+            full_angle = self._config.max_target_angle * (2.0 * goal_frac - 1.0)
             goal_quat = jp.array(
                 [jp.cos(full_angle / 2), 0.0, 0.0, jp.sin(full_angle / 2)]
             )
@@ -343,6 +358,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             "rng": rng,
             "step": 0,
             "reached_this_episode": jp.zeros((), dtype=bool),
+            "at_target_step_counter": jp.zeros((), dtype=jp.int32),
             "motor_targets": data.ctrl,
             "action_delta": jp.zeros(self.mj_model.nu),
             "last_action": jp.zeros(self.mj_model.nu),
@@ -352,6 +368,8 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             "AutoResetWrapper_preserve_info": {
                 "level_pos": jp.zeros((), dtype=jp.int32),
                 "level_neg": jp.zeros((), dtype=jp.int32),
+                "streak_pos": jp.zeros((), dtype=jp.int32),
+                "streak_neg": jp.zeros((), dtype=jp.int32),
             },
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
@@ -366,9 +384,12 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             metrics[f"reward/{k}_per_step"] = jp.zeros(())
         metrics["reward/success_per_step"] = jp.zeros((), dtype=float)
         metrics["floor_support_fraction_per_step"] = jp.zeros((), dtype=float)
-        metrics["curriculum/level_pos"] = jp.zeros((), dtype=float)
-        metrics["curriculum/level_neg"] = jp.zeros((), dtype=float)
-        metrics["curriculum/goal_angle"] = jp.abs(2.0 * jp.arctan2(goal_quat[3], goal_quat[0]))
+        metrics["curriculum/level_pos_per_step"] = jp.zeros((), dtype=float)
+        metrics["curriculum/level_neg_per_step"] = jp.zeros((), dtype=float)
+        metrics["curriculum/streak_per_step"] = jp.zeros((), dtype=float)
+        metrics["curriculum/goal_angle_per_step"] = jp.rad2deg(
+            jp.abs(2.0 * jp.arctan2(goal_quat[3], goal_quat[0]))
+        )
 
         obs = self._get_obs(data, info)
         rew, done = jp.zeros(2)
@@ -378,11 +399,20 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         if self._config.pert_config.enable:
             state = self._maybe_apply_perturbation(state, state.info["rng"])
 
-        delta = action * self._config.action_scale
-        state.info["action_delta"] = delta
-        motor_targets = jp.clip(state.data.ctrl + delta, self._lowers, self._uppers)
+        if self._config.action_mode == "absolute":
+            # action in [-1, 1] maps linearly onto the actuator ctrl range:
+            # direct joint-position targets rather than incremental deltas.
+            target = self._lowers + 0.5 * (action + 1.0) * (self._uppers - self._lowers)
+            target = jp.clip(target, self._lowers, self._uppers)
+        else:
+            target = jp.clip(
+                state.data.ctrl + action * self._config.action_scale,
+                self._lowers,
+                self._uppers,
+            )
+        state.info["action_delta"] = target - state.data.ctrl
         motor_targets = (
-            self._config.ema_alpha * motor_targets
+            self._config.ema_alpha * target
             + (1 - self._config.ema_alpha) * state.info["motor_targets"]
         )
 
@@ -390,9 +420,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         state.info["motor_targets"] = motor_targets
 
         curr = state.info["AutoResetWrapper_preserve_info"]
+        sign_pos = state.info["goal_sign"] > 0
+        current_level = jp.where(sign_pos, curr["level_pos"], curr["level_neg"])
+        current_streak = jp.where(sign_pos, curr["streak_pos"], curr["streak_neg"])
         if self._config.curriculum.enable:
-            sign_pos = state.info["goal_sign"] > 0
-            current_level = jp.where(sign_pos, curr["level_pos"], curr["level_neg"])
             goal_quat = self._curriculum_goal_quat(
                 current_level, state.info["goal_frac"], state.info["goal_sign"]
             )
@@ -406,23 +437,54 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         state.info["ori_error"] = ori_error
 
-        reached = state.info["reached_this_episode"] | at_goal
+        hold_steps = jp.asarray(
+            self._config.target_hold_time / self.dt, dtype=jp.int32
+        )
+        at_target_counter = jp.where(
+            at_goal, state.info["at_target_step_counter"] + 1, 0
+        ).astype(jp.int32)
+        state.info["at_target_step_counter"] = at_target_counter
+        success = at_target_counter > hold_steps
+
+        # Curriculum advances only when the target is *held* (success), not on a
+        # single-step touch (at_goal). Instantaneous at_goal is easily farmed by
+        # the absolute controller flicking through the goal orientation, which
+        # made the level oscillate; requiring the hold stabilizes advancement.
+        reached = state.info["reached_this_episode"] | success
         state.info["reached_this_episode"] = reached
         if self._config.curriculum.enable:
             is_last_step = (state.info["step"] + 1) >= self._config.episode_length
-            up = reached & (current_level < self._max_level)
-            down = jp.logical_not(reached) & (current_level > 0)
-            delta = jp.where(up, 1, jp.where(down, -1, 0)).astype(jp.int32)
-            new_level = jp.where(is_last_step, current_level + delta, current_level)
+            # Promote-only mastery: count consecutive mastered (held-success)
+            # episodes at the current level; a failed episode resets the streak.
+            # After promote_after consecutive successes, advance one level (capped)
+            # and reset the streak so the new level must be mastered in turn.
+            # Never demote.
+            episode_streak = jp.where(reached, current_streak + 1, 0).astype(jp.int32)
+            promote = episode_streak >= self._config.curriculum.promote_after
+            new_level = jp.minimum(
+                current_level + promote.astype(jp.int32), self._max_level
+            )
+            new_streak = jp.where(promote, 0, episode_streak).astype(jp.int32)
+            # Commit the level/streak change only at the episode boundary.
+            new_level = jp.where(is_last_step, new_level, current_level)
+            new_streak = jp.where(is_last_step, new_streak, current_streak)
+            current_streak = new_streak
             curr = {
                 "level_pos": jp.where(sign_pos, new_level, curr["level_pos"]),
                 "level_neg": jp.where(sign_pos, curr["level_neg"], new_level),
+                "streak_pos": jp.where(sign_pos, new_streak, curr["streak_pos"]),
+                "streak_neg": jp.where(sign_pos, curr["streak_neg"], new_streak),
             }
             state.info["AutoResetWrapper_preserve_info"] = curr
-        state.metrics["curriculum/level_pos"] = curr["level_pos"].astype(float)
-        state.metrics["curriculum/level_neg"] = curr["level_neg"].astype(float)
-        state.metrics["curriculum/goal_angle"] = jp.abs(
-            2.0 * jp.arctan2(goal_quat[3], goal_quat[0])
+        # The *_per_step suffix triggers brax's EpisodeMetricsLogger to divide
+        # the episode sum by the actual episode length, so episode/curriculum/*
+        # reads the true per-step mean (= per-episode mean, as these are constant
+        # within an episode): level in [0, max_level], goal_angle in degrees.
+        state.metrics["curriculum/level_pos_per_step"] = curr["level_pos"].astype(float)
+        state.metrics["curriculum/level_neg_per_step"] = curr["level_neg"].astype(float)
+        state.metrics["curriculum/streak_per_step"] = current_streak.astype(float)
+        state.metrics["curriculum/goal_angle_per_step"] = jp.rad2deg(
+            jp.abs(2.0 * jp.arctan2(goal_quat[3], goal_quat[0]))
         )
 
         done = self._get_termination(data)
@@ -432,13 +494,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         scaled_rewards = {k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()}
 
         state.info["step"] += 1
-        state.metrics["reward/success_per_step"] = at_goal.astype(float)
+        state.metrics["reward/success_per_step"] = success.astype(float)
         for k, v in raw_rewards.items():
             state.metrics[f"reward/{k}_per_step"] = v
         state.metrics["floor_support_fraction_per_step"] = self._cube_floor_support_fraction(data)
 
         rew = sum(scaled_rewards.values()) * self.dt
-        rew += self._config.reward_config.success_reward * at_goal.astype(float) * self.dt
+        rew += self._config.reward_config.success_reward * success.astype(float) * self.dt
         done = done.astype(rew.dtype)
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
@@ -470,7 +532,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
     @staticmethod
     def r_cube_orientation(ori_error: jax.Array, margin_rad: float) -> jax.Array:
-        return reward.tolerance(ori_error, (0.0, 0.0), margin=margin_rad, sigmoid="gaussian")
+        return reward.tolerance(ori_error, (0.0, 0.0), margin=margin_rad, sigmoid="reciprocal")
 
     @staticmethod
     def r_cube_on_floor(floor_support_fraction: jax.Array) -> jax.Array:
@@ -529,7 +591,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self, level: jax.Array, goal_frac: jax.Array, goal_sign: jax.Array
     ) -> jax.Array:
         band = self._config.curriculum.band_width
-        mag = jp.minimum((level.astype(float) + goal_frac) * band, jp.pi)
+        mag = jp.minimum((level.astype(float) + goal_frac) * band, self._config.max_target_angle)
         angle = goal_sign * mag
         return jp.array([jp.cos(angle / 2.0), 0.0, 0.0, jp.sin(angle / 2.0)])
 
