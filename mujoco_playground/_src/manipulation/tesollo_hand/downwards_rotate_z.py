@@ -55,17 +55,12 @@ def default_config() -> config_dict.ConfigDict:
         ema_alpha=1.0,
         episode_length=120,
         ori_tolerance_rad=3.0 * jp.pi / 180.0,
-        # Largest goal-rotation magnitude (rad). Bounds the no-curriculum sample
-        # range to [-max_target_angle, +max_target_angle] and sets the curriculum
-        # top level (see _max_level / _curriculum_goal_quat).
         max_target_angle=float(np.deg2rad(90.0)),
         target_hold_time=0.25,
         curriculum=config_dict.create(
             enable=False,
             band_width=float(np.deg2rad(5.0)),
-            # Promote-only: advance one level after this many CONSECUTIVE mastered
-            # (held-success) episodes at the current level; a failed episode
-            # resets the streak. Never demote.
+            success_count_threshold=70,
             promote_after=5,
         ),
         sensor_bundle="proprio.target",
@@ -357,7 +352,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         info = {
             "rng": rng,
             "step": 0,
-            "reached_this_episode": jp.zeros((), dtype=bool),
+            "success_count": jp.zeros((), dtype=jp.int32),
             "at_target_step_counter": jp.zeros((), dtype=jp.int32),
             "motor_targets": data.ctrl,
             "action_delta": jp.zeros(self.mj_model.nu),
@@ -424,8 +419,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         current_level = jp.where(sign_pos, curr["level_pos"], curr["level_neg"])
         current_streak = jp.where(sign_pos, curr["streak_pos"], curr["streak_neg"])
         if self._config.curriculum.enable:
-            goal_quat = self._curriculum_goal_quat(
-                current_level, state.info["goal_frac"], state.info["goal_sign"]
+            first_step = state.info["step"] == 0
+            goal_quat = jp.where(
+                first_step,
+                self._curriculum_goal_quat(
+                    current_level, state.info["goal_frac"], state.info["goal_sign"]
+                ),
+                state.info["goal_quat"],
             )
             state.info["goal_quat"] = goal_quat
         else:
@@ -446,20 +446,15 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         state.info["at_target_step_counter"] = at_target_counter
         success = at_target_counter > hold_steps
 
-        # Curriculum advances only when the target is *held* (success), not on a
-        # single-step touch (at_goal). Instantaneous at_goal is easily farmed by
-        # the absolute controller flicking through the goal orientation, which
-        # made the level oscillate; requiring the hold stabilizes advancement.
-        reached = state.info["reached_this_episode"] | success
-        state.info["reached_this_episode"] = reached
+
+        success_count = jp.where(
+            success, state.info["success_count"] + 1, state.info["success_count"]
+        ).astype(jp.int32)
+        state.info["success_count"] = success_count
         if self._config.curriculum.enable:
             is_last_step = (state.info["step"] + 1) >= self._config.episode_length
-            # Promote-only mastery: count consecutive mastered (held-success)
-            # episodes at the current level; a failed episode resets the streak.
-            # After promote_after consecutive successes, advance one level (capped)
-            # and reset the streak so the new level must be mastered in turn.
-            # Never demote.
-            episode_streak = jp.where(reached, current_streak + 1, 0).astype(jp.int32)
+            mastered = success_count >= self._config.curriculum.success_count_threshold
+            episode_streak = jp.where(mastered, current_streak + 1, 0).astype(jp.int32)
             promote = episode_streak >= self._config.curriculum.promote_after
             new_level = jp.minimum(
                 current_level + promote.astype(jp.int32), self._max_level
