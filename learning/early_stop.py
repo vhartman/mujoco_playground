@@ -49,6 +49,17 @@ KL_CEILING = 0.1
 # across environments with different reward scales.
 VLOSS_RATIO = 5.0
 
+# Any finite metric whose magnitude exceeds this is a numeric blow-up, aborted
+# immediately like NaN/Inf -- no warmup, no KL/reward gating. This is a pure
+# sanity backstop for the "frozen actor (tiny KL) + diverged critic" failure
+# where v_loss overflows *toward* infinity without reaching it, so the finite
+# guard passes and the KL-health master veto (which only tolerates modest 5x
+# curriculum blips) wrongly spares it. Sized from observed data: healthy
+# episode/v_loss stays <~1e2 while genuine blow-ups land at ~1e18-1e20, so 1e8
+# sits ~6 orders above anything healthy and ~10 below any blow-up -- it cannot
+# false-positive yet always catches the pathology.
+CATASTROPHIC_CEILING = 1e8
+
 # Fraction of the learned reward gain (best - initial) that must be given back
 # for episode/sum_reward to count as "collapsed". 0.5 == lost half its gains.
 COLLAPSE_FRAC = 0.5
@@ -123,6 +134,8 @@ class EarlyStopper:
         continue
       if not math.isfinite(fv):
         return f"non-finite metric {key}={value} at step {num_steps}"
+      if abs(fv) > CATASTROPHIC_CEILING:
+        return f"catastrophic metric {key}={value} at step {num_steps}"
 
     kl = metrics.get("episode/kl_mean")
     vloss = metrics.get("episode/v_loss")

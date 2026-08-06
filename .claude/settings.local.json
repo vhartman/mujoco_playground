@@ -3,5 +3,8 @@
     "allow": [
       "Bash(grep -v \"^_queue$\")"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "experiment-cockpit"
+  ]
 }

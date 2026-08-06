@@ -53,9 +53,11 @@ def default_config() -> config_dict.ConfigDict:
         action_mode="absolute",  # "absolute" (target = action mapped to ctrl range, default) or "delta" (incremental)
         action_repeat=1,
         ema_alpha=1.0,
-        episode_length=120,
+        episode_length=150,
         ori_tolerance_rad=3.0 * jp.pi / 180.0,
+        min_target_angle=float(np.deg2rad(0.0)),
         max_target_angle=float(np.deg2rad(90.0)),
+        symmetric_target=True,
         target_hold_time=0.25,
         curriculum=config_dict.create(
             enable=False,
@@ -75,7 +77,7 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                fingertip_pos=1.5,
+                fingertip_pos=0.5,
                 cube_ori=2.0,
                 joint_vel=-0.002,
                 wrist_vel=-0.02,
@@ -84,6 +86,12 @@ def default_config() -> config_dict.ConfigDict:
             ),
             success_reward=2.0,
             ori_reward_margin_rad=float(np.deg2rad(30.0)),
+            cube_ori_mode="orientation",  # "orientation" | "speed"
+            target_spin_speed=1.0,  # rad/s (speed mode)
+            # When True, the fingertip-reach reward uses the per-env (DR'd)
+            # cube half-size instead of the nominal model's. Opt-in
+            # default-off: flipping it changes the reward under cube-size DR.
+            use_dr_cube_size=False,
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -95,8 +103,19 @@ def default_config() -> config_dict.ConfigDict:
         kp_scale=1.0,
         scene=config_dict.create(
             cube_mass=0.108,
+            cube_size=0.07,  # edge length (m)
         ),
         constrain_wrist_translation=False,
+        terminate_on_redrop=False,
+        # Terminate when the cube's xy distance from the origin exceeds this
+        # radius (m). 0 disables. Without it only NaNs terminate, so an episode
+        # whose cube was batted out of reach grinds out its full length.
+        cube_oob_radius=0.0,
+        # reset() samples the goal per episode and the curriculum relies on
+        # step()-visible info resetting each episode -- both require the
+        # training harness to run with --full_reset (all downwards queues do).
+        # train_jax_ppo warns (and hard-errors for curriculum) when it is off.
+        full_reset_recommended=True,
         impl="warp",
         nconmax=200 * 8192,
         njmax=2200,
@@ -123,6 +142,8 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
     ]
 
     def _task_obs_keys(self) -> tuple[str, ...]:
+        if self._config.reward_config.cube_ori_mode == "speed":
+            return ()
         return self._TASK_KEYS
 
     def _build_obs_components(self) -> dict:
@@ -148,10 +169,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         )
         model_dirty = False
         if self._config.kp_scale != 1.0:
+            # Scale only the P gain: gainprm[:, 0] and its mirror
+            # biasprm[:, 1] == -kp. biasprm[:, 2] is -kv and must not be
+            # dragged along, or "kp_scale" silently rescales damping too
+            # (it previously did, coupling the P and D gains).
             s = self._config.kp_scale
             self._mj_model.actuator_gainprm[:, 0] *= s
             self._mj_model.actuator_biasprm[:, 1] *= s
-            self._mj_model.actuator_biasprm[:, 2] *= s
             model_dirty = True
         cube_body_id = self._mj_model.body("cube").id
         xml_cube_mass = float(self._mj_model.body_mass[cube_body_id])
@@ -160,6 +184,17 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             scale = cfg_cube_mass / xml_cube_mass
             self._mj_model.body_mass[cube_body_id] = cfg_cube_mass
             self._mj_model.body_inertia[cube_body_id] *= scale
+            model_dirty = True
+        cube_geom_ids = np.array(
+            [g for g in range(self._mj_model.ngeom)
+             if self._mj_model.geom_bodyid[g] == cube_body_id]
+        )
+        xml_cube_size = 2.0 * float(
+            self._mj_model.geom_size[self._mj_model.geom("cube").id, 0]
+        )
+        cfg_cube_size = float(self._config.scene.cube_size)
+        if cfg_cube_size != xml_cube_size:
+            self._mj_model.geom_size[cube_geom_ids] *= cfg_cube_size / xml_cube_size
             model_dirty = True
         # Snapshot pre-constraint ctrlrange so _joint_max_vel is not affected
         # by the narrower actuator range set by _constrain_wrist_translation.
@@ -229,12 +264,18 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
                 m.actuator_ctrlrange[aid] = [lo, hi]
 
     def _post_init(self) -> None:
+        assert self._config.reward_config.cube_ori_mode in ("orientation", "speed"), (
+            f"cube_ori_mode must be 'orientation' or 'speed', got "
+            f"{self._config.reward_config.cube_ori_mode!r}"
+        )
         home_key = self._mj_model.keyframe("home")
         self._init_q = jp.array(home_key.qpos, dtype=float)
         self._init_mpos = jp.array(home_key.mpos, dtype=float)
         self._init_mquat = jp.array(home_key.mquat, dtype=float)
-        self._lowers = self._mj_model.actuator_ctrlrange[:, 0]
-        self._uppers = self._mj_model.actuator_ctrlrange[:, 1]
+        # jp.array copies, not numpy views: a view would silently track any
+        # later in-place edit of actuator_ctrlrange on mj_model.
+        self._lowers = jp.array(self._mj_model.actuator_ctrlrange[:, 0])
+        self._uppers = jp.array(self._mj_model.actuator_ctrlrange[:, 1])
         self._wrist_qids = mjx_env.get_qpos_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
         self._wrist_dqids = mjx_env.get_qvel_ids(self.mj_model, consts.WRIST_JOINT_NAMES)
         self._hand_qids = mjx_env.get_qpos_ids(self.mj_model, consts.JOINT_NAMES)
@@ -243,6 +284,9 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._floor_geom_id = self._mj_model.geom("floor").id
         self._cube_geom_id = self._mj_model.geom("cube").id
         self._cube_body_id = self._mj_model.body("cube").id
+        # Nominal cube half-height; reset() scales the free-body resting z by the
+        # per-env cube size (under cube-size DR) so it always rests on the floor.
+        self._cube_half_z = float(self._mj_model.geom_size[self._cube_geom_id, 2])
         self._cube_mass = self._mj_model.body_subtreemass[self._cube_body_id]
         # Weight of the cube (N), used to normalize the floor-support penalty:
         # when the floor bears the cube's full weight the penalty saturates at 1.
@@ -250,13 +294,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         self._cube_weight = float(self._cube_mass) * g
         ctrl_span = self._xml_ctrlrange[:, 1] - self._xml_ctrlrange[:, 0]
         self._joint_max_vel = jp.array(ctrl_span)
-        non_hand_bodies = {"world", "cube", "goal"}
-        self._hand_geom_ids = jp.array([
-            g for g in range(self._mj_model.ngeom)
-            if self._mj_model.geom(g).contype != 0
-            and self._mj_model.body(self._mj_model.geom_bodyid[g]).name not in non_hand_bodies
-            and g != self._floor_geom_id
-        ])
         self._default_wrist_pose = self._init_q[self._wrist_qids]
         self._default_pose = self._init_q[self._hand_qids]
         self._cube_init = self._init_q[self._cube_qids]
@@ -291,6 +328,50 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         }
 
     # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def sync_mj_model_meshes(self) -> None:
+        """Make mj_model's cube box + visual mesh match the current mjx_model's
+        cube geom size, so renders (incl. W&B training videos) show the actual
+        per-env (DR'd) cube size. The visible cube is a MESH whose vertices are
+        unaffected by geom_size, hence the spec recompile. No-op when sizes match.
+        The cube is a free body, so its pose comes from the trajectory qpos and
+        body_pos is left untouched (unlike the welded pinch cube)."""
+        mjx_geom_size = np.array(self._mjx_model.geom_size)
+        if np.allclose(self._mj_model.geom_size, mjx_geom_size):
+            return
+        cube_bid = self._mj_model.body("cube").id
+        mesh_gid = next(
+            g for g in range(self._mj_model.ngeom)
+            if self._mj_model.geom_bodyid[g] == cube_bid
+            and self._mj_model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+        )
+        for body in self._mj_spec.bodies:
+            if body.name != "cube":
+                continue
+            for geom in body.geoms:
+                if geom.type == mujoco.mjtGeom.mjGEOM_BOX and geom.name:
+                    geom.size = mjx_geom_size[self._mj_model.geom(geom.name).id]
+                elif geom.type == mujoco.mjtGeom.mjGEOM_MESH:
+                    for mesh in self._mj_spec.meshes:
+                        if mesh.name == "cube_mesh":
+                            mesh.scale = mjx_geom_size[mesh_gid]
+                            break
+            break
+        m_new = self._mj_spec.compile()
+        self._mj_model.geom_size[:] = m_new.geom_size
+        self._mj_model.mesh_vert[:] = m_new.mesh_vert
+
+    def render(self, trajectory, height=240, width=320, camera=None,
+               scene_option=None, modify_scene_fns=None):
+        self.sync_mj_model_meshes()
+        return mjx_env.render_array(
+            self._mj_model, trajectory, height, width, camera,
+            scene_option=scene_option, modify_scene_fns=modify_scene_fns,
+        )
+
+    # ------------------------------------------------------------------
     # Environment logic
     # ------------------------------------------------------------------
 
@@ -299,16 +380,33 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         start_pos = self._cube_init[:2] + jax.random.uniform(
             p_rng, (2,), minval=-0.01, maxval=0.01
         )
-        start_pos = jp.array([start_pos[0], start_pos[1], self._cube_init[2]])
+        # Rest on the floor for this env's (possibly DR-scaled) cube size.
+        cube_z = self._cube_init[2] * (
+            self._mjx_model.geom_size[self._cube_geom_id, 2] / self._cube_half_z
+        )
+        start_pos = jp.array([start_pos[0], start_pos[1], cube_z])
 
         rng, sign_rng, frac_rng = jax.random.split(rng, 3)
         goal_sign = jp.where(jax.random.bernoulli(sign_rng), 1.0, -1.0)
         goal_frac = jax.random.uniform(frac_rng, minval=0.0, maxval=1.0)
+        # KNOWN LIMITATION (curriculum): reset() cannot see the per-env level --
+        # it lives in AutoResetWrapper_preserve_info, which only step()
+        # receives -- so the goal here is sampled at level 0. step() re-derives
+        # the goal from the preserved level on the episode's first step, fixing
+        # reward and all later obs, but the wrapper has already delivered THIS
+        # reset's obs: the first action of each episode is chosen against a
+        # level-0 goal. One step per episode; a real fix needs wrapper support
+        # for passing preserved info into reset().
         level = jp.zeros((), dtype=jp.int32)
         if self._config.curriculum.enable:
             goal_quat = self._curriculum_goal_quat(level, goal_frac, goal_sign)
         else:
-            full_angle = self._config.max_target_angle * (2.0 * goal_frac - 1.0)
+            lo = self._config.min_target_angle
+            hi = self._config.max_target_angle
+            if self._config.symmetric_target:
+                full_angle = goal_sign * (lo + goal_frac * (hi - lo))
+            else:
+                full_angle = lo + goal_frac * (hi - lo)
             goal_quat = jp.array(
                 [jp.cos(full_angle / 2), 0.0, 0.0, jp.sin(full_angle / 2)]
             )
@@ -338,13 +436,16 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             minval=self._config.pert_config.pert_duration_steps[0],
             maxval=self._config.pert_config.pert_duration_steps[1],
         )
+        # Sub-split so lin/ang magnitudes are independent (sharing pert3 made
+        # them affinely correlated); other reset keys are unchanged.
+        pert_lin_rng, pert_ang_rng = jax.random.split(pert3)
         pert_lin = jax.random.uniform(
-            pert3,
+            pert_lin_rng,
             minval=self._config.pert_config.linear_velocity_pert[0],
             maxval=self._config.pert_config.linear_velocity_pert[1],
         )
         pert_ang = jax.random.uniform(
-            pert3,
+            pert_ang_rng,
             minval=self._config.pert_config.angular_velocity_pert[0],
             maxval=self._config.pert_config.angular_velocity_pert[1],
         )
@@ -372,6 +473,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             "pert_dir": jp.zeros(6, dtype=float),
             "last_pert_step": jp.array([-jp.inf], dtype=float),
             "ori_error": jp.zeros(()),
+            "lifted_once": jp.array(False),
         }
 
         metrics = {}
@@ -437,14 +539,18 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         state.info["ori_error"] = ori_error
 
-        hold_steps = jp.asarray(
-            self._config.target_hold_time / self.dt, dtype=jp.int32
-        )
+        # round() before the int cast: float division can land just below the
+        # integer (0.3/0.05 -> 5.999...) and a bare int cast truncates. `>=`
+        # (matching the pinch env) makes the configured hold time exact:
+        # 0.25 s / 0.05 s = 5 in-tolerance steps, where `>` required 6.
+        hold_steps = jp.round(
+            self._config.target_hold_time / self.dt
+        ).astype(jp.int32)
         at_target_counter = jp.where(
             at_goal, state.info["at_target_step_counter"] + 1, 0
         ).astype(jp.int32)
         state.info["at_target_step_counter"] = at_target_counter
-        success = at_target_counter > hold_steps
+        success = at_target_counter >= hold_steps
 
 
         success_count = jp.where(
@@ -471,10 +577,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
                 "streak_neg": jp.where(sign_pos, curr["streak_neg"], new_streak),
             }
             state.info["AutoResetWrapper_preserve_info"] = curr
-        # The *_per_step suffix triggers brax's EpisodeMetricsLogger to divide
-        # the episode sum by the actual episode length, so episode/curriculum/*
-        # reads the true per-step mean (= per-episode mean, as these are constant
-        # within an episode): level in [0, max_level], goal_angle in degrees.
         state.metrics["curriculum/level_pos_per_step"] = curr["level_pos"].astype(float)
         state.metrics["curriculum/level_neg_per_step"] = curr["level_neg"].astype(float)
         state.metrics["curriculum/streak_per_step"] = current_streak.astype(float)
@@ -483,6 +585,11 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         )
 
         done = self._get_termination(data)
+        if self._config.terminate_on_redrop:
+            support = self._cube_floor_support_fraction(data)
+            lifted_once = state.info["lifted_once"] | (support < 0.05)
+            state.info["lifted_once"] = lifted_once
+            done = done | (lifted_once & (support > 0.5))
         obs = self._get_obs(data, state.info)
         raw_rewards = self._get_reward(data, state.info, action)
         state.info["last_action"] = action
@@ -500,7 +607,13 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         return state.replace(data=data, obs=obs, reward=rew, done=done)
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:
-        return jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
+        done = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
+        if self._config.cube_oob_radius > 0.0:
+            done = done | (
+                jp.linalg.norm(self.get_cube_position(data)[:2])
+                > self._config.cube_oob_radius
+            )
+        return done
 
     # ------------------------------------------------------------------
     # Reward
@@ -530,6 +643,10 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         return reward.tolerance(ori_error, (0.0, 0.0), margin=margin_rad, sigmoid="reciprocal")
 
     @staticmethod
+    def r_cube_spin_speed(spin_z: jax.Array, target_speed: float) -> jax.Array:
+        return jp.clip(spin_z / target_speed, -1.0, 1.0)
+
+    @staticmethod
     def r_cube_on_floor(floor_support_fraction: jax.Array) -> jax.Array:
         return floor_support_fraction
 
@@ -555,19 +672,35 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         fingertip_distances = jp.linalg.norm(
             self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos, axis=1
         )
-        fingertip_reward = jp.mean(
-            self.r_fingertip_pos_per_tip(fingertip_distances, self._geom.cube_half_size)
-        )
+        if self._config.reward_config.use_dr_cube_size:
+            # Per-env DR'd half-size (traced). tolerance() cannot take traced
+            # bounds, so score the distance BEYOND the cube surface against
+            # constant bounds -- identical to bounds=(0, half) for dist >= 0.
+            half = self.mjx_model.geom_size[self._cube_geom_id, 0]
+            per_tip = reward.tolerance(
+                jp.maximum(fingertip_distances - half, 0.0),
+                (0.0, 0.0), margin=0.1, sigmoid="reciprocal",
+            )
+        else:
+            # LEGACY: nominal (un-DR'd) half-size as a static bound.
+            per_tip = self.r_fingertip_pos_per_tip(
+                fingertip_distances, self._geom.cube_half_size
+            )
+        fingertip_reward = jp.mean(per_tip)
+
+        if self._config.reward_config.cube_ori_mode == "speed":
+            spin_z = self.get_cube_angvel(data)[2]
+            cube_task_reward = self.r_cube_spin_speed(
+                spin_z, self._config.reward_config.target_spin_speed
+            )
+        else:
+            cube_task_reward = self.r_cube_orientation(
+                cube_ori_error, self._config.reward_config.ori_reward_margin_rad
+            )
 
         return {
             "fingertip_pos": fingertip_reward,
-            # Reward matching the target orientation in proportion to how much
-            # the cube has been lifted off the floor, so the policy can't farm
-            # orientation reward while the cube is still resting on the ground.
-            "cube_ori": lift_gate
-            * self.r_cube_orientation(
-                cube_ori_error, self._config.reward_config.ori_reward_margin_rad
-            ),
+            "cube_ori": lift_gate * cube_task_reward,
             "joint_vel": self.r_joint_vel(
                 data.qvel[self._hand_dqids], self._joint_max_vel, self._VEL_TOLERANCE
             ),
@@ -602,7 +735,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         return info["goal_quat"]
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
-        return jp.concatenate([
+        parts = [
             data.qpos[self._hand_qids],        # 26: true joint angles
             data.qvel[self._hand_dqids],        # 26: true joint velocities
             self.get_cube_position(data),       # 3:  true cube position
@@ -611,9 +744,11 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
             self.get_fingertip_positions(data), # 15: fingertip positions
             self.get_palm_position(data),       # 3:  palm position
             info["motor_targets"],              # 26: motor targets
-            info["goal_quat"],                  # 4:  goal orientation
-            self._obs_fingertip_forces(data, info),  # 5: per-tip contact force magnitudes
-        ])  # total: 114
+        ]
+        if self._config.reward_config.cube_ori_mode != "speed":
+            parts.append(info["goal_quat"])     # 4:  goal orientation
+        parts.append(self._obs_fingertip_forces(data, info))  # 5: per-tip forces
+        return jp.concatenate(parts)
 
     # ------------------------------------------------------------------
     # Contact helpers
@@ -631,12 +766,6 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         net_force = mjx_env.get_sensor_data(self.mj_model, data, "cube_floor_force")
         vertical_support = jp.abs(net_force[2])
         return jp.minimum(vertical_support / self._cube_weight, 1.0)
-
-    def _cube_lin_velocity(self, data: mjx.Data) -> jax.Array:
-        return math.norm(self.get_cube_linvel(data))
-
-    def _cube_ang_velocity(self, data: mjx.Data) -> jax.Array:
-        return math.norm(self.get_cube_angvel(data))
 
     def _maybe_apply_perturbation(
         self, state: mjx_env.State, rng: jax.Array
@@ -673,9 +802,47 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
 
 
+# Per-env cube-size scale range for domain randomization. Verified collision-free
+# in the home pose up to ~1.20x (see experimentation check_cube_home_collision.py).
+_CUBE_SIZE_RANGE = (0.85, 1.15)
+
+
 def domain_randomize(model: mjx.Model, rng: jax.Array):
-    mj_model = DownwardsRotateZ().mj_model
+    """Cube-size-ONLY domain randomization: each env's cube geom is scaled by a
+    factor in _CUBE_SIZE_RANGE and nothing else is randomized, so cube size is the
+    single variable vs the no-DR control. The previous full DR suite (friction,
+    mass, kp, damping, armature, joint jitter) is preserved, unused, as
+    _domain_randomize_full below."""
+    # Compile the scene directly for ID lookup: constructing DownwardsRotateZ()
+    # here built an entire env (mjx.put_model included) just to read geom ids.
+    mj_model = mujoco.MjSpec.from_file(
+        consts.SCENE_XML.as_posix(), assets=tesollo_hand_base.get_assets()
+    ).compile()
     cube_body_id = mj_model.body("cube").id
+    cube_geom_ids = np.array(
+        [g for g in range(mj_model.ngeom) if mj_model.geom_bodyid[g] == cube_body_id]
+    )
+
+    @jax.vmap
+    def rand(rng):
+        s = jax.random.uniform(rng, (), minval=_CUBE_SIZE_RANGE[0], maxval=_CUBE_SIZE_RANGE[1])
+        return model.geom_size.at[cube_geom_ids].set(model.geom_size[cube_geom_ids] * s)
+
+    geom_size = rand(rng)
+    in_axes = jax.tree_util.tree_map(lambda x: None, model)
+    in_axes = in_axes.tree_replace({"geom_size": 0})
+    model = model.tree_replace({"geom_size": geom_size})
+    return model, in_axes
+
+
+def _domain_randomize_full(model: mjx.Model, rng: jax.Array):
+    mj_model = mujoco.MjSpec.from_file(
+        consts.SCENE_XML.as_posix(), assets=tesollo_hand_base.get_assets()
+    ).compile()
+    cube_body_id = mj_model.body("cube").id
+    cube_geom_ids = np.array(
+        [g for g in range(mj_model.ngeom) if mj_model.geom_bodyid[g] == cube_body_id]
+    )
     hand_qids = mjx_env.get_qpos_ids(mj_model, consts.JOINT_NAMES)
     hand_body_names = [
         "rl_dg_1_1", "rl_dg_1_2", "rl_dg_1_3", "rl_dg_1_4",
@@ -696,6 +863,14 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         rng, key = jax.random.split(rng)
         silicone_friction = jax.random.uniform(key, (1,), minval=0.5, maxval=1.0)
         geom_friction = model.geom_friction.at[silicone_geom_ids, 0].set(silicone_friction)
+
+        rng, key = jax.random.split(rng)
+        cube_scale = jax.random.uniform(
+            key, (), minval=_CUBE_SIZE_RANGE[0], maxval=_CUBE_SIZE_RANGE[1]
+        )
+        geom_size = model.geom_size.at[cube_geom_ids].set(
+            model.geom_size[cube_geom_ids] * cube_scale
+        )
 
         rng, key1, key2 = jax.random.split(rng, 3)
         dmass = jax.random.uniform(key1, minval=0.8, maxval=1.2)
@@ -745,23 +920,23 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         dof_damping = model.dof_damping.at[hand_qids].set(kd)
 
         return (
-            geom_friction, body_mass, body_inertia, body_ipos, qpos0,
+            geom_friction, geom_size, body_mass, body_inertia, body_ipos, qpos0,
             dof_frictionloss, dof_armature, dof_damping, actuator_gainprm, actuator_biasprm,
         )
 
     (
-        geom_friction, body_mass, body_inertia, body_ipos, qpos0,
+        geom_friction, geom_size, body_mass, body_inertia, body_ipos, qpos0,
         dof_frictionloss, dof_armature, dof_damping, actuator_gainprm, actuator_biasprm,
     ) = rand(rng)
 
     in_axes = jax.tree_util.tree_map(lambda x: None, model)
     in_axes = in_axes.tree_replace({
-        "geom_friction": 0, "body_mass": 0, "body_inertia": 0, "body_ipos": 0,
-        "qpos0": 0, "dof_frictionloss": 0, "dof_armature": 0, "dof_damping": 0,
-        "actuator_gainprm": 0, "actuator_biasprm": 0,
+        "geom_friction": 0, "geom_size": 0, "body_mass": 0, "body_inertia": 0,
+        "body_ipos": 0, "qpos0": 0, "dof_frictionloss": 0, "dof_armature": 0,
+        "dof_damping": 0, "actuator_gainprm": 0, "actuator_biasprm": 0,
     })
     model = model.tree_replace({
-        "geom_friction": geom_friction, "body_mass": body_mass,
+        "geom_friction": geom_friction, "geom_size": geom_size, "body_mass": body_mass,
         "body_inertia": body_inertia, "body_ipos": body_ipos, "qpos0": qpos0,
         "dof_frictionloss": dof_frictionloss, "dof_armature": dof_armature,
         "dof_damping": dof_damping, "actuator_gainprm": actuator_gainprm,

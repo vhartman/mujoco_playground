@@ -345,63 +345,82 @@ def log_reward_scale_composition(env_cfg) -> None:
   plt.close(fig)
 
 
-def make_eval_video_logger(env, episode_length: int, seed: int, render_every: int = 2):
-  """Returns a policy_params_fn callback that logs a rollout video to W&B on every eval."""
+def make_eval_video_logger(env, episode_length: int, seed: int, render_every: int = 2,
+                           randomization_fn=None):
+  """Returns a policy_params_fn callback that logs a rollout video to W&B on every eval.
+
+  When `randomization_fn` is provided (domain randomization is on), each video is
+  rendered with a freshly sampled per-env randomized model (e.g. a DR'd cube size)
+  instead of the nominal one, so the logged video reflects the actual randomized
+  setup. No effect when DR is off."""
   fps = 1.0 / env.dt / render_every
   scene_option = mujoco.MjvOption()
   scene_option.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = False
   scene_option.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = False
   scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = False
   rng = jax.random.PRNGKey(seed)
+  base_model = env._mjx_model  # nominal model to sample DR from each call
 
   def log_video(current_step: int, make_policy, params) -> None:
     nonlocal rng
-    rng, rollout_rng = jax.random.split(rng)
-    reset_rng, step_rng = jax.random.split(rollout_rng)
-
-    inference_fn = make_policy(params, deterministic=True)
-    jit_inference_fn = jax.jit(inference_fn)
-
-    state = jax.jit(env.reset)(reset_rng)
-    empty_data = state.data.__class__(
-        **{k: None for k in state.data.__annotations__}
-    )
-    empty_traj = state.__class__(**{k: None for k in state.__annotations__})
-    empty_traj = empty_traj.replace(data=empty_data)
-
-    def step_fn(carry, _):
-      state, key = carry
-      key, act_key = jax.random.split(key)
-      act = jit_inference_fn(state.obs, act_key)[0]
-      state = env.step(state, act)
-      traj_data = empty_traj.tree_replace({
-          "data.qpos": state.data.qpos,
-          "data.qvel": state.data.qvel,
-          "data.time": state.data.time,
-          "data.ctrl": state.data.ctrl,
-          "data.mocap_pos": state.data.mocap_pos,
-          "data.mocap_quat": state.data.mocap_quat,
-          "data.xfrc_applied": state.data.xfrc_applied,
-      })
-      return (state, key), traj_data
-
-    _, traj = jax.lax.scan(step_fn, (state, step_rng), None, length=episode_length)
-    traj_list = [
-        jax.tree.map(lambda x, j=j: x[j], traj) for j in range(episode_length)
-    ]
-    frames = env.render(
-        traj_list[::render_every], height=480, width=640, scene_option=scene_option
-    )
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-      tmp_path = f.name
     try:
-      media.write_video(tmp_path, np.array(frames), fps=fps)
-      wandb.log(
-          {"eval/rollout": wandb.Video(tmp_path, fps=fps, format="mp4")},
-          step=current_step,
+      if randomization_fn is not None:
+        rng, dr_rng = jax.random.split(rng)
+        rand_model, in_axes = randomization_fn(base_model, jax.random.split(dr_rng, 1))
+        env._mjx_model = jax.tree_util.tree_map(
+            lambda x, ax: x[0] if ax == 0 else x, rand_model, in_axes
+        )
+      rng, rollout_rng = jax.random.split(rng)
+      reset_rng, step_rng = jax.random.split(rollout_rng)
+
+      inference_fn = make_policy(params, deterministic=True)
+      jit_inference_fn = jax.jit(inference_fn)
+
+      state = jax.jit(env.reset)(reset_rng)
+      empty_data = state.data.__class__(
+          **{k: None for k in state.data.__annotations__}
       )
+      empty_traj = state.__class__(**{k: None for k in state.__annotations__})
+      empty_traj = empty_traj.replace(data=empty_data)
+
+      def step_fn(carry, _):
+        state, key = carry
+        key, act_key = jax.random.split(key)
+        act = jit_inference_fn(state.obs, act_key)[0]
+        state = env.step(state, act)
+        traj_data = empty_traj.tree_replace({
+            "data.qpos": state.data.qpos,
+            "data.qvel": state.data.qvel,
+            "data.time": state.data.time,
+            "data.ctrl": state.data.ctrl,
+            "data.mocap_pos": state.data.mocap_pos,
+            "data.mocap_quat": state.data.mocap_quat,
+            "data.xfrc_applied": state.data.xfrc_applied,
+        })
+        return (state, key), traj_data
+
+      _, traj = jax.lax.scan(step_fn, (state, step_rng), None, length=episode_length)
+      traj_list = [
+          jax.tree.map(lambda x, j=j: x[j], traj) for j in range(episode_length)
+      ]
+      frames = env.render(
+          traj_list[::render_every], height=480, width=640, scene_option=scene_option
+      )
+      with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+        tmp_path = f.name
+      try:
+        media.write_video(tmp_path, np.array(frames), fps=fps)
+        wandb.log(
+            {"eval/rollout": wandb.Video(tmp_path, fps=fps, format="mp4")},
+            step=current_step,
+        )
+      finally:
+        os.unlink(tmp_path)
     finally:
-      os.unlink(tmp_path)
+      # Always rebind the nominal model: this is the SAME eval_env brax's
+      # evaluator and the post-training rollout use, and leaving a DR sample
+      # bound would bake it into any of their later traces.
+      env._mjx_model = base_model
 
   return log_video
 
@@ -476,6 +495,30 @@ def main(argv):
       env_overrides = yaml.safe_load(f)
 
   env = registry.load(_ENV_NAME.value, config=env_cfg, config_overrides=env_overrides)
+
+  # Guards for full_reset-dependent env semantics. Without --full_reset the
+  # AutoResetWrapper reverts data/obs to a cached first state but NEVER resets
+  # env info: reset() runs once per env for the whole run.
+  if (
+      "curriculum" in env._config
+      and env._config.curriculum.enable
+      and not _FULL_RESET.value
+  ):
+    raise ValueError(
+        "curriculum.enable requires --full_reset: without it info['step'] never"
+        " returns to 0 after the first episode (the goal is never resampled),"
+        " the last-step level commit fires on every step, and the cumulative"
+        " success_count makes 'mastered' latch permanently -- runaway promotion."
+    )
+  if env._config.get("full_reset_recommended", False) and not _FULL_RESET.value:
+    print(
+        "[warn] this env samples per-episode quantities in reset() but"
+        " --full_reset is off: targets/phases are fixed per env for the whole"
+        " run, info-carried state (motor_targets EMA, success counters) leaks"
+        " across episode boundaries, and episode/success_count is a lifetime"
+        " counter rather than a per-episode metric."
+    )
+
   if _RUN_EVALS.present:
     ppo_params.run_evals = _RUN_EVALS.value
   if _LOG_TRAINING_METRICS.present:
@@ -562,9 +605,13 @@ def main(argv):
     network_factory = network_fn
 
   if _DOMAIN_RANDOMIZATION.value:
-    training_params["randomization_fn"] = registry.get_domain_randomizer(
-        _ENV_NAME.value
-    )
+    # Prefer an env-bound randomizer (closes over THIS env's config) over the
+    # registry's module-level function, which for some envs reads module
+    # globals last written by whichever env instance was constructed most
+    # recently (e.g. pinch's _cube_dr_spec).
+    training_params["randomization_fn"] = getattr(
+        env, "domain_randomizer", None
+    ) or registry.get_domain_randomizer(_ENV_NAME.value)
 
   if _VISION.value:
     env = wrapper.wrap_for_brax_training(
@@ -694,6 +741,7 @@ def main(argv):
         eval_env,
         episode_length=ppo_params.episode_length,
         seed=_SEED.value,
+        randomization_fn=training_params.get("randomization_fn"),
     )
     _base_policy_params_fn = policy_params_fn
     def policy_params_fn(current_step, make_policy, params):  # pylint: disable=function-redefined

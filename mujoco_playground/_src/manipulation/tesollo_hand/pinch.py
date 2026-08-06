@@ -59,12 +59,32 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=80,
-        # "baseline" | "proprio.target" | "proprio.target+force.magnitude"
+        # reset() samples per-episode state (force target/phase, obs bias) and
+        # step() carries info (motor_targets EMA, success counters) that only
+        # resets when the training harness runs with --full_reset. Without it,
+        # reset() runs once per env for the whole run: targets are fixed per
+        # env, the cached first obs goes stale in sinusoid mode, and
+        # episode/success_count becomes a lifetime counter. train_jax_ppo warns
+        # when this flag is set and --full_reset is off.
+        full_reset_recommended=True,
         sensor_bundle="proprio.target",
         force_target_range=[2.0, 5.0],
         force_target_sinusoid=False,
-        force_target_period=2.0,  # seconds per cycle of the target sinusoid
+        force_target_frequency=0.5, 
+        force_target_phase=[0.0, 2.0 * np.pi],
+        force_target_amplitude_scale=1.0,
+        force_target_frequency_log2_range=[0.0, 0.0],
+        force_target_amplitude_scale_range=[0.0, 0.0],
         force_tolerance=0.75,
+        # Absolute half-width (N) of the shaped force reward: the Gaussian decays
+        # to 0.1 at |f - target| = force_reward_margin, independent of the target.
+        # 0.0 selects the LEGACY behavior, which divides the error by the target,
+        # making the shaping width proportional to the target (2 N wide at a 2 N
+        # target, 5 N wide at 5 N) while success stays an absolute
+        # +/-force_tolerance band -- i.e. flattest shaping exactly where success
+        # is relatively hardest. Opt-in (default 0.0) so runs launched before
+        # this key existed keep their reward function unchanged.
+        force_reward_margin=0.0,
         success_hold_time=0.5,
         obs_noise=config_dict.create(
             level=0.0,
@@ -93,6 +113,11 @@ def default_config() -> config_dict.ConfigDict:
                 joint_vel=-0.01,
             ),
             success_reward=10.0,
+            # When True, the fingertip-reach reward uses this env's per-env
+            # (DR'd) cube half-size instead of the nominal model's, so the
+            # reach gate matches the cube the fingers actually touch. Opt-in
+            # default-off: flipping it changes the reward under cube-size DR.
+            use_dr_cube_size=False,
         ),
         pert_config=config_dict.create(
             enable=False,
@@ -208,20 +233,36 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         """Override actuator PID gains from config, replacing XML-baked values."""
         cfg = self._config.pid_gains
         nu = self._mj_model.nu
-
+        # Writes EVERY actuator; valid only in the reduced pinch scene where all
+        # actuators are thumb+index fingers. Guard against silently clobbering
+        # wrist gains (kp 400/50, kv 100/20) if reused in a fuller scene.
+        assert nu == consts.N_ACTIVE, (
+            f"pid_gains overrides all {nu} actuators; expected the reduced"
+            f" finger-only scene with {consts.N_ACTIVE}"
+        )
         kp = (
-            jp.array(cfg.kp_per_actuator, dtype=float)
+            np.asarray(cfg.kp_per_actuator, dtype=float)
             if cfg.kp_per_actuator
-            else jp.full((nu,), cfg.finger_kp)
+            else np.full((nu,), cfg.finger_kp)
         )
         kv = (
-            jp.array(cfg.kv_per_actuator, dtype=float)
+            np.asarray(cfg.kv_per_actuator, dtype=float)
             if cfg.kv_per_actuator
-            else jp.full((nu,), cfg.finger_kv)
+            else np.full((nu,), cfg.finger_kv)
         )
-        self._mj_model.actuator_gainprm[:, 0] = np.array(kp)
-        self._mj_model.actuator_biasprm[:, 1] = -np.array(kp)
-        self._mj_model.actuator_biasprm[:, 2] = -np.array(kv)
+        self._mj_model.actuator_gainprm[:, 0] = kp
+        self._mj_model.actuator_biasprm[:, 1] = -kp
+        self._mj_model.actuator_biasprm[:, 2] = -kv
+
+    def domain_randomizer(self, model: mjx.Model, rng: jax.Array):
+        """Instance-bound domain randomizer closing over THIS env's
+        config.domain_rand, immune to the module-global _cube_dr_spec being
+        overwritten by a later CubePinch construction. Same signature and
+        (given equal spec values) identical sampling to the module-level
+        domain_randomize; train_jax_ppo prefers this when present.
+        """
+        spec = {k: list(v) for k, v in self._config.domain_rand.items()}
+        return _domain_randomize_impl(model, rng, spec)
 
     # ------------------------------------------------------------------
     # Properties required by TesolloHandGraspEnv
@@ -348,18 +389,26 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         PPO running-observation normalizer, so no manual scaling is applied."""
         return jp.array([info["force_target"]])
 
-    def _force_target_at(self, step: jax.Array, phase: jax.Array) -> jax.Array:
-        """Sinusoidal force target (N) at a given step, spanning force_target_range.
+    def _force_target_at(
+        self,
+        step: jax.Array,
+        phase: jax.Array,
+        frequency: jax.Array,
+        amplitude_scale: jax.Array,
+    ) -> jax.Array:
+        """Sinusoidal force target (N) at a given step, centred in force_target_range.
 
-        target(t) = mid + amp * sin(2π t / period + phase), with t = step * ctrl_dt.
-        mid/amp are derived from force_target_range so the sine touches both ends;
-        the per-episode `phase` (sampled on reset) prevents the policy from
-        memorizing a fixed step→target schedule.
+        target(t) = mid + amp * sin(2π f t + phase), with t = step * ctrl_dt.
+        The sine is always centred on the midpoint of force_target_range;
+        `amplitude_scale` sets what fraction of the range it spans, so scale=1
+        touches both ends and scale=0 is a constant mid. `phase`, `frequency`
+        and `amplitude_scale` are per-episode values carried in info (see reset),
+        which prevents the policy from memorizing a fixed step→target schedule.
         """
         lo, hi = self._config.force_target_range
         mid = 0.5 * (lo + hi)
-        amp = 0.5 * (hi - lo)
-        omega = 2.0 * jp.pi / self._config.force_target_period
+        amp = 0.5 * (hi - lo) * amplitude_scale
+        omega = 2.0 * jp.pi * frequency
         return mid + amp * jp.sin(omega * step * self._config.ctrl_dt + phase)
 
     # fingertip_forces / fingertip_force_dirs now use the base-class per-sensor
@@ -426,26 +475,60 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             minval=self._config.pert_config.pert_duration_steps[0],
             maxval=self._config.pert_config.pert_duration_steps[1],
         )
+        # Sub-split so lin/ang magnitudes are independent (sharing pert3 made
+        # them affinely correlated). Derived from pert3 only, so the other
+        # reset keys (force target, obs bias) are unchanged.
+        pert_lin_rng, pert_ang_rng = jax.random.split(pert3)
         pert_lin = jax.random.uniform(
-            pert3,
+            pert_lin_rng,
             minval=self._config.pert_config.linear_velocity_pert[0],
             maxval=self._config.pert_config.linear_velocity_pert[1],
         )
         pert_ang = jax.random.uniform(
-            pert3,
+            pert_ang_rng,
             minval=self._config.pert_config.angular_velocity_pert[0],
             maxval=self._config.pert_config.angular_velocity_pert[1],
         )
 
         force_rng, phase_rng = jax.random.split(force_rng)
+        # Sinusoid shape for this episode. Whether a range is active is decided
+        # from the (static) config at trace time, so a run that leaves both
+        # ranges degenerate draws exactly the RNG it drew before these keys
+        # existed and reproduces bit-for-bit.
+        freq_lo, freq_hi = self._config.force_target_frequency_log2_range
+        if freq_hi > freq_lo:
+            phase_rng, freq_rng = jax.random.split(phase_rng)
+            force_frequency = jp.exp2(
+                jax.random.uniform(freq_rng, minval=freq_lo, maxval=freq_hi)
+            )
+        else:
+            force_frequency = jp.asarray(self._config.force_target_frequency)
+
+        amp_lo, amp_hi = self._config.force_target_amplitude_scale_range
+        if amp_hi > amp_lo:
+            phase_rng, amp_rng = jax.random.split(phase_rng)
+            force_amplitude_scale = jax.random.uniform(
+                amp_rng, minval=amp_lo, maxval=amp_hi
+            )
+        else:
+            force_amplitude_scale = jp.asarray(
+                self._config.force_target_amplitude_scale
+            )
+
         force_phase = jp.where(
             self._config.force_target_sinusoid,
-            jax.random.uniform(phase_rng, minval=0.0, maxval=2.0 * jp.pi),
+            jax.random.uniform(
+                phase_rng,
+                minval=self._config.force_target_phase[0],
+                maxval=self._config.force_target_phase[1],
+            ),
             0.0,
         )
         force_target = jp.where(
             self._config.force_target_sinusoid,
-            self._force_target_at(0, force_phase),
+            self._force_target_at(
+                0, force_phase, force_frequency, force_amplitude_scale
+            ),
             jax.random.uniform(
                 force_rng,
                 minval=self._config.force_target_range[0],
@@ -464,6 +547,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
             "motor_targets": data.ctrl,
             "force_target": force_target,
             "force_phase": force_phase,
+            "force_frequency": force_frequency,
+            "force_amplitude_scale": force_amplitude_scale,
             "force_error": jp.zeros(()),
             "pert_wait_steps": pert_wait_steps,
             "pert_duration_steps": pert_duration_steps,
@@ -562,7 +647,10 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.info["step"] += 1
         if self._config.force_target_sinusoid:
             state.info["force_target"] = self._force_target_at(
-                state.info["step"], state.info["force_phase"]
+                state.info["step"],
+                state.info["force_phase"],
+                state.info["force_frequency"],
+                state.info["force_amplitude_scale"],
             )
         obs = self._get_obs(data, state.info)
         state.info["last_last_act"] = state.info["last_act"]
@@ -584,7 +672,16 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self, data: mjx.Data
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         cube_pos = self.get_cube_position(data)
-        drift = jp.linalg.norm(cube_pos[:2] - self._init_cube_pos[:2]) > 0.15
+        # Welded cube: measure drift against this env's own (possibly
+        # cube_pos-DR-offset) body position, not the nominal model's, so a DR
+        # offset cannot eat into the 0.15 m budget and instantly terminate the
+        # env. xy is untouched by size DR, so values are identical when
+        # cube_pos DR is off. Free cube: the spawn is the nominal keyframe pos.
+        if self._config.weld_cube:
+            ref_xy = self.mjx_model.body_pos[self._cube_body_id, :2]
+        else:
+            ref_xy = self._init_cube_pos[:2]
+        drift = jp.linalg.norm(cube_pos[:2] - ref_xy) > 0.15
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         tip_on_ground = jp.any(tips[:, 2] < 0.005)
@@ -603,12 +700,22 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         effective_force: jax.Array,
     ) -> dict[str, jax.Array]:
         # Contact force matching the (randomized) target, normalized to [0, 1].
-        # Use the relative force error so tolerance() gets constant bounds/margin
-        # (passing the traced target as bounds breaks under jit). With error e =
-        # (f - target) / target this is identical to a Gaussian tolerance on f
-        # with bounds=(target, target), margin=target.
+        # tolerance() rejects traced bounds under jit, so the error is divided
+        # by the margin before the call and bounds/margin stay constant.
         force_target = info["force_target"]
-        force_error = (effective_force - force_target) / force_target
+        margin_n = self._config.force_reward_margin
+        if margin_n > 0.0:
+            # Absolute margin: constant Gaussian width of margin_n Newtons, so
+            # equal absolute tracking error costs equal reward at every target
+            # (matches the absolute +/-force_tolerance success band). Also
+            # immune to the target crossing zero.
+            force_error = (effective_force - force_target) / margin_n
+        else:
+            # LEGACY (margin 0.0): relative error, equivalent to a Gaussian on f
+            # with margin=target -- shaping width grows with the target, and a
+            # target of 0 (force_target_amplitude_scale > 2.33 with the default
+            # range) divides by zero. Kept for comparability with older runs.
+            force_error = (effective_force - force_target) / force_target
         force_reward = reward.tolerance(
             force_error, bounds=(0.0, 0.0), margin=1.0, sigmoid="gaussian"
         )
@@ -618,9 +725,23 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         cube_pos = self.get_cube_position(data)
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         reach_dists = jp.linalg.norm(tips - cube_pos, axis=1)
-        fingertip_pos_per_tip = jp.mean(
-            reward.tolerance(reach_dists, bounds=(0, self._cube_half_size), margin=0.1, sigmoid="reciprocal")
-        )
+        if self._config.reward_config.use_dr_cube_size:
+            # Per-env DR'd half-size (traced). tolerance() cannot take traced
+            # bounds, so score the distance BEYOND the cube surface against
+            # constant bounds -- identical to bounds=(0, half) for dist >= 0.
+            half = self.mjx_model.geom_size[self._cube_geom_id, 0]
+            per_tip = reward.tolerance(
+                jp.maximum(reach_dists - half, 0.0),
+                bounds=(0.0, 0.0), margin=0.1, sigmoid="reciprocal",
+            )
+        else:
+            # LEGACY: nominal (un-DR'd) half-size as a static bound; up to 15%
+            # off per env under cube-size DR.
+            per_tip = reward.tolerance(
+                reach_dists, bounds=(0, self._cube_half_size), margin=0.1,
+                sigmoid="reciprocal",
+            )
+        fingertip_pos_per_tip = jp.mean(per_tip)
 
         return {
             "cube_force": force_reward,
@@ -725,16 +846,28 @@ def _get_scene_ids():
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):
+    """Registry entry point for per-env domain randomization.
+
+    Reads the module-global _cube_dr_spec, which is overwritten by EVERY
+    CubePinch construction -- so with multiple env instances holding different
+    domain_rand configs, whichever was constructed last silently defines DR for
+    all of them. Prefer CubePinch.domain_randomizer (an instance-bound closure
+    over that env's own config); train_jax_ppo uses it when available. This
+    wrapper remains for registry callers (env_viz etc.).
+    """
+    return _domain_randomize_impl(model, rng, _cube_dr_spec)
+
+
+def _domain_randomize_impl(model: mjx.Model, rng: jax.Array, spec):
     """Per-env domain randomization for hand dynamics and (optionally) cube
-    geometry.  Cube size/pos/mass branches are controlled by _cube_dr_spec
-    (populated from config.domain_rand at env construction time); they trace
-    away when lo==hi so there is no runtime cost when disabled.
+    geometry.  Cube size/pos/mass branches are controlled by `spec` (populated
+    from config.domain_rand); they trace away when lo==hi so there is no
+    runtime cost when disabled.
     """
     cube_bid, cube_gids, hand_qids, hand_body_ids, silicone_geom_ids = (
         _get_scene_ids()
     )
 
-    spec = _cube_dr_spec
     (size_lo, size_hi) = spec["cube_size"]
     (pos_lo, pos_hi) = spec["cube_pos"]
     (mass_lo, mass_hi) = spec["cube_mass"]

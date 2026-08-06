@@ -32,9 +32,6 @@ from mujoco_playground._src import reward
 from mujoco_playground._src.manipulation.tesollo_hand import tesollo_hand_grasp_constants as consts
 from mujoco_playground._src.manipulation.tesollo_hand import obs as obs_module
 
-import mujoco.viewer
-import time
-
 
 def get_assets() -> Dict[str, bytes]:
   assets = {}
@@ -432,13 +429,16 @@ class GraspBase(TesolloHandGraspEnv, abc.ABC):
             minval=self._config.pert_config.pert_duration_steps[0],
             maxval=self._config.pert_config.pert_duration_steps[1],
         )
+        # Sub-split so lin/ang magnitudes are independent (sharing pert3 made
+        # them affinely correlated); other reset keys are unchanged.
+        pert_lin_rng, pert_ang_rng = jax.random.split(pert3)
         pert_lin = jax.random.uniform(
-            pert3,
+            pert_lin_rng,
             minval=self._config.pert_config.linear_velocity_pert[0],
             maxval=self._config.pert_config.linear_velocity_pert[1],
         )
         pert_ang = jax.random.uniform(
-            pert3,
+            pert_ang_rng,
             minval=self._config.pert_config.angular_velocity_pert[0],
             maxval=self._config.pert_config.angular_velocity_pert[1],
         )
