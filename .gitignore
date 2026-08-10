@@ -8,3 +8,16 @@ checkpoints/
 logs
 uv.lock
 .zed/
+wandb/
+learning/queues/
+learning/individual_runs/
+*.mp4
+.claude/worktrees/
+.claude/cache/
+*.png
+.vscode/*
+experimentation/*.csv
+experimentation/*.ipynb
+analysis/
+*.npz
+*.parquet
