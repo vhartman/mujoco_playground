@@ -1,0 +1,98 @@
+<mujocoinclude>
+  <compiler angle="radian"/>
+
+  <option timestep="0.01" integrator="Euler" iterations="5" ls_iterations="8">
+    <flag eulerdamp="disable" multiccd="disable" nativeccd="disable"/>
+  </option>
+
+  <visual>
+    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
+    <rgba force="1 0 0 1"/>
+    <global azimuth="120" elevation="-20"/>
+    <map force="0.01" stiffness="500"/>
+    <scale forcewidth="0.1" contactwidth="0.5" contactheight="0.2"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>
+    <texture name="grid" type="2d" builtin="checker"
+          width="512" height="512"
+          rgb1="0.29 0.0 0.51"
+          rgb2="0.9 0.9 1"/>
+    <material name="grid" texture="grid" texrepeat="4 4" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <camera name="side" pos="-0.535 0.568 0.433" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
+    <geom name="floor" pos="0 0 0" size="0 0 0.01" type="plane" material="grid" contype="1" conaffinity="1"/>
+  </worldbody>
+
+  <contact>
+    <!-- collisions with mount -->
+    <exclude body1="mount" body2="rl_dg_1_1"/>
+    <exclude body1="mount" body2="rl_dg_2_1"/>
+    <exclude body1="mount" body2="rl_dg_3_1"/>
+    <exclude body1="mount" body2="rl_dg_4_1"/>
+    <exclude body1="mount" body2="rl_dg_5_1"/>
+
+    <exclude body1="mount" body2="rl_dg_1_2"/>
+    <exclude body1="mount" body2="rl_dg_2_2"/>
+    <exclude body1="mount" body2="rl_dg_3_2"/>
+    <exclude body1="mount" body2="rl_dg_4_2"/>
+    <exclude body1="mount" body2="rl_dg_5_2"/>
+
+    <exclude body1="mount" body2="rl_dg_1_3"/>
+    <exclude body1="mount" body2="rl_dg_2_3"/>
+    <exclude body1="mount" body2="rl_dg_3_3"/>
+    <exclude body1="mount" body2="rl_dg_4_3"/>
+    <exclude body1="mount" body2="rl_dg_5_3"/>
+
+    <exclude body1="palm_lower" body2="rl_dg_1_1"/>
+    <exclude body1="palm_lower" body2="rl_dg_1_2"/>
+    <exclude body1="palm_lower" body2="rl_dg_1_3"/>
+
+    <!-- collisions with other fingers -->
+    <exclude body1="rl_dg_1_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_1_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_5_1"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_5_2" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_3_1"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_4_1"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_2_1"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_4_1"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_2_1"/>
+
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_3"/>
+    <exclude body1="rl_dg_1_1" body2="rl_dg_1_4"/>
+    <exclude body1="rl_dg_1_2" body2="rl_dg_1_4"/>
+
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_3"/>
+    <exclude body1="rl_dg_2_1" body2="rl_dg_2_4"/>
+    <exclude body1="rl_dg_2_2" body2="rl_dg_2_4"/>
+
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_3"/>
+    <exclude body1="rl_dg_3_1" body2="rl_dg_3_4"/>
+    <exclude body1="rl_dg_3_2" body2="rl_dg_3_4"/>
+
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_3"/>
+    <exclude body1="rl_dg_4_1" body2="rl_dg_4_4"/>
+    <exclude body1="rl_dg_4_2" body2="rl_dg_4_4"/>
+
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_3"/>
+    <exclude body1="rl_dg_5_1" body2="rl_dg_5_4"/>
+    <exclude body1="rl_dg_5_2" body2="rl_dg_5_4"/>
+  </contact>
+</mujocoinclude>

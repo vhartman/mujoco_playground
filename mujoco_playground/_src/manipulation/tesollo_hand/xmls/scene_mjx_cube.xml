@@ -1,34 +1,34 @@
 <mujoco model="tesollo_scene">
-  <include file="tesollo_limits.xml"/>
-  <include file="reorientation_cube.xml"/>
+  <include file="scene_base.xml"/>
+
+  <custom>
+    <numeric data="200" name="max_contact_points"/>
+  </custom>
+
 
   <statistic center="0.15 0 0" extent="0.4" meansize="0.01"/>
 
-  <visual>
-    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
-    <rgba force="1 0 0 1"/>
-    <global azimuth="120" elevation="-20"/>
-    <map force="0.01" stiffness="500"/>
-    <scale forcewidth="0.1" contactwidth="0.5" contactheight="0.2"/>
-    <quality shadowsize="8192"/>
-  </visual>
-
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>
-    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0"
-      width="300" height="300"/>
-    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
+    <model name="tesollo_hand" file="tesollo_hand.xml"/>
   </asset>
 
   <worldbody>
-    <camera name="side" pos="-0.183 0.396 0.296" xyaxes="-0.783 -0.622 -0.000 0.332 -0.419 0.845"/>
-    <geom name="floor" pos="0 0 -0.25" size="0 0 0.01" type="plane" material="groundplane" contype="2" conaffinity="2"/>
-    <body name="goal" mocap="true" pos="0.325 0.17 0.0475">
-      <!-- <geom type="mesh" mesh="cube_mesh" material="dexcube" contype="0" conaffinity="0" density="0" group="2"/> -->
+    <body pos="-0.05 0 0.28" quat="0 1 0 0.8">
+      <attach model="tesollo_hand" body="rh" prefix=""/>
+    </body>
+    <body name="goal" mocap="true" pos="0.325 0.17 0.2975">
       <geom type="mesh" mesh="cube_mesh" material="dexcube" contype="0" conaffinity="0" density="0" group="2"/>
       <geom type="box" size=".035 .035 .035" mass=".108" group="3"/>
     </body>
   </worldbody>
+
+  <include file="reorientation_cube.xml"/>
+
+  <!-- No wrist actuators: TesolloCubeReorient / TesolloCubeRotateZAxis keep only
+       the 20 finger joints, and the env strips the wrist DOFs from the spec. -->
+  <actuator>
+    <include file="tesollo_finger_actuators.xml"/>
+  </actuator>
 
   <sensor>
     <!-- cube. -->
@@ -46,7 +46,7 @@
     <framepos name="rl_dg_3_tip_c_position" objtype="site" objname="rl_dg_3_tip_c" reftype="site" refname="grasp_site"/>
     <framepos name="rl_dg_4_tip_c_position" objtype="site" objname="rl_dg_4_tip_c" reftype="site" refname="grasp_site"/>
     <framepos name="rl_dg_5_tip_c_position" objtype="site" objname="rl_dg_5_tip_c" reftype="site" refname="grasp_site"/>
-    
+
     <framepos name="rl_dg_1_tip_c_position_global" objtype="site" objname="rl_dg_1_tip_c"/>
     <framepos name="rl_dg_2_tip_c_position_global" objtype="site" objname="rl_dg_2_tip_c"/>
     <framepos name="rl_dg_3_tip_c_position_global" objtype="site" objname="rl_dg_3_tip_c"/>
@@ -58,24 +58,6 @@
     <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
   </sensor>
 
-  <!-- <keyframe>
-    <key name="home"
-      qpos="
-      0.3 0 0.8 0.8
-      0.8 0 0.8 0.8
-      0.8 0 0.8 0.8
-      0.8 0.8 0.8 0
-      0.8 0.8 0.8 0
-      0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
-      ctrl="
-      0.8 0 0.8 0.8
-      0.8 0 0.8 0.8
-      0.8 0 0.8 0.8
-      0.8 0 0.8 0.8
-      0.8 0.8 0.8 0" mpos="0.25 0.16 0"
-      mquat="1 0 0 0"/>
-  </keyframe> -->
-
   <keyframe>
     <key name="home"
       qpos="
@@ -84,30 +66,13 @@
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
       0.1 0.47 1.1 0.5
-      0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
+      0.1 0.0 0.30 0.810967 -0.00262895 -0.585086 -0.000254303"
       ctrl="
       0.06 -0.6 0.6 0.6
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
-      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0"
+      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0.25"
       mquat="1 0 0 0"/>
   </keyframe>
-  <!-- <keyframe>
-    <key name="home"
-      qpos="
-      0.5 -1.5 0.2 0.2
-      0. 0.4 0.2 0.4
-      0. 0.4 0.2 0.4
-      0. 0.4 0.2 0.4
-      0.4 0.3 0.4 0.9
-      0.1 0.0 0.05 0.810967 -0.00262895 -0.585086 -0.000254303"
-      ctrl="
-      0.5 -1.5 0.2 0.2
-      0. 0.4 0.2 0.4
-      0. 0.4 0.2 0.4
-      0. 0.4 0.2 0.4
-      0.4 0.3 0.4 0.9" mpos="0.25 0.16 0"
-      mquat="1 0 0 0"/>
-  </keyframe> -->
 </mujoco>

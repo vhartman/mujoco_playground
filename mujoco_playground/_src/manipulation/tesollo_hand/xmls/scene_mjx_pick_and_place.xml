@@ -1,15 +1,14 @@
-<mujoco model="tesollo_scene">
+<mujoco model="tesollo_pick_and_place">
   <include file="scene_base.xml"/>
 
-  <statistic center="0. 0 0" extent="0.4" meansize="0.01"/>
+  <custom>
+    <numeric name="contact_sensor_maxmatch" data="105"/>
+  </custom>
 
-  <default>
-    <default class="cube">
-      <geom friction=".3 0.05" conaffinity="2" condim="3"/>
-    </default>
-  </default>
+  <statistic center="0.14 0.09 0.18" extent="0.5" meansize="0.01"/>
 
   <asset>
+    <material name="table" rgba="0.82 0.71 0.55 1"/>
     <model name="tesollo_hand" file="tesollo_hand.xml"/>
   </asset>
 
@@ -23,15 +22,30 @@
       <joint name="rj_wrist_1_3" pos="0 0 0" axis="0 0 1" range="-1.6 1.6" actuatorfrcrange="-15 15" damping="2" armature="0.149376" frictionloss="0.2"/>
       <attach model="tesollo_hand" body="rh" prefix=""/>
     </body>
-    <body name="goal" mocap="true" pos="0.325 0.17 0.2975">
-      <geom type="box" size=".035 .035 .035" mass=".108" group="2" contype="0" conaffinity="0"/>
+
+    <body name="table" pos="0.32 0.15 0.0375">
+      <geom name="table_top" type="box" size="0.0925 0.0925 0.0375" material="table" contype="1" conaffinity="1"/>
     </body>
-    <body name="cube" pos="0.0 0.0 0.04" quat="1 0 0 0" childclass="cube">
-      <freejoint name="cube_freejoint"/>
-      <geom name="cube" type="box" size=".035 .035 .035" mass=".0508" group="2"/>
-      <site name="cube_center" pos="0 0 0" group="4"/>
+
+    <body name="goal" mocap="true" pos="0.325 0.17 0.11">
+      <geom type="mesh" mesh="cube_mesh" material="cube" contype="0" conaffinity="0" density="0" group="2"/>
+      <geom type="box" size=".035 .035 .035" mass=".108" group="3" contype="0" conaffinity="0"/>
     </body>
   </worldbody>
+
+  <include file="reorientation_cube.xml"/>
+
+  <actuator>
+    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
+    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
+
+    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
+    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
+
+    <include file="tesollo_finger_actuators.xml"/>
+  </actuator>
 
   <sensor>
     <!-- cube. -->
@@ -53,39 +67,35 @@
     <!-- goal. -->
     <framequat name="cube_goal_orientation" objtype="body" objname="goal"/>
     <framezaxis name="cube_goal_upvector" objtype="body" objname="goal"/>
+
+    <!-- contact forces: full hand vs cube, then per fingertip vs cube. -->
+    <contact name="cube_force" geom1="cube" subtree2="rh" num="70" data="force"/>
+    <contact name="rl_dg_1_tip_cube_force" geom1="rl_dg_1_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_2_tip_cube_force" geom1="rl_dg_2_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_3_tip_cube_force" geom1="rl_dg_3_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_4_tip_cube_force" geom1="rl_dg_4_tip" geom2="cube" num="4" data="force"/>
+    <contact name="rl_dg_5_tip_cube_force" geom1="rl_dg_5_tip" geom2="cube" num="4" data="force"/>
   </sensor>
-
-  <actuator>
-    <position kp="400" kv="100" name="wrist_tx" joint="rj_wrist_0_1" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="wrist_ty" joint="rj_wrist_0_2" ctrlrange="-0.5 0.5"/>
-    <position kp="50"  kv="20"  name="wrist_tz" joint="rj_wrist_0_3" ctrlrange="-0.5 0.5"/>
-
-    <position kp="5"  kv="1" name="wrist_rx" joint="rj_wrist_1_1" ctrlrange="-1.6 1.6"/>
-    <position kp="10" kv="1" name="wrist_ry" joint="rj_wrist_1_2" ctrlrange="-1.6 1.6"/>
-    <position kp="10" kv="1" name="wrist_rz" joint="rj_wrist_1_3" ctrlrange="-1.6 1.6"/>
-
-    <include file="tesollo_finger_actuators.xml"/>
-  </actuator>
 
   <keyframe>
     <key name="home"
       qpos="
-      0.05 0 -0.05
-      0 0.38 0
+      0.02 0 -0.05 0 0.38 0
       0.06 -1.56 0.0 0.0
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
       0.1 0.47 1.1 0.5
 
-      0.0 0.0 0.05 1 0 0 0"
+      0.0 0.0 0.035 1 0 0 0"
       ctrl="
-      0.05 0 -0.05 0 0.38 0
+      0.02 0 -0.05 0 0.38 0
       0.06 -1.56 0.0 0.0
       -0.1 0.67 0.5 0.5
       0. 0.68 0.62 0.56
       0.1 0.6 0.46 0.6
-      0.1 0.47 1.1 0.5" mpos="0.25 0.16 0.25"
+      0.1 0.47 1.1 0.5"
+      mpos="0.325 0.17 0.11"
       mquat="1 0 0 0"/>
   </keyframe>
 </mujoco>

@@ -515,7 +515,7 @@ def main(argv):
                     quat_diff = mujoco.mjx._src.math.quat_mul(
                         cube_ori, mujoco.mjx._src.math.quat_inv(cube_goal_ori)
                     )
-                    print(2.0 * jp.asin(jp.clip(mujoco.mjx._src.math.norm(quat_diff[1:]), a_max=1.0)))
+                    print(2.0 * jp.asin(jp.clip(mujoco.mjx._src.math.norm(quat_diff[1:]), max=1.0)))
                     xmat_diff = mujoco.mjx._src.math.quat_to_mat(quat_diff).ravel()[3:]
 
                     cube_ori_error = xmat_diff

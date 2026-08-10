@@ -434,7 +434,7 @@ class CubeReorient(tesollo_hand_base.TesolloHandEnv):
         cube_goal_ori = self.get_cube_goal_orientation(data)
         quat_diff = math.quat_mul(cube_ori, math.quat_inv(cube_goal_ori))
         quat_diff = math.normalize(quat_diff)
-        return 2.0 * jp.asin(jp.clip(math.norm(quat_diff[1:]), a_max=1.0))
+        return 2.0 * jp.asin(jp.clip(math.norm(quat_diff[1:]), max=1.0))
 
     def _cube_lin_velocity(self, data: mjx.Data):
         return math.norm(self.get_cube_linvel(data))
