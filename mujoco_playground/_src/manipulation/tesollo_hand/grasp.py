@@ -138,7 +138,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         )
         v_hand = 0.0 * jax.random.normal(vel_rng, (consts.NV,))
 
-        # Randomize the cube pose around the scene's home position.
         rng, p_rng = jax.random.split(rng)
         start_pos = self._cube_init[:3] + 0.1 * jax.random.uniform(
             p_rng, (3,), minval=-0.01, maxval=0.01
@@ -174,8 +173,7 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
             minval=self._config.pert_config.pert_duration_steps[0],
             maxval=self._config.pert_config.pert_duration_steps[1],
         )
-        # Sub-split so the linear and angular magnitudes are independent; drawing
-        # both from pert3 made them the same uniform sample in two ranges.
+        # Independent draws; one key gave both the same sample.
         pert_lin_rng, pert_ang_rng = jax.random.split(pert3)
         pert_lin = jax.random.uniform(
             pert_lin_rng,
@@ -525,10 +523,8 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         self, state: mjx_env.State, rng: jax.Array
     ) -> mjx_env.State:
         def gen_dir(rng: jax.Array) -> jax.Array:
-            # Normalize the linear and angular halves separately. Over all six
-            # components at once they share one unit budget, so a mostly-linear
-            # kick is barely rotational and neither reaches the magnitude named
-            # in pert_vel (the linear part averages sqrt(3/6) of it).
+            # Halves normalized separately; over all six they share one
+            # unit budget, so neither reaches the magnitude in pert_vel.
             lin_rng, ang_rng = jax.random.split(rng)
             lin = jax.random.normal(lin_rng, (3,))
             ang = jax.random.normal(ang_rng, (3,))

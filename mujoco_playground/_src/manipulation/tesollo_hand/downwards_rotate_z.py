@@ -54,19 +54,13 @@ def default_config() -> config_dict.ConfigDict:
         action_repeat=1,
         ema_alpha=1.0,
         episode_length=150,
-        # What the goal is and what counts as reaching it, i.e. the dials that
-        # set task difficulty. Widen the angle range or tighten the tolerance to
-        # make the task harder.
+        # Task difficulty: the goal and what counts as reaching it.
         task=config_dict.create(
-            # Goal rotation about world z is drawn from this angle range...
             min_target_angle=float(np.deg2rad(0.0)),
             max_target_angle=float(np.deg2rad(90.0)),
-            # ...in either direction when symmetric_target, else positive only.
-            symmetric_target=True,
-            # Counts as at-target within this orientation error, ...
+            symmetric_target=True,  # goal in either direction, else positive
             ori_tolerance_rad=float(np.deg2rad(3.0)),
-            # ...and as a success once held there this long (seconds).
-            target_hold_time=0.25,
+            target_hold_time=0.25,  # seconds in tolerance to count a success
         ),
         sensor_bundle="proprio.target",
         obs_noise=config_dict.create(
@@ -105,10 +99,7 @@ def default_config() -> config_dict.ConfigDict:
         ),
         constrain_wrist_translation=False,
         terminate_on_redrop=False,
-        # Terminate when the cube's xy distance from the origin exceeds this
-        # radius (m). 0 disables. Without it only NaNs terminate, so an episode
-        # whose cube was batted out of reach grinds out its full length.
-        cube_oob_radius=0.0,
+        cube_oob_radius=0.0,  # terminate past this xy radius (m); 0 disables
         impl="warp",
         nconmax=200 * 8192,
         njmax=2200,
@@ -473,10 +464,7 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
 
         state.info["ori_error"] = ori_error
 
-        # round() before the int cast: float division can land just below the
-        # integer (0.3/0.05 -> 5.999...) and a bare int cast truncates. `>=`
-        # (matching the pinch env) makes the configured hold time exact:
-        # 0.25 s / 0.05 s = 5 in-tolerance steps, where `>` required 6.
+        # round() before the cast: 0.3/0.05 is 5.999... and int() truncates.
         hold_steps = jp.round(
             self._config.task.target_hold_time / self.dt
         ).astype(jp.int32)
@@ -574,19 +562,15 @@ class DownwardsRotateZ(tesollo_hand_base.TesolloHandGraspEnv):
         cube_pos = self.get_cube_position(data)
         cube_ori_error = info["ori_error"]
         floor_support_fraction = self._cube_floor_support_fraction(data)
-        # Smooth lift gate in [0, 1]: 0 while the cube rests fully on the floor,
-        # ramping to 1 as the hand takes its weight. Replaces a hard on/off
-        # contact flag so the orientation reward fades in continuously instead of
-        # snapping, which removes a discontinuity in the return.
+        # Lift gate in [0, 1]: 0 while the floor bears the cube, 1 once the hand
+        # does. Continuous, so the orientation reward fades in without a jump.
         lift_gate = 1.0 - floor_support_fraction
 
         fingertip_distances = jp.linalg.norm(
             self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos, axis=1
         )
-        # Score the distance BEYOND this env's (DR'd) cube surface: tolerance()
-        # rejects traced bounds, and for dist >= 0 this is identical to
-        # bounds=(0, half). The nominal half-size would be wrong per env under
-        # cube-size DR.
+        # Distance beyond this env's DR'd cube surface: tolerance() rejects
+        # traced bounds, and for dist >= 0 this equals bounds=(0, half).
         half = self.mjx_model.geom_size[self._cube_geom_id, 0]
         per_tip = reward.tolerance(
             jp.maximum(fingertip_distances - half, 0.0),

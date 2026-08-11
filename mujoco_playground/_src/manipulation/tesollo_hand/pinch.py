@@ -66,10 +66,7 @@ def default_config() -> config_dict.ConfigDict:
             frequency_log2_range=[0.0, 0.0],
             amplitude_scale_range=[0.0, 0.0],
         ),
-        # Gaussian width of the force-tracking reward, in Newtons. Constant, so
-        # equal absolute error costs equal reward at every target; the default
-        # matches the width the old target-relative form had at mid-range.
-        force_reward_margin=3.5,
+        force_reward_margin=3.5,  # Gaussian width of the force reward (N)
         obs_noise=config_dict.create(
             level=0.0,
             scales=config_dict.create(
@@ -179,9 +176,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         """Override actuator PID gains from config, replacing XML-baked values."""
         cfg = self._config.pid_gains
         nu = self._mj_model.nu
-        # Writes EVERY actuator; valid only in the reduced pinch scene where all
-        # actuators are thumb+index fingers. Guard against silently clobbering
-        # wrist gains (kp 400/50, kv 100/20) if reused in a fuller scene.
+        # Writes every actuator, so only valid in the finger-only scene.
         assert nu == consts.N_ACTIVE, (
             f"pid_gains overrides all {nu} actuators; expected the reduced"
             f" finger-only scene with {consts.N_ACTIVE}"
@@ -269,13 +264,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         ("rl_dg_1_tip_cube_force", "rl_dg_1_tip_2_cube_force"),  # thumb
         ("rl_dg_2_tip_cube_force", "rl_dg_2_tip_2_cube_force"),  # index
     )
-    # All four per-geom cube-contact sensors (thumb tip+pad, index tip+pad),
-    # flattened from _FINGER_FORCE_SENSORS so there is a single source of truth.
-    # Its length sets the fingertip_forces obs size (4): each tip geom is its own
-    # channel rather than summed per finger.
-    # NOTE: with the current geometry the box-pad (tip_2) geoms sit recessed
-    # behind the spheres and read ~0 in a pinch, so two of these channels are
-    # near-zero until the pads are repositioned (geometry left unchanged for now).
+    # One channel per tip geom, so len() is the fingertip_forces obs size (4).
+    # The box-pad (tip_2) geoms sit recessed and read ~0 in a pinch.
     _TIP_FORCE_SENSORS: list[str] = [s for g in _FINGER_FORCE_SENSORS for s in g]
 
     def _task_obs_keys(self) -> tuple[str, ...]:
@@ -426,10 +416,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
 
         ft_cfg = self._config.force_target
         force_rng, phase_rng = jax.random.split(force_rng)
-        # Sinusoid shape for this episode. Whether a range is active is decided
-        # from the (static) config at trace time, so a run that leaves both
-        # ranges degenerate draws exactly the RNG it drew before these keys
-        # existed and reproduces bit-for-bit.
+        # Per-episode sinusoid shape. Whether a range is active is decided from
+        # the static config at trace time, so degenerate ranges draw no RNG.
         freq_lo, freq_hi = ft_cfg.frequency_log2_range
         if freq_hi > freq_lo:
             phase_rng, freq_rng = jax.random.split(phase_rng)
@@ -570,11 +558,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         self, data: mjx.Data
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         cube_pos = self.get_cube_position(data)
-        # Welded cube: measure drift against this env's own (possibly
-        # cube_pos-DR-offset) body position, not the nominal model's, so a DR
-        # offset cannot eat into the 0.15 m budget and instantly terminate the
-        # env. xy is untouched by size DR, so values are identical when
-        # cube_pos DR is off. Free cube: the spawn is the nominal keyframe pos.
+        # Drift is measured against this env's own body position, so a cube_pos
+        # DR offset does not eat into the budget and terminate immediately.
         if self._config.weld_cube:
             ref_xy = self.mjx_model.body_pos[self._cube_body_id, :2]
         else:
@@ -611,10 +596,8 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         cube_pos = self.get_cube_position(data)
         tips = self.get_fingertip_global_positions(data).reshape(-1, 3)
         reach_dists = jp.linalg.norm(tips - cube_pos, axis=1)
-        # Score the distance BEYOND this env's (DR'd) cube surface: tolerance()
-        # rejects traced bounds, and for dist >= 0 this is identical to
-        # bounds=(0, half). Using the nominal half-size instead would be up to
-        # 15% off per env under cube-size DR.
+        # Distance beyond this env's DR'd cube surface: tolerance() rejects
+        # traced bounds, and for dist >= 0 this equals bounds=(0, half).
         half = self.mjx_model.geom_size[self._cube_geom_id, 0]
         per_tip = reward.tolerance(
             jp.maximum(reach_dists - half, 0.0),

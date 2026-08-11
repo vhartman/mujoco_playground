@@ -26,8 +26,6 @@ def _body_pose_in_parent_frame(
     return pos_rel, quat_rel
 
 
-
-
 def _joint_owner_bodies(model: mujoco.MjModel, joint_names) -> list[str]:
     """Names of the bodies driven by `joint_names`, in model order."""
     owners = []
@@ -59,15 +57,12 @@ class SceneBuilder:
     ) -> mujoco.MjSpec:
         """Return a modified MjSpec with the requested joints/actuators removed.
 
-        Removing a joint drops whatever displacement it currently supplies, so
-        the body it drives is first pinned at its keyframe pose: its world pose
-        is written back as parent-relative pos/quat. Those bodies are derived
-        from `joints_to_remove`, so the caller cannot forget one; extra bodies
-        can still be pinned via `bodies_to_bake`.
+        Bodies driven by a removed joint are first pinned at their keyframe
+        pose, since removing the joint drops the displacement it supplied. They
+        are derived from `joints_to_remove`; `bodies_to_bake` pins extra ones.
 
-        Returns MjSpec directly to avoid the to_xml() → from_string() roundtrip,
-        which can fail when the spec merges multiple model assets with conflicting
-        default class hierarchies.
+        Returns MjSpec directly: the to_xml() -> from_string() roundtrip can
+        fail when merged model assets have conflicting default classes.
         """
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         model = spec.compile()

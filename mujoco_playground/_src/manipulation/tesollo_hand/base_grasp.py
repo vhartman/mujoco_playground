@@ -169,10 +169,7 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
       bias[key] = scale * jax.random.normal(rk, (size,))
     return bias
 
-  # ------------------------------------------------------------------
-  # Obs component implementations, bound into ObsComponents above so that
-  # _build_obs can call them uniformly as (data, info) -> jax.Array.
-  # ------------------------------------------------------------------
+  # Obs component implementations: (data, info) -> jax.Array.
 
   _TIP_FORCE_SENSORS: list[str] = []
 
