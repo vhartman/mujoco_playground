@@ -167,6 +167,20 @@ _ENV_OVERRIDES_FILE = flags.DEFINE_string(
     "YAML file of flat-dotted env-config overrides (e.g. 'obs_noise.level: 2.0'),"
     " applied on top of the env's default_config.",
 )
+_FULL_RESET = flags.DEFINE_boolean(
+    "full_reset",
+    False,
+    "Call env.reset() on every episode end instead of reverting to a cached"
+    " first state, so quantities drawn per episode in reset() (a force target, a"
+    " goal angle) are resampled. Without it reset() runs once per env for the"
+    " whole run.",
+)
+_NUM_RESETS_PER_EVAL = flags.DEFINE_integer(
+    "num_resets_per_eval",
+    None,
+    "Override ppo num_resets_per_eval. 0 keeps the training envs, and any state"
+    " they carry, across evals.",
+)
 
 
 def _cli_overrides() -> dict:
@@ -285,9 +299,6 @@ def main(argv):
       _ENV_NAME.value, config=env_cfg, config_overrides=env_overrides
   )
 
-  # ppo_params took episode_length from the env's *default* config, so an
-  # override would otherwise train at the default length. An explicit
-  # --episode_length still wins.
   if not _EPISODE_LENGTH.present:
     ppo_params.episode_length = env_cfg.episode_length
   if _RUN_EVALS.present:
@@ -296,6 +307,8 @@ def main(argv):
     ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
   if _TRAINING_METRICS_STEPS.present:
     ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
+  if _NUM_RESETS_PER_EVAL.present:
+    ppo_params.num_resets_per_eval = _NUM_RESETS_PER_EVAL.value
 
   cli_overrides = _cli_overrides()
   print(f"Environment Config:\n{env_cfg}")
@@ -404,7 +417,9 @@ def main(argv):
       seed=_SEED.value,
       restore_checkpoint_path=restore_checkpoint_path,
       save_checkpoint_path=ckpt_path,
-      wrap_env_fn=None if _VISION.value else wrapper.wrap_for_brax_training,
+      wrap_env_fn=None if _VISION.value else functools.partial(
+          wrapper.wrap_for_brax_training, full_reset=_FULL_RESET.value
+      ),
       num_eval_envs=num_eval_envs,
   )
 
