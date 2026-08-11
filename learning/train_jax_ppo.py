@@ -14,12 +14,17 @@
 # ==============================================================================
 """Train a PPO agent using JAX on the specified environment."""
 
+import gl_env  # noqa: F401  -- must precede the mujoco and jax imports
+
 import datetime
 import functools
 import json
 import os
+import sys
 import time
 import warnings
+
+import yaml
 
 from absl import app
 from absl import flags
@@ -43,12 +48,6 @@ from mujoco_playground.config import manipulation_params
 import tensorboardX
 import wandb
 
-
-xla_flags = os.environ.get("XLA_FLAGS", "")
-xla_flags += " --xla_gpu_triton_gemm_any=True"
-os.environ["XLA_FLAGS"] = xla_flags
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["MUJOCO_GL"] = "egl"
 
 # Ignore the info logs from brax
 logging.set_verbosity(logging.WARNING)
@@ -162,6 +161,21 @@ _TRAINING_METRICS_STEPS = flags.DEFINE_integer(
     "Number of steps between logging training metrics. Increase if training"
     " experiences slowdown.",
 )
+_ENV_OVERRIDES_FILE = flags.DEFINE_string(
+    "env_overrides_file",
+    None,
+    "YAML file of flat-dotted env-config overrides (e.g. 'obs_noise.level: 2.0'),"
+    " applied on top of the env's default_config.",
+)
+
+
+def _cli_overrides() -> dict:
+  """{flag: value} for every flag of this script the user set explicitly."""
+  return {
+      h.name: h.value
+      for h in globals().values()
+      if isinstance(h, flags.FlagHolder) and h.present
+  }
 
 
 def get_rl_config(env_name: str) -> config_dict.ConfigDict:
@@ -206,7 +220,8 @@ def main(argv):
 
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)
-  env_cfg["impl"] = _IMPL.value
+  if _IMPL.present:
+    env_cfg["impl"] = _IMPL.value
 
   ppo_params = get_rl_config(_ENV_NAME.value)
 
@@ -261,7 +276,20 @@ def main(argv):
   if _VISION.value:
     env_cfg.vision = True
     env_cfg.vision_config.render_batch_size = ppo_params.num_envs
-  env = registry.load(_ENV_NAME.value, config=env_cfg)
+  env_overrides = None
+  if _ENV_OVERRIDES_FILE.value:
+    with open(_ENV_OVERRIDES_FILE.value, "r", encoding="utf-8") as f:
+      env_overrides = yaml.safe_load(f)
+
+  env = registry.load(
+      _ENV_NAME.value, config=env_cfg, config_overrides=env_overrides
+  )
+
+  # ppo_params took episode_length from the env's *default* config, so an
+  # override would otherwise train at the default length. An explicit
+  # --episode_length still wins.
+  if not _EPISODE_LENGTH.present:
+    ppo_params.episode_length = env_cfg.episode_length
   if _RUN_EVALS.present:
     ppo_params.run_evals = _RUN_EVALS.value
   if _LOG_TRAINING_METRICS.present:
@@ -269,8 +297,12 @@ def main(argv):
   if _TRAINING_METRICS_STEPS.present:
     ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
 
+  cli_overrides = _cli_overrides()
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
+  print(f"CLI overrides: {json.dumps(cli_overrides, indent=2, default=str)}")
+  if env_overrides:
+    print(f"Env overrides from {_ENV_OVERRIDES_FILE.value}:\n{env_overrides}")
 
   # Generate unique experiment name
   now = datetime.datetime.now()
@@ -290,6 +322,8 @@ def main(argv):
     wandb.init(project="mjxrl", name=exp_name)
     wandb.config.update(env_cfg.to_dict())
     wandb.config.update({"env_name": _ENV_NAME.value})
+    if cli_overrides:
+      wandb.config.update({"run_overrides": cli_overrides})
 
   # Initialize TensorBoard if required
   if _USE_TB.value and not _PLAY_ONLY.value:
