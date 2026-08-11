@@ -717,19 +717,18 @@ def _get_scene_ids():
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):
-    """Registry entry point, kept so the registry has an entry for this env.
+    """Registry entry point: randomize with the ranges from default_config().
 
-    Domain randomization is per-instance here: the ranges live in
-    config.domain_rand, so a module-level function cannot know which env it is
-    being asked about. Callers must use CubePinch.domain_randomizer, the
-    instance-bound closure over that env's own config, which train_jax_ppo
-    prefers whenever an env provides it.
+    Same implementation as CubePinch.domain_randomizer, which is what callers
+    holding an env should use: the ranges live in config.domain_rand, so only
+    the instance knows whether they were overridden. This module-level form has
+    no instance to ask and therefore states the defaults.
     """
-    del model, rng
-    raise NotImplementedError(
-        "CubePinch randomizes from config.domain_rand; use "
-        "env.domain_randomizer instead of the module-level domain_randomize."
-    )
+    return _domain_randomize_impl(model, rng, _default_dr_spec())
+
+
+def _default_dr_spec() -> dict[str, list[float]]:
+    return {k: list(v) for k, v in default_config().domain_rand.items()}
 
 
 def _domain_randomize_impl(model: mjx.Model, rng: jax.Array, spec):

@@ -338,9 +338,12 @@ def main(argv):
     network_factory = network_fn
 
   if _DOMAIN_RANDOMIZATION.value:
-    training_params["randomization_fn"] = registry.get_domain_randomizer(
-        _ENV_NAME.value
-    )
+    # Prefer an env-bound randomizer: envs whose ranges live in their config
+    # (e.g. pinch's domain_rand block) cannot be randomized by a module-level
+    # function, which has no way to know which env instance it is serving.
+    training_params["randomization_fn"] = getattr(
+        env, "domain_randomizer", None
+    ) or registry.get_domain_randomizer(_ENV_NAME.value)
 
   if _VISION.value:
     env = wrapper.wrap_for_brax_training(
