@@ -36,6 +36,7 @@ from mujoco_playground._src.manipulation.tesollo_hand import reorient_wrist as t
 from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_reach
 
 from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
+from mujoco_playground._src.manipulation.tesollo_hand import pinch as tesollo_pinch
 
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
@@ -64,6 +65,7 @@ _envs = {
     "TesolloKeyboardReach": tesollo_reach.KeyboardReach,
 
     "TesolloGrasp": tesollo_grasp.Grasp,
+    "TesolloCubePinch": tesollo_pinch.CubePinch,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -91,6 +93,7 @@ _cfgs = {
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.default_config,
     "TesolloKeyboardReach": tesollo_reach.default_config,
     "TesolloGrasp": tesollo_grasp.default_config,
+    "TesolloCubePinch": tesollo_pinch.default_config,
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
@@ -110,6 +113,7 @@ _randomizer = {
     "TesolloCubeRotateZAxis": tesollo_rotate_z.domain_randomize,
     "TesolloWristCubeReorient": tesollo_wrist_cube_reorient.domain_randomize,
     "TesolloGrasp": tesollo_grasp.domain_randomize,
+    "TesolloCubePinch": tesollo_pinch.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 

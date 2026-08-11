@@ -148,8 +148,11 @@ def validate_spec(
             f"Obs keys {missing} not found in env obs_components. "
             f"Available: {sorted(obs_components)}"
         )
-    stale_noise_keys = set(noise_scales.keys()) - set(all_keys)
-    if stale_noise_keys:
+    # Only flag names that are not obs components at all, i.e. typos. A config
+    # that declares noise for every channel and selects a subset via the bundle
+    # is the normal case when sweeping bundles.
+    unknown_noise_keys = set(noise_scales.keys()) - set(obs_components)
+    if unknown_noise_keys:
         warnings.warn(
-            f"obs_noise.scales has keys not in active obs spec: {stale_noise_keys}"
+            f"obs_noise.scales names unknown obs keys: {sorted(unknown_noise_keys)}"
         )
