@@ -47,9 +47,6 @@ def default_config() -> config_dict.ConfigDict:
         obs_noise=config_dict.create(
             level=1.0,
             scales=config_dict.create(
-                # joint_pos=0.025,
-                # cube_pos=0.005,
-                # cube_ori=0.05,
                 joint_pos=0.0,
                 cube_pos=0.0,
                 cube_ori=0.0,
@@ -94,9 +91,11 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
 
     def __init__(
         self,
-        config: config_dict.ConfigDict = default_config(),
+        config: config_dict.ConfigDict = None,
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
+        if config is None:
+            config = default_config()
         super().__init__(
             xml_path=consts.SCENE_XML.as_posix(),
             config=config,
@@ -125,8 +124,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
 
         self._cube_init = self._init_q[self._cube_qids]
 
-        print(self._init_q)
-
     def reset(self, rng: jax.Array) -> mjx_env.State:
         # Randomize the goal orientation.
         rng, goal_rng = jax.random.split(rng)
@@ -134,7 +131,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
 
         # Randomize the hand pose.
         rng, pos_rng, vel_rng = jax.random.split(rng, 3)
-        # q_hand = self._default_pose
         q_hand = jp.clip(
             self._default_pose + 0.1 * jax.random.normal(pos_rng, (consts.NQ,)),
             self._lowers,
@@ -142,20 +138,17 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         )
         v_hand = 0.0 * jax.random.normal(vel_rng, (consts.NV,))
 
-        # jax.debug.print("{x}", x=q_hand)
-
-        # Randomize the cube pose.
-        rng, p_rng, quat_rng = jax.random.split(rng, 3)
-        start_pos = jp.array([0.0, 0.0, -0.2]) + 0.1 * jax.random.uniform(
+        # Randomize the cube pose around the scene's home position.
+        rng, p_rng = jax.random.split(rng)
+        start_pos = self._cube_init[:3] + 0.1 * jax.random.uniform(
             p_rng, (3,), minval=-0.01, maxval=0.01
         )
-        # start_quat = tesollo_hand_base.uniform_quat(quat_rng)
         q_cube = jp.array([*start_pos, *self._cube_init[3:]])
         v_cube = jp.zeros(6)
 
         qpos = jp.concatenate([q_hand, q_cube])
         qvel = jp.concatenate([v_hand, v_cube])
-        
+
         data = mjx_env.make_data(
             self._mj_model,
             qpos=qpos,
@@ -181,13 +174,16 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
             minval=self._config.pert_config.pert_duration_steps[0],
             maxval=self._config.pert_config.pert_duration_steps[1],
         )
+        # Sub-split so the linear and angular magnitudes are independent; drawing
+        # both from pert3 made them the same uniform sample in two ranges.
+        pert_lin_rng, pert_ang_rng = jax.random.split(pert3)
         pert_lin = jax.random.uniform(
-            pert3,
+            pert_lin_rng,
             minval=self._config.pert_config.linear_velocity_pert[0],
             maxval=self._config.pert_config.linear_velocity_pert[1],
         )
         pert_ang = jax.random.uniform(
-            pert3,
+            pert_ang_rng,
             minval=self._config.pert_config.angular_velocity_pert[0],
             maxval=self._config.pert_config.angular_velocity_pert[1],
         )
@@ -247,8 +243,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         cube_lin_vel = self._cube_lin_velocity(data)
         cube_ang_vel = self._cube_ang_velocity(data)
         
-        # hand_qvel = data.qvel[self._hand_dqids]
-        # hand_qvel_norm = jp.sum(hand_qvel ** 2)
 
         cube_height = self.get_cube_position(data)[2]
 
@@ -257,7 +251,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
             & (cube_goal_error < 0.05)
             & (cube_lin_vel < self._config.vel_threshold)
             & (cube_ang_vel < self._config.ang_vel_threshold)
-            # & (hand_qvel_norm < self._config.joint_vel_threshold)
         )
         state.info["steps_since_last_success"] = jp.where(
             success, 0, state.info["steps_since_last_success"] + 1
@@ -309,7 +302,6 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
 
     def _get_termination(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         del info  # Unused.
-        # fall_termination = self.get_cube_position(data)[2] < -0.05
         nans = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
         return nans
 
@@ -442,17 +434,15 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         cube_goal_reward = reward.tolerance(
             cube_goal_error, (0, 0.02), margin=0.3, sigmoid="linear"
         )
-        cube_height_reward = jp.clip(cube_pos[2] + 0.21, 0, 0.15)
+        cube_height_reward = jp.clip(cube_pos[2] - self._cube_init[2], 0, 0.15)
 
         fingertip_distances = self.get_fingertip_positions(data).reshape(-1, 3) - cube_pos
-        # fingertip_reward = jp.sum(jp.linalg.norm(fingertip_distances, axis=1))
         fingertip_reward = jp.sum(
             reward.tolerance(
                 jp.linalg.norm(fingertip_distances, axis=1), (0, 0.035), margin=0.1, sigmoid="reciprocal"
             )
         )
 
-        # jax.debug.print("{x}", x=fingertip_distances)
 
         palm_distance = self.get_palm_position(data) - cube_pos
         palm_reward = jp.linalg.norm(palm_distance)
@@ -535,8 +525,17 @@ class Grasp(tesollo_hand_base.TesolloHandGraspEnv):
         self, state: mjx_env.State, rng: jax.Array
     ) -> mjx_env.State:
         def gen_dir(rng: jax.Array) -> jax.Array:
-            directory = jax.random.normal(rng, (6,))
-            return directory / jp.linalg.norm(directory)
+            # Normalize the linear and angular halves separately. Over all six
+            # components at once they share one unit budget, so a mostly-linear
+            # kick is barely rotational and neither reaches the magnitude named
+            # in pert_vel (the linear part averages sqrt(3/6) of it).
+            lin_rng, ang_rng = jax.random.split(rng)
+            lin = jax.random.normal(lin_rng, (3,))
+            ang = jax.random.normal(ang_rng, (3,))
+            return jp.concatenate([
+                lin / jp.linalg.norm(lin),
+                ang / jp.linalg.norm(ang),
+            ])
 
         def get_xfrc(
             state: mjx_env.State, pert_dir: jax.Array, i: jax.Array
