@@ -330,6 +330,24 @@ def brax_ppo_config(
         value_obs_key="privileged_state",
     )
     rl_config.num_resets_per_eval = 1
+  elif env_name == "TesolloDownwardsRotateZ":
+    rl_config.num_timesteps = 1_000_000_000
+    rl_config.num_evals = 20
+    rl_config.num_minibatches = 64
+    rl_config.unroll_length = 40
+    rl_config.num_updates_per_batch = 4
+    rl_config.discounting = 0.99
+    rl_config.learning_rate = 1e-4
+    rl_config.entropy_cost = 5e-3
+    rl_config.num_envs = 8192
+    rl_config.batch_size = 256
+    rl_config.network_factory = config_dict.create(
+        policy_hidden_layer_sizes=(512, 256, 128),
+        value_hidden_layer_sizes=(512, 256, 128),
+        policy_obs_key="state",
+        value_obs_key="privileged_state",
+    )
+    rl_config.num_resets_per_eval = 1
   elif env_name == "TesolloCubePinch":
     rl_config.num_timesteps = 500_000_000
     rl_config.num_evals = 10
