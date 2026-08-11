@@ -139,7 +139,10 @@ class BraxAutoResetWrapper(Wrapper):
       complexity of the reset function.
     * info is fully reset, except for info under the key
       `AutoResetWrapper_preserve_info`, which is passed through from the prior
-      step. This can be used for curriculum learning.
+      step (this can be used for curriculum learning), and the bookkeeping keys
+      owned by the EpisodeWrapper below (`steps`, `truncation`, `episode_done`,
+      `episode_metrics`), which describe the episode that just ended rather than
+      the one being started.
 
   Attributes:
     env: The wrapped environment.
@@ -202,8 +205,9 @@ class BraxAutoResetWrapper(Wrapper):
       next_info = jax.tree.map(where_done, reset_state.info, state.info)
       next_info[done_count_key] = state.info[done_count_key]
 
-      if 'steps' in next_info:
-        next_info['steps'] = state.info['steps']
+      for k in ('steps', 'truncation', 'episode_done', 'episode_metrics'):
+        if k in next_info:
+          next_info[k] = state.info[k]
       preserve_info_key = f'{self._info_key}_preserve_info'
       if preserve_info_key in next_info:
         next_info[preserve_info_key] = state.info[preserve_info_key]
