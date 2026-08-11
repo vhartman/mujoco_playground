@@ -28,6 +28,23 @@ def _body_pose_in_parent_frame(
 
 
 
+def _joint_owner_bodies(model: mujoco.MjModel, joint_names) -> list[str]:
+    """Names of the bodies driven by `joint_names`, in model order."""
+    owners = []
+    for name in joint_names:
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            raise ValueError(f"joint {name!r} not found in the scene")
+        body = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.jnt_bodyid[jid])
+        if not body:
+            raise ValueError(
+                f"joint {name!r} is on an unnamed body, so its pose cannot be "
+                "pinned; give that body a name in the scene XML."
+            )
+        owners.append(body)
+    return owners
+
+
 class SceneBuilder:
     def __init__(self, xml_path: str | Path):
         self._xml_path = Path(xml_path)
@@ -42,9 +59,11 @@ class SceneBuilder:
     ) -> mujoco.MjSpec:
         """Return a modified MjSpec with the requested joints/actuators removed.
 
-        Bodies in `bodies_to_bake` have their current keyframe pose baked into
-        their parent-relative pos/quat before their joints are removed, so they
-        stay in place in the frozen scene.
+        Removing a joint drops whatever displacement it currently supplies, so
+        the body it drives is first pinned at its keyframe pose: its world pose
+        is written back as parent-relative pos/quat. Those bodies are derived
+        from `joints_to_remove`, so the caller cannot forget one; extra bodies
+        can still be pinned via `bodies_to_bake`.
 
         Returns MjSpec directly to avoid the to_xml() → from_string() roundtrip,
         which can fail when the spec merges multiple model assets with conflicting
@@ -58,10 +77,12 @@ class SceneBuilder:
         mujoco.mj_resetDataKeyframe(model, data, key_id)
         mujoco.mj_forward(model, data)
 
-        for body_name in bodies_to_bake:
+        bake = list(bodies_to_bake) + _joint_owner_bodies(model, joints_to_remove)
+        for body_name in dict.fromkeys(bake):
             pos, quat = _body_pose_in_parent_frame(data, model, body_name)
-            spec.worldbody.find_child(body_name).pos = pos
-            spec.worldbody.find_child(body_name).quat = quat
+            body = spec.body(body_name)
+            body.pos = pos
+            body.quat = quat
 
         remove_joints = set(joints_to_remove)
         remove_actuators = set(actuators_to_remove)

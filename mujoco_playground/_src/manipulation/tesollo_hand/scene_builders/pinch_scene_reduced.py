@@ -59,13 +59,10 @@ def build_pinch_spec(weld_cube: bool = True) -> mujoco.MjSpec:
     free rigid body the policy must actively hold.
     """
     joints_to_remove = list(_JOINTS_TO_REMOVE)
-    bodies_to_bake = list(_BODIES_TO_BAKE)
     if not weld_cube:
         joints_to_remove.remove("cube_freejoint")
-        bodies_to_bake.remove("cube")
     return SceneBuilder(consts.SCENE_XML).build_spec(
         keyframe_name="home",
-        bodies_to_bake=bodies_to_bake,
         joints_to_remove=joints_to_remove,
         actuators_to_remove=_ACTUATORS_TO_REMOVE,
     )

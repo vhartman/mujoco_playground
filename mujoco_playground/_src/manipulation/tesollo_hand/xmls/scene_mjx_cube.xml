@@ -13,7 +13,7 @@
   </asset>
 
   <worldbody>
-    <body pos="-0.05 0 0.28" quat="0 1 0 0.8">
+    <body name="hand_mount" pos="-0.05 0 0.28" quat="0 1 0 0.8">
       <attach model="tesollo_hand" body="rh" prefix=""/>
     </body>
     <body name="goal" mocap="true" pos="0.325 0.17 0.2975">
