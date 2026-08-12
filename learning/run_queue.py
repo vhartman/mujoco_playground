@@ -66,6 +66,31 @@ def _expand_param(spec):
     raise ValueError(f"Param spec must have 'values' or 'range': {spec}")
 
 
+def _expand_seeds(spec):
+    """Expand a sweep `seeds` entry to a list of integer seeds.
+
+    Accepts a plain list, or {range: [lo, hi], step: 1} for the inclusive
+    integer range lo..hi — so [4, 8] is five seeds, matching the inclusive
+    endpoints of a param `range`. None means "no seed replication".
+    """
+    if spec is None:
+        return [None]
+    if isinstance(spec, dict):
+        if "range" not in spec:
+            raise ValueError(f"Seed spec must have 'range': {spec}")
+        lo, hi = spec["range"]
+        seeds = list(range(int(lo), int(hi) + 1, int(spec.get("step", 1))))
+    elif isinstance(spec, (list, tuple)):
+        seeds = list(spec)
+    else:
+        raise ValueError(f"Seeds must be a list or a 'range' mapping: {spec}")
+    if not seeds:
+        raise ValueError(f"Seed spec expands to no seeds: {spec}")
+    if not all(isinstance(s, int) for s in seeds):
+        raise ValueError(f"Seeds must be integers, got: {seeds}")
+    return seeds
+
+
 _KEY_ALIASES = {
     "sensor_bundle": "sb",
 }
@@ -116,10 +141,11 @@ def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
     param_value_lists = [_expand_param(params[k]) for k in param_keys]
     combos = [dict(zip(param_keys, combo)) for combo in itertools.product(*param_value_lists)]
 
-    # Optional replication: `seeds: [0, 1, 2]` multiplies every param combo
-    # across seeds, setting the --seed flag and appending an -s{seed} suffix.
+    # Optional replication: `seeds: [0, 1, 2]` (or `seeds: {range: [0, 2]}`)
+    # multiplies every param combo across seeds, setting the --seed flag and
+    # appending an -s{seed} suffix.
     # Absent -> single run per combo at the train script's default seed.
-    seeds = sweep.get("seeds")
+    seeds = _expand_seeds(sweep.get("seeds"))
 
     runs = []
     idx = start_idx
@@ -127,7 +153,7 @@ def _expand_sweep(sweep: dict, defaults: dict, start_idx: int) -> list[dict]:
         prefix = _env_prefix(env_name)
         for param_dict in combos:
             param_suffix = "_".join(_param_label(k, v) for k, v in param_dict.items())
-            for seed in (seeds if seeds is not None else [None]):
+            for seed in seeds:
                 suffix = f"{prefix}_{param_suffix}"
                 flags = {**default_flags, "env_name": env_name, "suffix": suffix}
                 if seed is not None:
@@ -222,7 +248,9 @@ def run_one(run: dict, log_dir: pathlib.Path) -> dict:
     exp_name = None
     proc = None
     try:
-        with open(log_path, "w") as log_file:
+        # Line-buffered: tooling tails this log to track the in-flight run, so it
+        # has to be readable before the file closes.
+        with open(log_path, "w", buffering=1) as log_file:
             proc = subprocess.Popen(
                 argv,
                 stdout=subprocess.PIPE,
