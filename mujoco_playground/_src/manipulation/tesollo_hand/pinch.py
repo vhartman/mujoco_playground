@@ -66,7 +66,9 @@ def default_config() -> config_dict.ConfigDict:
             frequency_log2_range=[0.0, 0.0],
             amplitude_scale_range=[0.0, 0.0],
         ),
-        force_reward_margin=3.5,  # Gaussian width of the force reward (N)
+        force_reward_margin=4.5,  # width of the force reward (N)
+        force_reward_sigmoid="reciprocal",  # r = 1/(1 + 2|force_error|)
+        force_reward_contact_gated=True,
         obs_noise=config_dict.create(
             level=0.0,
             scales=config_dict.create(
@@ -335,9 +337,6 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         omega = 2.0 * jp.pi * frequency
         return mid + amp * jp.sin(omega * step * self._config.ctrl_dt + phase)
 
-    # fingertip_forces / fingertip_force_dirs now use the base-class per-sensor
-    # implementations over _TIP_FORCE_SENSORS (the 4 individual tip geoms). The
-    # reward still groups them per finger via _FINGER_FORCE_SENSORS (see step).
 
     def _obs_privileged(self, data: mjx.Data, info: dict[str, Any]) -> jax.Array:
         """Ground-truth privileged critic state (no noise). The cube is static
@@ -522,7 +521,9 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         state.metrics["termination/nan"] = term_reasons["nan"].astype(float)
         state.metrics["termination/tip_on_ground"] = term_reasons["tip_on_ground"].astype(float)
 
-        raw_rewards = self._get_reward(data, action, state.info, effective_force)
+        raw_rewards = self._get_reward(
+            data, action, state.info, effective_force, contact_gate
+        )
         scaled_rewards = {
             k: v * self._config.reward_config.scales[k] for k, v in raw_rewards.items()
         }
@@ -581,6 +582,7 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         action: jax.Array,
         info: dict[str, Any],
         effective_force: jax.Array,
+        contact_gate: jax.Array,
     ) -> dict[str, jax.Array]:
         # Contact force matching the (randomized) target, normalized to [0, 1].
         # tolerance() rejects traced bounds under jit, so the error is divided
@@ -588,8 +590,15 @@ class CubePinch(tesollo_hand_base.TesolloHandGraspEnv):
         force_target = info["force_target"]
         force_error = (effective_force - force_target) / self._config.force_reward_margin
         force_reward = reward.tolerance(
-            force_error, bounds=(0.0, 0.0), margin=1.0, sigmoid="gaussian"
+            force_error,
+            bounds=(0.0, 0.0),
+            margin=1.0,
+            sigmoid=self._config.force_reward_sigmoid,
         )
+        if self._config.force_reward_contact_gated:
+            # Without this the no-contact state is scored as a force error, which
+            # still pays out when the target sits at the bottom of its range.
+            force_reward = force_reward * contact_gate
 
         # Fingertips reaching the cube centre, normalized to [0, 1]: the mean
         # over tips of a per-tip closeness reward.
