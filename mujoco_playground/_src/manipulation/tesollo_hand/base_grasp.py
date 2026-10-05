@@ -93,6 +93,12 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
         "palm_pos": obs_module.ObsComponent(
             "palm_pos", self._obs_palm_pos, size=3,
             description="palm/grasp site position", labels=_PALM_LABELS),
+        "cube_pos": obs_module.ObsComponent(
+            "cube_pos", self._obs_cube_pos, size=3,
+            description="cube position (world frame), ground truth"),
+        "cube_quat": obs_module.ObsComponent(
+            "cube_quat", self._obs_cube_quat, size=4,
+            description="cube orientation quaternion (world frame), ground truth"),
     }
     if self._TIP_FORCE_SENSORS:
       nforce = len(self._TIP_FORCE_SENSORS)
@@ -195,6 +201,12 @@ class TesolloHandGraspEnv(mjx_env.MjxEnv):
 
   def _obs_palm_pos(self, data, info) -> jax.Array:
     return self.get_palm_position(data)
+
+  def _obs_cube_pos(self, data, info) -> jax.Array:
+    return self.get_cube_position(data)
+
+  def _obs_cube_quat(self, data, info) -> jax.Array:
+    return self.get_cube_orientation(data)
 
   def _obs_fingertip_forces(self, data, info) -> jax.Array:
     forces = jp.array([

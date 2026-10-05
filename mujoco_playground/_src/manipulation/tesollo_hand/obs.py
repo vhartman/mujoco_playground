@@ -62,6 +62,7 @@ class SensorGroup(enum.Enum):
     BASELINE = "baseline"
     PROPRIO = "proprio"
     FORCE = "force"
+    OBJECT = "object"
 
 
 class SensorOption(enum.Enum):
@@ -80,6 +81,10 @@ class SensorOption(enum.Enum):
         SensorGroup.FORCE,
         ("fingertip_forces", "fingertip_force_dirs"),
     )
+
+    # Ground-truth object state from the simulator (an oracle, like force.*).
+    OBJECT_POSE = ("object.pose", SensorGroup.OBJECT, ("cube_pos", "cube_quat"))
+    OBJECT_QUAT = ("object.quat", SensorGroup.OBJECT, ("cube_quat",))
 
     def __init__(self, spec: str, group: SensorGroup, keys: tuple[str, ...]):
         self.spec = spec
