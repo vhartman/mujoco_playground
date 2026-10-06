@@ -24,8 +24,10 @@ Reward (per control step), four terms:
             tilted or oscillating motions cannot farm it)
   success   while the 3D error is within tolerance
   action    -|a_t - a_{t-1}|^2
-  drop      one-off penalty when the cube falls (its lowest point touches the
-            floor), which also ends the episode
+  drop      when the cube falls (its lowest point touches the floor) the episode
+            ends and the cube counts as maximally wrong: the remaining potential
+            (pi - error) is charged, so a dropped episode returns initial error - pi
+            <= 0 and progress made before a drop is never worth keeping
 """
 
 from typing import Any, Dict, Optional, Union
@@ -141,7 +143,8 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "progress": w.progress * (info["ori_error"] - err),
             "success": w.success * success.astype(float),
             "action_rate": -w.action_rate * jp.sum(jp.square(action - info["last_action"])),
-            "drop": -w.drop * dropped.astype(float),
+            # forfeit the potential: as if the final error were pi (with drop == progress)
+            "drop": -w.drop * dropped.astype(float) * (jp.pi - err),
         }
         info["ori_error"] = err
         info["last_action"] = action
