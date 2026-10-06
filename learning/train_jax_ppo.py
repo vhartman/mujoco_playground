@@ -450,7 +450,11 @@ def main(argv):
   # Load evaluation environment.
   eval_env = None
   if not _VISION.value:
-    eval_env = registry.load(_ENV_NAME.value, config=env_cfg)
+    eval_cfg = env_cfg
+    if "gravity_curriculum" in env_cfg:  # evaluate at full gravity
+      eval_cfg = env_cfg.copy_and_resolve_references()
+      eval_cfg.gravity_curriculum.enable = False
+    eval_env = registry.load(_ENV_NAME.value, config=eval_cfg)
   num_envs = 1
   if _VISION.value:
     num_envs = env_cfg.vision_config.render_batch_size

@@ -38,6 +38,7 @@ from mujoco_playground._src.manipulation.tesollo_hand import reach as tesollo_re
 from mujoco_playground._src.manipulation.tesollo_hand import grasp as tesollo_grasp
 from mujoco_playground._src.manipulation.tesollo_hand import pinch as tesollo_pinch
 from mujoco_playground._src.manipulation.tesollo_hand import downwards_rotate_z as tesollo_downwards_rotate_z
+from mujoco_playground._src.manipulation.tesollo_hand import rotate_in_hand as tesollo_rotate_in_hand
 
 from mujoco_playground._src.manipulation.masspoints import reach as masspoint_reach
 from mujoco_playground._src.manipulation.masspoints import masspoint_push_cube as masspoint_push
@@ -68,6 +69,7 @@ _envs = {
     "TesolloGrasp": tesollo_grasp.Grasp,
     "TesolloCubePinch": tesollo_pinch.CubePinch,
     "TesolloDownwardsRotateZ": tesollo_downwards_rotate_z.DownwardsRotateZ,
+    "TesolloRotateInHand": tesollo_rotate_in_hand.RotateInHand,
 
     "MasspointReach": masspoint_reach.KeyboardMasspointReach,
     "MasspointPushCube":masspoint_push.MasspointPushCube,
@@ -97,6 +99,7 @@ _cfgs = {
     "TesolloGrasp": tesollo_grasp.default_config,
     "TesolloCubePinch": tesollo_pinch.default_config,
     "TesolloDownwardsRotateZ": tesollo_downwards_rotate_z.default_config,
+    "TesolloRotateInHand": tesollo_rotate_in_hand.default_config,
 
     "MasspointReach": masspoint_reach.default_config,
     "MasspointPushCube": masspoint_push.default_config,
@@ -118,6 +121,7 @@ _randomizer = {
     "TesolloGrasp": tesollo_grasp.domain_randomize,
     "TesolloCubePinch": tesollo_pinch.domain_randomize,
     "TesolloDownwardsRotateZ": tesollo_downwards_rotate_z.domain_randomize,
+    "TesolloRotateInHand": tesollo_rotate_in_hand.domain_randomize,
     "TesolloKeyboardReach": tesollo_reach.domain_randomize,
     "MasspointReach": masspoint_reach.domain_randomize,
 
