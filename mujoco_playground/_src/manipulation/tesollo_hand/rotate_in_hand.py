@@ -22,12 +22,18 @@ Reward (per control step), four terms:
   progress  decrease of the 3D orientation error to the goal (potential-based: an
             episode's total is initial minus final error, whatever the path, so
             tilted or oscillating motions cannot farm it)
-  success   while the 3D error is within tolerance
+  success   once per goal, when the 3D error has stayed within tolerance for
+            target_hold_time (an event, not a per-step rate: hovering in and out
+            of tolerance earns nothing)
   action    -|a_t - a_{t-1}|^2
   drop      when the cube falls (its lowest point touches the floor) the episode
             ends and the cube counts as maximally wrong: the remaining potential
             (pi - error) is charged, so a dropped episode returns initial error - pi
             <= 0 and progress made before a drop is never worth keeping
+
+With task.resample_goal, holding a goal for target_hold_time draws a new goal relative
+to the current yaw (consecutive goals, as in Dactyl / DeXtreme). The progress potential
+is re-based on the new goal, so the jump in error is neither rewarded nor charged.
 """
 
 from typing import Any, Dict, Optional, Union
@@ -49,13 +55,14 @@ def default_config() -> config_dict.ConfigDict:
     cfg.sensor_bundle = "baseline"
     cfg.grasp_cache_path = ""  # .npz with qpos, qvel, ctrl (see make_grasp_cache.py)
     cfg.task.max_target_angle = float(np.pi)  # goal yaw = start yaw + U(-max, max)
+    cfg.task.resample_goal = False  # new goal after each success (training); off for evals
     # Exploration aid (not a reward term): cancel (1 - s) of the cube weight with an
     # upward force, s ramping start_scale -> 1 over ramp_steps per-env steps. The
     # counter survives episode resets under --full_reset (use --num_resets_per_eval=0).
     cfg.gravity_curriculum = config_dict.create(enable=False, start_scale=0.0, ramp_steps=100_000)
     cfg.rotate_reward = config_dict.create(
         progress=1.0,
-        success=0.1,
+        success=1.0,
         action_rate=0.01,
         drop=1.0,
     )
@@ -101,12 +108,14 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "last_action": last_action,
             "ori_error": self._cube_orientation_error(data, goal_quat),
             "success_count": jp.zeros((), dtype=jp.int32),
+            "hold_steps": jp.zeros((), dtype=jp.int32),
+            "goals_reached": jp.zeros((), dtype=jp.int32),
             # gravity-curriculum counter; survives resets under --full_reset
             "AutoResetWrapper_preserve_info": {"grav_steps": jp.zeros((), dtype=jp.int32)},
         }
         metrics = {k: jp.zeros(()) for k in (
             "reward/progress", "reward/success", "reward/action_rate", "reward/drop",
-            "ori_error_deg", "goal_delta_deg", "gravity_scale")}
+            "ori_error_deg", "goal_delta_deg", "gravity_scale", "goals_reached")}
         obs = self._get_obs(data, info)
         return mjx_env.State(data, obs, jp.zeros(()), jp.zeros(()), metrics, info)
 
@@ -138,10 +147,13 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         dropped = self._cube_lowest_point(data) < 0.003
         nan = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
 
+        hold = (info["hold_steps"] + 1) * success.astype(jp.int32)
+        reached = hold == int(round(self._config.task.target_hold_time / self.dt))
+
         w = self._config.rotate_reward
         terms = {
             "progress": w.progress * (info["ori_error"] - err),
-            "success": w.success * success.astype(float),
+            "success": w.success * reached.astype(float),
             "action_rate": -w.action_rate * jp.sum(jp.square(action - info["last_action"])),
             # forfeit the potential: as if the final error were pi (with drop == progress)
             "drop": -w.drop * dropped.astype(float) * (jp.pi - err),
@@ -149,11 +161,26 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         info["ori_error"] = err
         info["last_action"] = action
         info["success_count"] = info["success_count"] + success.astype(jp.int32)
+        info["hold_steps"] = hold
+        info["goals_reached"] = info["goals_reached"] + reached.astype(jp.int32)
+        if self._config.task.resample_goal:
+            rng, k_goal = jax.random.split(info["rng"])
+            q = self.get_cube_orientation(data)
+            delta = jax.random.uniform(k_goal, minval=-1.0, maxval=1.0) * self._config.task.max_target_angle
+            yaw = 2.0 * jp.arctan2(q[3], q[0]) + delta
+            new_goal = jp.array([jp.cos(yaw / 2), 0.0, 0.0, jp.sin(yaw / 2)])
+            info["rng"] = rng
+            info["goal_quat"] = jp.where(reached, new_goal, info["goal_quat"])
+            info["goal_delta"] = jp.where(reached, delta, info["goal_delta"])
+            info["hold_steps"] = jp.where(reached, 0, info["hold_steps"])
+            info["ori_error"] = self._cube_orientation_error(data, info["goal_quat"])
+            data = data.replace(mocap_quat=jp.broadcast_to(info["goal_quat"], data.mocap_quat.shape))
 
         for k, v in terms.items():
             state.metrics[f"reward/{k}"] = v
         state.metrics["ori_error_deg"] = jp.rad2deg(err)
         state.metrics["goal_delta_deg"] = jp.rad2deg(info["goal_delta"])
+        state.metrics["goals_reached"] = info["goals_reached"].astype(float)
         obs = self._get_obs(data, info)
         done = (dropped | nan).astype(float)
         return state.replace(data=data, obs=obs, reward=sum(terms.values()), done=done, info=info)
