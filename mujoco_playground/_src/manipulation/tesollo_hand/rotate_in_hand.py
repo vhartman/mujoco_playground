@@ -26,10 +26,10 @@ Reward (per control step), four terms:
             target_hold_time (an event, not a per-step rate: hovering in and out
             of tolerance earns nothing)
   action    -|a_t - a_{t-1}|^2
-  drop      when the cube falls (its lowest point touches the floor) the episode
-            ends and the cube counts as maximally wrong: the remaining potential
-            (pi - error) is charged, so a dropped episode returns initial error - pi
-            <= 0 and progress made before a drop is never worth keeping
+  drop      a constant cost when the cube falls (its lowest point touches the
+            floor); the episode ends. Constant, not tied to the current error: with
+            pi - error, dropping right after a new large goal was nearly free, and
+            the policy learned to give up on hard goals by dropping the cube
 
 With task.resample_goal, holding a goal for target_hold_time draws a new goal relative
 to the current yaw (consecutive goals, as in Dactyl / DeXtreme). The progress potential
@@ -64,7 +64,7 @@ def default_config() -> config_dict.ConfigDict:
         progress=1.0,
         success=1.0,
         action_rate=0.01,
-        drop=1.0,
+        drop=5.0,
     )
     return cfg
 
@@ -155,8 +155,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "progress": w.progress * (info["ori_error"] - err),
             "success": w.success * reached.astype(float),
             "action_rate": -w.action_rate * jp.sum(jp.square(action - info["last_action"])),
-            # forfeit the potential: as if the final error were pi (with drop == progress)
-            "drop": -w.drop * dropped.astype(float) * (jp.pi - err),
+            "drop": -w.drop * dropped.astype(float),
         }
         info["ori_error"] = err
         info["last_action"] = action
