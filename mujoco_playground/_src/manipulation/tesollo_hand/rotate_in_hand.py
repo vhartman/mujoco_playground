@@ -34,6 +34,18 @@ Reward (per control step), four terms:
 With task.resample_goal, holding a goal for target_hold_time draws a new goal relative
 to the current yaw (consecutive goals, as in Dactyl / DeXtreme). The progress potential
 is re-based on the new goal, so the jump in error is neither rewarded nor charged.
+
+Velocity mode (velocity.enable): instead of goal angles, a command c in {-1, 0, +1}
+(redrawn on average every switch_time seconds) asks for rotation about world z at c * omega,
+or for holding still (c = 0). The reward replaces progress + success with one term:
+  rotate    c != 0: min(c * dyaw / (omega * dt), 1), with dyaw the change of the cube's
+            twist about world z over the control step (a displacement, not a sampled
+            angular velocity). Capped above, linear below, so a back-and-forth motion
+            with zero net rotation never earns a positive total.
+            c == 0: decrease of |yaw - yaw at the hold command| / (omega * dt), capped at 1
+            (potential-based: returning to the held yaw pays back what drifting cost).
+The command reaches the policy through the existing goal_quat observation as a moving
+target: lookahead * omega ahead of the cube in the commanded direction, or the held yaw.
 """
 
 from typing import Any, Dict, Optional, Union
@@ -60,11 +72,14 @@ def default_config() -> config_dict.ConfigDict:
     # upward force, s ramping start_scale -> 1 over ramp_steps per-env steps. The
     # counter survives episode resets under --full_reset (use --num_resets_per_eval=0).
     cfg.gravity_curriculum = config_dict.create(enable=False, start_scale=0.0, ramp_steps=100_000)
+    cfg.velocity = config_dict.create(
+        enable=False, omega=0.6, lookahead=0.5, switch_time=3.0, p_hold=0.2)
     cfg.rotate_reward = config_dict.create(
         progress=1.0,
         success=1.0,
         action_rate=0.01,
         drop=5.0,
+        rotate=1.0,  # velocity mode only
     )
     return cfg
 
@@ -91,7 +106,11 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         start_yaw = 2.0 * jp.arctan2(q[3], q[0])
         delta = jax.random.uniform(k_goal, minval=-1.0, maxval=1.0) * self._config.task.max_target_angle
         goal_yaw = start_yaw + delta
-        goal_quat = jp.array([jp.cos(goal_yaw / 2), 0.0, 0.0, jp.sin(goal_yaw / 2)])
+        goal_quat = _yaw_quat(goal_yaw)
+        rng, k_cmd = jax.random.split(rng)
+        cmd = self._sample_cmd(k_cmd)
+        if self._config.velocity.enable:
+            goal_quat = self._carrot(start_yaw, cmd, start_yaw)
         data = mjx_env.make_data(
             self._mj_model, qpos=qpos, qvel=qvel, ctrl=ctrl,
             mocap_pos=self._init_mpos, mocap_quat=goal_quat,
@@ -110,12 +129,16 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "success_count": jp.zeros((), dtype=jp.int32),
             "hold_steps": jp.zeros((), dtype=jp.int32),
             "goals_reached": jp.zeros((), dtype=jp.int32),
+            "cmd": cmd,
+            "ref_yaw": start_yaw,
+            "prev_yaw": start_yaw,
             # gravity-curriculum counter; survives resets under --full_reset
             "AutoResetWrapper_preserve_info": {"grav_steps": jp.zeros((), dtype=jp.int32)},
         }
         metrics = {k: jp.zeros(()) for k in (
             "reward/progress", "reward/success", "reward/action_rate", "reward/drop",
-            "ori_error_deg", "goal_delta_deg", "gravity_scale", "goals_reached")}
+            "reward/rotate", "ori_error_deg", "goal_delta_deg", "gravity_scale", "goals_reached",
+            "cmd", "yaw_rate_dps", "tilt_deg")}
         obs = self._get_obs(data, info)
         return mjx_env.State(data, obs, jp.zeros(()), jp.zeros(()), metrics, info)
 
@@ -150,24 +173,50 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         hold = (info["hold_steps"] + 1) * success.astype(jp.int32)
         reached = hold == int(round(self._config.task.target_hold_time / self.dt))
 
+        q = self.get_cube_orientation(data)
+        yaw = _cube_yaw(q)
+        dyaw = _wrap(yaw - info["prev_yaw"])
         w = self._config.rotate_reward
         terms = {
             "progress": w.progress * (info["ori_error"] - err),
             "success": w.success * reached.astype(float),
+            "rotate": jp.zeros(()),
             "action_rate": -w.action_rate * jp.sum(jp.square(action - info["last_action"])),
             "drop": -w.drop * dropped.astype(float),
         }
+        if self._config.velocity.enable:
+            v = self._config.velocity
+            unit = v.omega * self.dt
+            c = info["cmd"].astype(float)
+            spin = jp.minimum(c * dyaw / unit, 1.0)
+            back = (jp.abs(_wrap(info["prev_yaw"] - info["ref_yaw"]))
+                    - jp.abs(_wrap(yaw - info["ref_yaw"]))) / unit
+            terms["rotate"] = w.rotate * jp.where(info["cmd"] != 0, spin, jp.minimum(back, 1.0))
+            terms["progress"] = jp.zeros(())
+            terms["success"] = jp.zeros(())
         info["ori_error"] = err
         info["last_action"] = action
         info["success_count"] = info["success_count"] + success.astype(jp.int32)
         info["hold_steps"] = hold
         info["goals_reached"] = info["goals_reached"] + reached.astype(jp.int32)
-        if self._config.task.resample_goal:
+        state.metrics["cmd"] = info["cmd"].astype(float)
+        state.metrics["yaw_rate_dps"] = jp.rad2deg(dyaw / self.dt)
+        state.metrics["tilt_deg"] = jp.rad2deg(jp.arccos(jp.clip(1 - 2 * (q[1] ** 2 + q[2] ** 2), -1.0, 1.0)))
+        info["prev_yaw"] = yaw
+        if self._config.velocity.enable:
+            rng, k_sw, k_cmd = jax.random.split(info["rng"], 3)
+            switch = jax.random.uniform(k_sw) < self.dt / self._config.velocity.switch_time
+            info["rng"] = rng
+            info["cmd"] = jp.where(switch, self._sample_cmd(k_cmd), info["cmd"])
+            info["ref_yaw"] = jp.where(switch, yaw, info["ref_yaw"])
+            info["goal_quat"] = self._carrot(yaw, info["cmd"], info["ref_yaw"])
+            info["ori_error"] = self._cube_orientation_error(data, info["goal_quat"])
+            data = data.replace(mocap_quat=jp.broadcast_to(info["goal_quat"], data.mocap_quat.shape))
+        elif self._config.task.resample_goal:
             rng, k_goal = jax.random.split(info["rng"])
-            q = self.get_cube_orientation(data)
             delta = jax.random.uniform(k_goal, minval=-1.0, maxval=1.0) * self._config.task.max_target_angle
-            yaw = 2.0 * jp.arctan2(q[3], q[0]) + delta
-            new_goal = jp.array([jp.cos(yaw / 2), 0.0, 0.0, jp.sin(yaw / 2)])
+            yaw = yaw + delta
+            new_goal = _yaw_quat(yaw)
             info["rng"] = rng
             info["goal_quat"] = jp.where(reached, new_goal, info["goal_quat"])
             info["goal_delta"] = jp.where(reached, delta, info["goal_delta"])
@@ -183,6 +232,15 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         obs = self._get_obs(data, info)
         done = (dropped | nan).astype(float)
         return state.replace(data=data, obs=obs, reward=sum(terms.values()), done=done, info=info)
+
+    def _sample_cmd(self, key) -> jax.Array:
+        p = self._config.velocity.p_hold
+        return jax.random.choice(key, jp.array([-1, 0, 1]), p=jp.array([(1 - p) / 2, p, (1 - p) / 2]))
+
+    def _carrot(self, yaw, cmd, ref_yaw) -> jax.Array:
+        """Velocity-mode target: lookahead * omega ahead of the cube, or the held yaw."""
+        v = self._config.velocity
+        return _yaw_quat(jp.where(cmd == 0, ref_yaw, yaw + cmd * v.omega * v.lookahead))
 
     def _cube_lowest_point(self, data) -> jax.Array:
         """Height of the cube box's lowest point above the floor (z = 0)."""
@@ -200,6 +258,19 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             self.get_cube_orientation(data),
             jp.atleast_1d(info["ori_error"]),
         ])
+
+
+def _yaw_quat(yaw):
+    return jp.array([jp.cos(yaw / 2), 0.0, 0.0, jp.sin(yaw / 2)])
+
+
+def _cube_yaw(q):
+    """Twist of quaternion q (w, x, y, z) about world z (swing-twist decomposition)."""
+    return 2.0 * jp.arctan2(q[3], q[0])
+
+
+def _wrap(a):
+    return (a + jp.pi) % (2 * jp.pi) - jp.pi
 
 
 def domain_randomize(model, rng):
