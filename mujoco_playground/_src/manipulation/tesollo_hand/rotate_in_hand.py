@@ -34,6 +34,9 @@ Reward (per control step), four terms:
 With task.resample_goal, holding a goal for target_hold_time draws a new goal relative
 to the current yaw (consecutive goals, as in Dactyl / DeXtreme). The progress potential
 is re-based on the new goal, so the jump in error is neither rewarded nor charged.
+With task.goal_sequence = "monotonic", every goal (the first and each new one) is goal_step
+further in one direction, drawn once per episode: the total rotation keeps growing, so past
+about one grasp's range (~180 deg) further goals need a regrasp (finger gaiting).
 
 Velocity mode (velocity.enable): instead of goal angles, a command c in {-1, 0, +1}
 (redrawn on average every switch_time seconds) asks for rotation about world z at c * omega,
@@ -68,6 +71,8 @@ def default_config() -> config_dict.ConfigDict:
     cfg.grasp_cache_path = ""  # .npz with qpos, qvel, ctrl (see make_grasp_cache.py)
     cfg.task.max_target_angle = float(np.pi)  # goal yaw = start yaw + U(-max, max)
     cfg.task.resample_goal = False  # new goal after each success (training); off for evals
+    cfg.task.goal_sequence = "random"  # "random": U(-max, max); "monotonic": sign * goal_step, sign per episode
+    cfg.task.goal_step = float(np.pi / 2)
     # Exploration aid (not a reward term): cancel (1 - s) of the cube weight with an
     # upward force, s ramping start_scale -> 1 over ramp_steps per-env steps. The
     # counter survives episode resets under --full_reset (use --num_resets_per_eval=0).
@@ -93,6 +98,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
         super().__init__(config=config or default_config(), config_overrides=config_overrides)
+        assert self._config.task.goal_sequence in ("random", "monotonic"), self._config.task.goal_sequence
         cache = np.load(self._config.grasp_cache_path)
         self._cache_qpos = jp.asarray(cache["qpos"])
         self._cache_qvel = jp.asarray(cache["qvel"])
@@ -105,6 +111,10 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         q = qpos[self._cube_qids[3]:self._cube_qids[3] + 4]
         start_yaw = 2.0 * jp.arctan2(q[3], q[0])
         delta = jax.random.uniform(k_goal, minval=-1.0, maxval=1.0) * self._config.task.max_target_angle
+        sign = jp.ones(())
+        if self._config.task.goal_sequence == "monotonic":
+            sign = jp.where(jax.random.uniform(jax.random.fold_in(k_goal, 1)) < 0.5, -1.0, 1.0)
+            delta = sign * self._config.task.goal_step
         goal_yaw = start_yaw + delta
         goal_quat = _yaw_quat(goal_yaw)
         rng, k_cmd = jax.random.split(rng)
@@ -123,6 +133,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "rng": rng,
             "goal_quat": goal_quat,
             "goal_delta": delta,
+            "goal_sign": sign,
             "motor_targets": ctrl,
             "last_action": last_action,
             "ori_error": self._cube_orientation_error(data, goal_quat),
@@ -215,6 +226,8 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         elif self._config.task.resample_goal:
             rng, k_goal = jax.random.split(info["rng"])
             delta = jax.random.uniform(k_goal, minval=-1.0, maxval=1.0) * self._config.task.max_target_angle
+            if self._config.task.goal_sequence == "monotonic":
+                delta = info["goal_sign"] * self._config.task.goal_step
             yaw = yaw + delta
             new_goal = _yaw_quat(yaw)
             info["rng"] = rng
