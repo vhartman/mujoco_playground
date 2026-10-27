@@ -29,7 +29,8 @@ Reward (per control step), four terms:
   drop      a constant cost when the cube falls (its lowest point touches the
             floor); the episode ends. Constant, not tied to the current error: with
             pi - error, dropping right after a new large goal was nearly free, and
-            the policy learned to give up on hard goals by dropping the cube
+            the policy learned to give up on hard goals by dropping the cube. With task.max_tilt_deg > 0,
+            tilting the cube past it counts as the same failure (the rotation must stay about the vertical)
 
 With task.resample_goal, holding a goal for target_hold_time draws a new goal relative
 to the current yaw (consecutive goals, as in Dactyl / DeXtreme). The progress potential
@@ -73,6 +74,8 @@ def default_config() -> config_dict.ConfigDict:
     cfg.task.resample_goal = False  # new goal after each success (training); off for evals
     cfg.task.goal_sequence = "random"  # "random": U(-max, max); "monotonic": sign * goal_step, sign per episode
     cfg.task.goal_step = float(np.pi / 2)
+    # > 0: tilting the cube beyond this ends the episode with the drop cost (rotate about the vertical, upright)
+    cfg.task.max_tilt_deg = 0.0
     # Exploration aid (not a reward term): cancel (1 - s) of the cube weight with an
     # upward force, s ramping start_scale -> 1 over ramp_steps per-env steps. The
     # counter survives episode resets under --full_reset (use --num_resets_per_eval=0).
@@ -149,7 +152,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         metrics = {k: jp.zeros(()) for k in (
             "reward/progress", "reward/success", "reward/action_rate", "reward/drop",
             "reward/rotate", "ori_error_deg", "goal_delta_deg", "gravity_scale", "goals_reached",
-            "cmd", "yaw_rate_dps", "tilt_deg")}
+            "cmd", "yaw_rate_dps", "tilt_deg", "tilted")}
         obs = self._get_obs(data, info)
         return mjx_env.State(data, obs, jp.zeros(()), jp.zeros(()), metrics, info)
 
@@ -179,12 +182,17 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         success = err < self._config.task.ori_tolerance_rad
         # The hand is above the floor, so a dropped cube ends up touching it.
         dropped = self._cube_lowest_point(data) < 0.003
+        q = self.get_cube_orientation(data)
+        tilt = jp.arccos(jp.clip(1 - 2 * (q[1] ** 2 + q[2] ** 2), -1.0, 1.0))
+        tilted = jp.zeros((), dtype=bool)
+        if self._config.task.max_tilt_deg > 0:
+            tilted = tilt > np.deg2rad(self._config.task.max_tilt_deg)
+        failed = dropped | tilted
         nan = jp.any(jp.isnan(data.qpos)) | jp.any(jp.isnan(data.qvel))
 
         hold = (info["hold_steps"] + 1) * success.astype(jp.int32)
         reached = hold == int(round(self._config.task.target_hold_time / self.dt))
 
-        q = self.get_cube_orientation(data)
         yaw = _cube_yaw(q)
         dyaw = _wrap(yaw - info["prev_yaw"])
         w = self._config.rotate_reward
@@ -193,7 +201,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "success": w.success * reached.astype(float),
             "rotate": jp.zeros(()),
             "action_rate": -w.action_rate * jp.sum(jp.square(action - info["last_action"])),
-            "drop": -w.drop * dropped.astype(float),
+            "drop": -w.drop * failed.astype(float),
         }
         if self._config.velocity.enable:
             v = self._config.velocity
@@ -212,7 +220,8 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         info["goals_reached"] = info["goals_reached"] + reached.astype(jp.int32)
         state.metrics["cmd"] = info["cmd"].astype(float)
         state.metrics["yaw_rate_dps"] = jp.rad2deg(dyaw / self.dt)
-        state.metrics["tilt_deg"] = jp.rad2deg(jp.arccos(jp.clip(1 - 2 * (q[1] ** 2 + q[2] ** 2), -1.0, 1.0)))
+        state.metrics["tilt_deg"] = jp.rad2deg(tilt)
+        state.metrics["tilted"] = tilted.astype(float)
         info["prev_yaw"] = yaw
         if self._config.velocity.enable:
             rng, k_sw, k_cmd = jax.random.split(info["rng"], 3)
@@ -243,7 +252,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         state.metrics["goal_delta_deg"] = jp.rad2deg(info["goal_delta"])
         state.metrics["goals_reached"] = info["goals_reached"].astype(float)
         obs = self._get_obs(data, info)
-        done = (dropped | nan).astype(float)
+        done = (failed | nan).astype(float)
         return state.replace(data=data, obs=obs, reward=sum(terms.values()), done=done, info=info)
 
     def _sample_cmd(self, key) -> jax.Array:
