@@ -106,6 +106,8 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         self._cache_qpos = jp.asarray(cache["qpos"])
         self._cache_qvel = jp.asarray(cache["qvel"])
         self._cache_ctrl = jp.asarray(cache["ctrl"])
+        # optional per-entry spin command (velocity mode), e.g. for restarts from mid-episode states
+        self._cache_cmd = jp.asarray(cache["cmd"], dtype=jp.int32) if "cmd" in cache.files else None
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng, k_idx, k_goal = jax.random.split(rng, 3)
@@ -122,6 +124,8 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
         goal_quat = _yaw_quat(goal_yaw)
         rng, k_cmd = jax.random.split(rng)
         cmd = self._sample_cmd(k_cmd)
+        if self._cache_cmd is not None:
+            cmd = self._cache_cmd[i]
         if self._config.velocity.enable:
             goal_quat = self._carrot(start_yaw, cmd, start_yaw)
         data = mjx_env.make_data(
@@ -144,6 +148,7 @@ class RotateInHand(downwards_rotate_z.DownwardsRotateZ):
             "hold_steps": jp.zeros((), dtype=jp.int32),
             "goals_reached": jp.zeros((), dtype=jp.int32),
             "cmd": cmd,
+            "cache_idx": i,  # which cache entry this episode started from
             "ref_yaw": start_yaw,
             "prev_yaw": start_yaw,
             # gravity-curriculum counter; survives resets under --full_reset
